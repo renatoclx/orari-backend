@@ -61,7 +61,7 @@ Veja `.env.example` para os valores de referência.
 | --- | --- |
 | `npm run start:dev` | Desenvolvimento, com watch |
 | `npm run build` | Build de produção (`nest build`) |
-| `npm run start:prod` | Sobe o build (`dist/main`) |
+| `npm run start:prod` | Sobe o build (`dist/src/main`) |
 | `npm run lint` | ESLint + Prettier (`--fix`) |
 | `npm run test` | Testes unitários (Vitest) — `src/**/*.spec.ts` |
 | `npm run test:watch` | Testes unitários em modo watch |
