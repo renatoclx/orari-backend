@@ -1,0 +1,110 @@
+# Template Backend
+
+Template base para APIs REST em **NestJS + Prisma + PostgreSQL**, pensado
+para servir de ponto de partida para novos projetos.
+
+## Stack
+
+- [NestJS](https://nestjs.com) + TypeScript — arquitetura modular
+  (Controller → Service → DTO), um módulo por entidade de domínio
+- [Prisma ORM](https://www.prisma.io) + PostgreSQL (`@prisma/adapter-pg`)
+- `class-validator` / `class-transformer` — validação e transformação de
+  payload nos DTOs
+- `@nestjs/config` — carregamento de variáveis de ambiente
+- Docker Compose — banco de dados local
+
+O template já inclui um módulo básico de autenticação JWT (`AuthModule` +
+`UserModule`, ver `docs/auth.md`): `JwtAuthGuard` como guard global — toda
+rota exige Bearer token por padrão, exceto as marcadas com `@Public()`
+(hoje: `GET /` e `POST /auth/login`). Não há endpoint de cadastro de usuário
+nem migration do model `User` — cada projeto deve criar a sua conforme seu
+próprio domínio.
+
+## Pré-requisitos
+
+- Node.js 24+ (versão usada no CI)
+- Docker (para o PostgreSQL local)
+
+## Como rodar
+
+```bash
+npm install
+
+cp .env.example .env
+# ajuste as variáveis conforme necessário (ver tabela abaixo)
+
+npm run db:up              # sobe o Postgres via Docker Compose
+npx prisma generate        # gera o Prisma Client
+npx prisma migrate dev     # aplica as migrations (quando houver models)
+
+npm run start:dev
+```
+
+API sobe em `http://localhost:3333` (ou a `PORT` configurada).
+
+## Variáveis de ambiente (`.env`)
+
+| Variável | Obrigatória | Descrição |
+| --- | --- | --- |
+| `PORT` | sim | Porta da API |
+| `DATABASE_URL` | sim | Connection string do PostgreSQL |
+| `JWT_SECRET` | sim | Segredo de assinatura do JWT |
+| `JWT_EXPIRES_IN` | sim | Validade do access token (ex.: `1h`) |
+| `CORS_ORIGIN` | não | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | sim (Docker) | Credenciais do container do `docker-compose.yml` |
+
+Veja `.env.example` para os valores de referência.
+
+## Scripts
+
+| Comando | Descrição |
+| --- | --- |
+| `npm run start:dev` | Desenvolvimento, com watch |
+| `npm run build` | Build de produção (`nest build`) |
+| `npm run start:prod` | Sobe o build (`dist/main`) |
+| `npm run lint` | ESLint + Prettier (`--fix`) |
+| `npm run test` | Testes unitários (Vitest) — `src/**/*.spec.ts` |
+| `npm run test:watch` | Testes unitários em modo watch |
+| `npm run test:cov` | Testes unitários com relatório de cobertura |
+| `npm run test:e2e` | Testes e2e (Vitest + Supertest) — `test/**/*.e2e-spec.ts`, requer banco no ar |
+| `npm run db:up` / `db:down` | Sobe/derruba o Postgres local |
+| `npm run prisma:generate` | Gera o Prisma Client |
+| `npm run prisma:migrate:dev` | Nova migration a partir do schema |
+| `npm run prisma:studio` | UI de inspeção do banco |
+
+## CI
+
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda a cada
+push/PR nas branches `main`/`master`: instala as dependências e executa
+lint, checagem de tipos, testes unitários e build. Os testes e2e (que
+exigem banco) não fazem parte do CI ainda.
+
+## Estrutura (`src/`)
+
+```
+src/
+  app.module.ts
+  app.controller.ts
+  app.service.ts
+  main.ts
+  common/
+    decorators/    # @Public() (isenta rota do JwtAuthGuard global)
+  prisma/          # PrismaService (acesso ao banco centralizado)
+  modules/
+    auth/          # login + estratégia/guard JWT
+    user/          # UserService mínimo (busca por e-mail para o login)
+```
+
+## Documentação
+
+A pasta [`docs/`](docs/) é a fonte da verdade do projeto — a documentação
+das regras de negócio precede o código, nunca o contrário.
+
+- `architecture.md` — estrutura de módulos e responsabilidades das camadas
+- `coding-standards.md` — convenções de código
+- `database.md` — convenções de banco de dados (Prisma/PostgreSQL)
+- `auth.md` — padrão de autenticação/autorização a seguir quando implementada
+
+Outros documentos (`domain.md`, `business-rules.md`, `decisions.md`,
+`technical-debt.md`, `progress.md`, `journal.md`) podem ser adicionados
+conforme o projeto que utilizar este template evoluir.
