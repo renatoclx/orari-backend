@@ -9,6 +9,7 @@ import { BusinessHourModule } from "./modules/business-hour/business-hour.module
 import { CityModule } from "./modules/city/city.module";
 import { CompanyModule } from "./modules/company/company.module";
 import { ContactModule } from "./modules/contact/contact.module";
+import { NotificationModule } from "./modules/notification/notification.module";
 import { PaymentModule } from "./modules/payment/payment.module";
 import { PaymentMethodModule } from "./modules/payment-method/payment-method.module";
 import { PeopleModule } from "./modules/people/people.module";
@@ -34,6 +35,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     BusinessHourModule,
     AppointmentModule,
     RecurringAppointmentModule,
+    NotificationModule,
     PaymentMethodModule,
     PaymentModule,
   ],
