@@ -50,7 +50,11 @@ Todas as entidades persistentes devem possuir:
 - Evitar exclusão física quando houver necessidade de manter histórico.
 - Preferir Soft Delete utilizando o campo `deletedAt` quando aplicável.
 - Todas as entidades utilizam soft delete, exceto aquelas explicitamente documentadas em contrário.
-- Eventuais exceções ao soft delete (entidades imutáveis, mantidas via seed, hard delete condicionado a regra de negócio, etc.) devem ser documentadas aqui e, quando a decisão não for óbvia, em `decisions.md`.
+
+### Exceções ao soft delete
+
+- **State**: não possui operação de exclusão (mantida via seed). Não utiliza `deletedAt`.
+- **City**: não possui operação de exclusão pela aplicação (mantida via seed). Não utiliza `deletedAt`.
 
 ## Índices
 
