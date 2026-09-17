@@ -42,7 +42,6 @@ describe("AuthService", () => {
         id: "user-1",
         email: dto.email,
         password: "hashed-password",
-        isActive: true,
       };
       userServiceMock.findByEmailWithPassword.mockResolvedValue(user);
       vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
@@ -70,25 +69,11 @@ describe("AuthService", () => {
       expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
     });
 
-    it("deve lançar UnauthorizedException quando o usuário está inativo", async () => {
-      userServiceMock.findByEmailWithPassword.mockResolvedValue({
-        id: "user-1",
-        email: dto.email,
-        password: "hashed-password",
-        isActive: false,
-      });
-
-      await expect(authService.login(dto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
     it("deve lançar UnauthorizedException quando a senha não confere", async () => {
       userServiceMock.findByEmailWithPassword.mockResolvedValue({
         id: "user-1",
         email: dto.email,
         password: "hashed-password",
-        isActive: true,
       });
       vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
 

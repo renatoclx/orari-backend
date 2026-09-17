@@ -15,7 +15,7 @@ export class AuthService {
   async login(dto: LoginDto): Promise<{ accessToken: string }> {
     const user = await this.userService.findByEmailWithPassword(dto.email);
 
-    if (!user || !user.isActive) {
+    if (!user) {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
