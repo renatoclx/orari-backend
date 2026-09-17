@@ -2,34 +2,34 @@
 
 ## Objetivo
 
-Implementar entidadesseguindo a documentação do projeto.
+Levar **uma** entidade do `domain.md` para o banco: schema e migration. Nada além disso.
 
 ## Instruções
 
-1. Leia obrigatoriamente:
-   - CLAUDE.md
-   - domain.md
-   - database.md
-   - coding-standards.md
-   - auth.md (se aplicável)
+1. Leia: `CLAUDE.md`, `domain.md`, `database.md` e `business-rules.md`.
+2. Localize a entidade no `domain.md` e identifique atributos, tipos,
+   obrigatoriedade, relacionamentos e índices.
+3. Aponte o que o `domain.md` não define (tipo, unicidade, exclusão lógica).
+   **No máximo 2 perguntas.** O que não bloquear vira pendência.
+4. Apresente o plano: campos, relacionamentos, índices e constraints.
+   **Aguarde aprovação.**
+5. Depois de aprovado:
+   - atualize o `prisma/schema.prisma`;
+   - gere a migration e confirme que não há diferença entre schema e banco;
+   - se houver constraint que o Prisma não expressa (ex.: CHECK), acrescente na
+     migration com comentário explicando o porquê.
+6. Commit do schema e da migration.
 
-2. Localize a entidade solicitada em `domain.md`.
+## Limites
 
-3. Antes de implementar:
-   - Analise a entidade.
-   - Identifique relacionamentos.
-   - Informe o plano de implementação.
-   - Aguarde minha aprovação.
+- **Uma entidade por vez.** Relacionamentos com entidades ainda inexistentes
+  viram pendência.
+- Não crie Module, Controller, Service, DTO nem teste.
+- Não altere regra de negócio: se faltar regra, pare e use o `define-rules.md`.
 
-4. Após aprovação:
-   - Atualize o `schema.prisma`.
-   - Gere a migration.
-   - Implemente Module, Controller, Service e DTOs.
-   - Adicione validações.
-   - Mantenha o padrão arquitetural do projeto.
-   - Não implemente funcionalidades de outras entidades.
+## Ao finalizar
 
-5. Ao finalizar:
-   - Liste os arquivos alterados.
-   - Explique resumidamente as decisões tomadas.
-   - Informe pendências, caso existam.
+- Arquivos alterados e o que a migration faz.
+- Decisões de modelagem.
+- Pendências.
+- **Pare e aguarde revisão.**
