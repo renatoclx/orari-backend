@@ -4,6 +4,11 @@
 
 - Criar as entidades que irão compor a base de dados.
 
+> Este documento descreve apenas **o que existe**: entidades, responsabilidades,
+> atributos e relacionamentos. Regras de funcionamento ficam no
+> `business-rules.md`, e convenções de persistência (datas de auditoria,
+> exclusão lógica, tipos de coluna) ficam no `database.md`.
+
 ---
 
 ## State
@@ -39,6 +44,7 @@
 ### Relacionamentos
 
 - Uma cidade pertence a um estado.
+- Uma cidade pode estar associada a vários endereços.
 
 ---
 
@@ -56,14 +62,16 @@
 | cnpj            | Documento da empresa                       |
 | foundationDate  | Data de fundação                           |
 | isActive        | Empresa ativa ou inativa                   |
+| timezone        | Fuso horário da empresa (identificador IANA) |
 | logoUrl         | caminho da logomarca da empresa (opcional) |
-| timezone        | Fuso horário da empresa (IANA)              |
 | subdomain       | Subdomínio da empresa                      |
 
 ### Relacionamentos
 
 - Uma empresa pode ter mais de um endereço.
 - Uma empresa pode ter mais de um contato.
+- Uma empresa pode ter vários usuários, pessoas, serviços, métodos de pagamento,
+  horários de funcionamento, agendamentos e agendamentos recorrentes.
 
 ---
 
@@ -85,42 +93,12 @@
 | name      | Nome da pessoa      |
 | email     | E-mail para login   |
 | password  | Senha para login    |
+| type      | Tipo de usuário     |
 | companyId | Código da empresa   |
 
 ### Relacionamentos
 
 - Uma usuário pertence a uma empresa
-
----
-
-## Notification
-
-- Representa um aviso para a empresa agir.
-
-### Tipos de Notificação (NotificationType)
-
-- RECURRING_APPOINTMENT_HORIZON - Agendamento recorrente chegando ao fim dos agendamentos gerados
-
-### Atributos
-
-| Nome                   | Descrição                                  |
-| ---------------------- | ------------------------------------------ |
-| id                     | Identificador único                        |
-| companyId              | Código da empresa                          |
-| type                   | Tipo da notificação                        |
-| message                | Texto do aviso                             |
-| recurringAppointmentId | Agendamento recorrente relacionado (opcional) |
-| readAt                 | Data da leitura (opcional)                 |
-| resolvedAt             | Data em que o aviso deixou de valer (opcional) |
-
-### Relacionamentos
-
-- Uma notificação pertence a uma empresa.
-- Uma notificação pode se referir a um agendamento recorrente.
-
-### Regras específicas
-
-- Notificações não são excluídas: são resolvidas.
 
 ---
 
@@ -143,6 +121,7 @@
 | document   | CPF da pessoa        |
 | birthDate  | Data de nascimento   |
 | profession | Profissão (opcional) |
+| type       | Tipo de pessoa       |
 | companyId  | Código da empresa    |
 
 ### Relacionamentos
@@ -150,6 +129,7 @@
 - Uma pessoa pertence a uma empresa.
 - Uma pessoa pode ter mais de um endereço.
 - Uma pessoa pode ter mais de um contato.
+- Uma pessoa participa de agendamentos como cliente ou como profissional.
 
 ---
 
@@ -168,6 +148,7 @@
 | Nome      | Descrição                    |
 | --------- | ---------------------------- |
 | id        | Identificador único          |
+| type      | Tipo de contato              |
 | phone     | Telefone (opcional)          |
 | email     | E-mail (opcional)            |
 | companyId | Código da empresa (opcional) |
@@ -194,6 +175,7 @@
 | Nome        | Descrição                    |
 | ----------- | ---------------------------- |
 | id          | Identificador único          |
+| type        | Tipo de endereço             |
 | cep         | Código postal                |
 | publicPlace | Logradouro                   |
 | number      | Número                       |
@@ -228,6 +210,28 @@
 ### Relacionamentos
 
 - Uma empresa pode ter vários serviços.
+- Um serviço pode estar em vários agendamentos e agendamentos recorrentes.
+
+---
+
+## BusinessHours
+
+- Representa as janelas de atendimento de uma empresa em um dia da semana.
+
+### Atributos
+
+| Nome      | Descrição                     |
+| --------- | ----------------------------- |
+| id        | Identificador único           |
+| companyId | Código da empresa             |
+| weekDay   | Dia da semana (WeekDays)      |
+| openAt    | Horário de abertura           |
+| closeAt   | Horário de fechamento         |
+
+### Relacionamentos
+
+- Uma empresa pode ter várias janelas de atendimento, inclusive mais de uma no
+  mesmo dia da semana.
 
 ---
 
@@ -245,28 +249,26 @@
 
 ### Atributos
 
-| Nome           | Descrição                                 |
-| -------------- | ----------------------------------------- |
-| id             | Identificador único                       |
-| companyId      | Código da empresa                         |
-| clientId       | Código do cliente (deriva de pessoa)      |
-| professionalId | Código do profissional (deriva de pessoa) |
-| serviceId      | Código do serviço                         |
-| startAt        | Data e horário de início do serviço       |
-| endAt          | Data e horário final do serviço           |
-| note           | Observação (opcional)                     |
-| recurringAppointmentId | Agendamento recorrente que o gerou (opcional) |
+| Nome                   | Descrição                                             |
+| ---------------------- | ----------------------------------------------------- |
+| id                     | Identificador único                                   |
+| companyId              | Código da empresa                                     |
+| clientId               | Código do cliente (deriva de pessoa)                  |
+| professionalId         | Código do profissional (deriva de pessoa)             |
+| serviceId              | Código do serviço                                     |
+| startAt                | Data e horário de início do serviço                   |
+| endAt                  | Data e horário final do serviço                       |
+| status                 | Situação do agendamento                               |
+| note                   | Observação (opcional)                                 |
+| recurringAppointmentId | Agendamento recorrente que o originou (opcional)      |
 
 ### Relacionamentos
 
 - Um agendamento contém um cliente e um profissional.
-- Um agendamento pode ter sido gerado por um agendamento recorrente.
 - Um agendamento realiza um serviço.
 - Um agendamento poderá conter uma observação opcional.
-
-### Regras específicas
-
-- Em agendamento não deverá conter o campo deletedAt, será controlado via status.
+- Um agendamento pode ter sido originado por um agendamento recorrente.
+- Um agendamento pode ter um pagamento.
 
 ---
 
@@ -293,10 +295,8 @@
 - Um agendamento recorrente contém um cliente e um profissional.
 - Um agendamento recorrente realiza um serviço.
 - Um agendamento recorrente poderá conter uma observação opcional.
-
-### Regras específicas
-
-- Em agendamento recorrente não deverá conter o campo deletedAt, não haverá exclusão.
+- Um agendamento recorrente possui um ou mais dias recorrentes.
+- Um agendamento recorrente origina vários agendamentos.
 
 ---
 
@@ -320,42 +320,13 @@
 | ---------------------- | ------------------------------------------- |
 | id                     | Identificador único                         |
 | recurringAppointmentId | Código do agendamento recorrente            |
+| weekDay                | Dia da semana reservado                     |
 | startTime              | Horário de início do agendamento recorrente |
 | endTime                | Horário final do agendamento recorrente     |
 
 ### Relacionamentos
 
 - Os dias recorrentes fazem referência a um agendamento recorrente.
-
-### Regras específicas
-
-- Os horários usam colunas `time` do PostgreSQL, mapeadas como `DateTime @db.Time(0)`.
-  (`Unsupported("time")` geraria a mesma coluna, mas os campos ficariam fora do
-  Prisma Client, exigindo SQL bruto para gravar e ler.)
-
----
-
-## BusinessHours
-
-- Representa as janelas de atendimento de uma empresa em cada dia da semana.
-
-### Atributos
-
-| Nome      | Descrição                       |
-| --------- | ------------------------------- |
-| id        | Identificador único             |
-| companyId | Código da empresa               |
-| weekDay   | Dia da semana (WeekDays)        |
-| openAt    | Horário de abertura             |
-| closeAt   | Horário de fechamento           |
-
-### Relacionamentos
-
-- Uma empresa pode ter várias janelas de atendimento, inclusive mais de uma no mesmo dia.
-
-### Regras específicas
-
-- Horários usam colunas `time`, como em RecurringDays.
 
 ---
 
@@ -374,6 +345,7 @@
 ### Relacionamentos
 
 - Uma empresa pode ter vários métodos de pagamento.
+- Um método de pagamento pode estar em vários pagamentos.
 
 ---
 
@@ -389,16 +361,47 @@
 
 ### Atributos
 
-| Nome            | Descrição                     |
-| --------------- | ----------------------------- |
-| id              | Identificador único           |
-| appointmentId   | Código do agendamento         |
-| amount          | Valor final a pagar           |
-| paidAt          | Dia que realizou o pagamento  |
-| paymentMethodId | Código do método de pagamento |
+| Nome            | Descrição                                |
+| --------------- | ---------------------------------------- |
+| id              | Identificador único                      |
+| appointmentId   | Código do agendamento                    |
+| amount          | Valor final a pagar                      |
+| status          | Situação do pagamento                    |
+| paidAt          | Dia que realizou o pagamento (opcional)  |
+| paymentMethodId | Código do método de pagamento            |
 
 ### Relacionamentos
 
-. O pagamento corresponde a um agendamento
-. O pagamento pode ser realizado por diferentes métodos.
+- O pagamento corresponde a um agendamento.
+- O pagamento é realizado por um método de pagamento, entre os que a empresa
+  aceita.
+
+---
+
+## Notification
+
+- Representa um aviso para a empresa agir.
+
+### Tipos de Notificação (NotificationType)
+
+- RECURRING_APPOINTMENT_HORIZON - Agendamento recorrente chegando ao fim dos
+  agendamentos gerados
+
+### Atributos
+
+| Nome                   | Descrição                                        |
+| ---------------------- | ------------------------------------------------ |
+| id                     | Identificador único                              |
+| companyId              | Código da empresa                                |
+| type                   | Tipo da notificação                              |
+| message                | Texto do aviso                                   |
+| recurringAppointmentId | Agendamento recorrente relacionado (opcional)    |
+| readAt                 | Data da leitura (opcional)                       |
+| resolvedAt             | Data em que o aviso deixou de valer (opcional)   |
+
+### Relacionamentos
+
+- Uma notificação pertence a uma empresa.
+- Uma notificação pode se referir a um agendamento recorrente.
+
 ---
