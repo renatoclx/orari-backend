@@ -1,10 +1,11 @@
 # Autenticação
 
-> O template já implementa esta estratégia (`AuthModule` + `UserModule`,
-> `JwtAuthGuard` global, `@Public()` para rotas isentas). O `UserModule`
-> incluído é mínimo (apenas `findByEmailWithPassword`, sem endpoint de
-> cadastro) — cada projeto deve estendê-lo conforme seu próprio domínio de
-> usuário.
+> Implementação atual: `AuthModule` (login, `JwtStrategy`, guards globais
+> `JwtAuthGuard` e `RolesGuard`) e `UserModule` (CRUD em `/users` e
+> redefinição de senha). Rotas isentas de autenticação usam `@Public()`; rotas
+> restritas por tipo de usuário usam `@Roles()`. O primeiro SUPER_ADMIN é
+> criado pelo seed (`npm run prisma:seed`, variáveis `SEED_*`). As regras de
+> acesso estão em `business-rules.md`.
 
 ## Estratégia
 
@@ -46,6 +47,11 @@ Exemplo:
 ## Autorização
 
 - Autenticação e autorização possuem responsabilidades diferentes.
+- A cada requisição autenticada, o `JwtStrategy` recarrega o usuário do banco e preenche o `request.user` com `id`, `email`, `type` e `companyId`. Por isso, um token deixa de valer imediatamente quando o usuário é excluído ou sua empresa fica inativa.
+- Restrições por tipo de usuário são declaradas com `@Roles()` e verificadas pelo `RolesGuard` global (resposta 403).
+- Nos controllers, o usuário autenticado é obtido com `@CurrentUser()`.
+- O escopo por empresa é aplicado nos Services a partir do `request.user`: `resolveCompanyScope()` define em qual empresa o usuário pode agir, e `ownedByCompany()` filtra os registros de dono misto (contatos e endereços). A empresa nunca é aceita do payload quando pode ser derivada do usuário autenticado.
+- Registros fora do alcance do usuário respondem 404, para não revelar sua existência. Pedir explicitamente outra empresa (ex.: `companyId` no filtro ou no payload) responde 403.
 - A autenticação identifica o usuário.
 - A autorização define o que ele pode acessar.
 

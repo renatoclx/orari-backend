@@ -4,9 +4,10 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
-  moduleFormat = "cjs"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -15,12 +16,398 @@ datasource db {
 
 model User {
   id        String    @id @default(uuid())
-  email     String    @unique
+  name      String
+  email     String
   password  String
-  isActive  Boolean   @default(true)
+  type      UserType
+  companyId String
   createdAt DateTime  @default(now())
   updatedAt DateTime?
   deletedAt DateTime?
 
+  company Company @relation(fields: [companyId], references: [id])
+
+  // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
+  @@unique([email], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
   @@map("users")
+}
+
+// SUPER_ADMIN administra a plataforma (todas as empresas); ADMIN, apenas a própria empresa.
+enum UserType {
+  SUPER_ADMIN
+  ADMIN
+  USER
+}
+
+enum PeopleType {
+  CLIENT
+  EMPLOYEE
+  PROFESSIONAL
+}
+
+enum ContactType {
+  MAIN
+  MESSAGE
+  BRANCH
+}
+
+enum AddressType {
+  MAIN
+  MESSAGE
+  BRANCH
+}
+
+// Mantida via seed: sem exclusão e sem deletedAt (ver docs/database.md)
+model State {
+  id        String    @id @default(uuid())
+  name      String
+  acronym   String    @unique @db.Char(2)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime?
+
+  cities City[]
+
+  @@map("states")
+}
+
+// Mantida via seed: sem exclusão e sem deletedAt (ver docs/database.md)
+model City {
+  id             String    @id @default(uuid())
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  stateId        String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  state     State     @relation(fields: [stateId], references: [id])
+  addresses Address[]
+
+  @@unique([name, stateId])
+  @@index([stateId])
+  // GIN trigram: acelera a busca parcial (LIKE '%termo%') pelo nome normalizado.
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("cities")
+}
+
+// Empresas não são excluídas, apenas inativadas (ver docs/database.md): sem deletedAt.
+model Company {
+  id              String    @id @default(uuid())
+  corporateReason String
+  fantasyName     String?
+  cnpj            String    @unique @db.Char(14)
+  foundationDate  DateTime  @db.Date
+  isActive        Boolean   @default(true)
+  // Fuso IANA usado para interpretar janelas de atendimento e horários de recorrência.
+  timezone        String    @default("America/Sao_Paulo")
+  logoUrl         String?
+  subdomain       String    @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime?
+
+  users                 User[]
+  people                People[]
+  contacts              Contact[]
+  addresses             Address[]
+  services              Service[]
+  paymentMethods        PaymentMethod[]
+  businessHours         BusinessHour[]
+  notifications         Notification[]
+  appointments          Appointment[]
+  recurringAppointments RecurringAppointment[]
+
+  @@map("companies")
+}
+
+model People {
+  id             String     @id @default(uuid())
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  document       String     @db.Char(11)
+  birthDate      DateTime   @db.Date
+  profession     String?
+  type           PeopleType
+  companyId      String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime?
+  deletedAt      DateTime?
+  note           String?
+
+  company   Company   @relation(fields: [companyId], references: [id])
+  contacts  Contact[]
+  addresses Address[]
+
+  // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
+  appointmentsAsClient       Appointment[]          @relation("AppointmentClient")
+  appointmentsAsProfessional Appointment[]          @relation("AppointmentProfessional")
+  recurringAsClient          RecurringAppointment[] @relation("RecurringAppointmentClient")
+  recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
+
+  // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
+  @@unique([companyId, document], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
+  // GIN trigram: acelera a busca parcial (LIKE '%termo%') pelo nome normalizado.
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("people")
+}
+
+// Pertence a exatamente um dono (empresa ou pessoa) e tem telefone e/ou e-mail; ambos garantidos por CHECK na migration
+model Contact {
+  id        String      @id @default(uuid())
+  type      ContactType
+  phone     String?
+  email     String?
+  companyId String?
+  peopleId  String?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime?
+  deletedAt DateTime?
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  people  People?  @relation(fields: [peopleId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([peopleId])
+  @@map("contacts")
+}
+
+// Pertence a exatamente um dono (empresa ou pessoa), garantido por CHECK na migration
+model Address {
+  id          String      @id @default(uuid())
+  type        AddressType
+  cep         String      @db.Char(8)
+  publicPlace String
+  number      String
+  complement  String?
+  cityId      String
+  companyId   String?
+  peopleId    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime?
+  deletedAt   DateTime?
+
+  city    City     @relation(fields: [cityId], references: [id])
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  people  People?  @relation(fields: [peopleId], references: [id], onDelete: Restrict)
+
+  @@index([cityId])
+  @@index([companyId])
+  @@index([peopleId])
+  @@map("addresses")
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  CANCELLED
+}
+
+enum WeekDay {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model Service {
+  id             String    @id @default(uuid())
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  description    String?
+  price          Decimal?  @db.Decimal(10, 2)
+  // Duração em minutos, usada para calcular o fim do agendamento.
+  duration       Int
+  companyId      String
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+  deletedAt      DateTime?
+
+  company               Company                @relation(fields: [companyId], references: [id])
+  appointments          Appointment[]
+  recurringAppointments RecurringAppointment[]
+
+  @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("services")
+}
+
+// Sem deletedAt por decisão do domínio: o ciclo de vida é controlado pelo status.
+model Appointment {
+  id                     String            @id @default(uuid())
+  companyId              String
+  clientId               String
+  professionalId         String
+  serviceId              String
+  startAt                DateTime
+  // Calculado a partir da duração do serviço (ver AppointmentService).
+  endAt                  DateTime
+  note                   String?
+  status                 AppointmentStatus @default(SCHEDULED)
+  // Preenchido quando o agendamento foi gerado por uma recorrência.
+  recurringAppointmentId String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime?
+
+  company              Company               @relation(fields: [companyId], references: [id])
+  client               People                @relation("AppointmentClient", fields: [clientId], references: [id])
+  professional         People                @relation("AppointmentProfessional", fields: [professionalId], references: [id])
+  service              Service               @relation(fields: [serviceId], references: [id])
+  payment              Payment?
+  recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
+
+  @@index([companyId, startAt])
+  @@index([professionalId, startAt])
+  @@index([clientId, startAt])
+  @@index([serviceId])
+  @@index([recurringAppointmentId])
+  @@map("appointments")
+}
+
+// Sem deletedAt por decisão do domínio: não há exclusão, apenas isActive.
+model RecurringAppointment {
+  id             String    @id @default(uuid())
+  companyId      String
+  clientId       String
+  professionalId String
+  serviceId      String
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+  note           String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  client        People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
+  professional  People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
+  service       Service        @relation(fields: [serviceId], references: [id])
+  days          RecurringDay[]
+  appointments  Appointment[]
+  notifications Notification[]
+
+  @@index([companyId, isActive])
+  @@index([professionalId])
+  @@index([clientId])
+  @@index([serviceId])
+  @@map("recurring_appointments")
+}
+
+// Faz parte do agendamento recorrente: é criada e substituída junto com ele,
+// por isso usa exclusão física (ver docs/database.md).
+model RecurringDay {
+  id                     String    @id @default(uuid())
+  recurringAppointmentId String
+  weekDay                WeekDay
+  startTime              DateTime  @db.Time(0)
+  endTime                DateTime  @db.Time(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime?
+
+  recurringAppointment RecurringAppointment @relation(fields: [recurringAppointmentId], references: [id], onDelete: Cascade)
+
+  @@index([recurringAppointmentId])
+  @@map("recurring_days")
+}
+
+model PaymentMethod {
+  id             String    @id @default(uuid())
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  companyId      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+  deletedAt      DateTime?
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  payments Payment[]
+
+  @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("payment_methods")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  appointmentId   String
+  amount          Decimal       @db.Decimal(10, 2)
+  // Preenchido apenas quando o pagamento está PAID.
+  paidAt          DateTime?
+  paymentMethodId String
+  status          PaymentStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime?
+  deletedAt       DateTime?
+
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
+  @@unique([appointmentId], where: raw("\"deletedAt\" IS NULL"))
+  @@index([paymentMethodId])
+  @@map("payments")
+}
+
+// Janela de atendimento de uma empresa em um dia da semana. Uma empresa pode ter
+// mais de uma janela no mesmo dia (ex.: manhã e tarde). Empresa sem nenhuma
+// janela cadastrada não restringe horários (ver docs/business-rules.md).
+model BusinessHour {
+  id        String    @id @default(uuid())
+  companyId String
+  weekDay   WeekDay
+  openAt    DateTime  @db.Time(0)
+  closeAt   DateTime  @db.Time(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime?
+  deletedAt DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, weekDay])
+  @@map("business_hours")
+}
+
+enum NotificationType {
+  RECURRING_APPOINTMENT_HORIZON
+}
+
+/**
+ * Aviso para a empresa agir. Hoje só existe um tipo: a recorrência está chegando
+ * ao fim dos agendamentos já gerados e precisa ser estendida manualmente.
+ * Notificações não são excluídas: são resolvidas (ver docs/database.md).
+ */
+model Notification {
+  id                     String           @id @default(uuid())
+  companyId              String
+  type                   NotificationType
+  message                String
+  recurringAppointmentId String?
+  readAt                 DateTime?
+  resolvedAt             DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime?
+
+  company              Company               @relation(fields: [companyId], references: [id])
+  recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
+
+  @@index([companyId, resolvedAt])
+  @@index([recurringAppointmentId])
+  @@map("notifications")
 }

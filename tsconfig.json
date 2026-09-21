@@ -18,5 +18,9 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": false
+  },
+  // Usado pelo seed (prisma/seed.ts): o client gerado importa "./x.js" apontando para arquivos .ts.
+  "ts-node": {
+    "experimentalResolver": true
   }
 }

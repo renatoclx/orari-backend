@@ -16,9 +16,11 @@ para servir de ponto de partida para novos projetos.
 O template já inclui um módulo básico de autenticação JWT (`AuthModule` +
 `UserModule`, ver `docs/auth.md`): `JwtAuthGuard` como guard global — toda
 rota exige Bearer token por padrão, exceto as marcadas com `@Public()`
-(hoje: `GET /` e `POST /auth/login`). Não há endpoint de cadastro de usuário
-nem migration do model `User` — cada projeto deve criar a sua conforme seu
-próprio domínio.
+(hoje: `GET /` e `POST /auth/login`). Usuários são gerenciados em `/users`,
+restrito a `SUPER_ADMIN` (plataforma) e `ADMIN` (própria empresa) — o
+primeiro SUPER_ADMIN é criado pelo seed (`npm run prisma:seed`, variáveis
+`SEED_*`). Os demais recursos são isolados por empresa. Regras de acesso em
+`docs/business-rules.md`.
 
 ## Pré-requisitos
 
@@ -36,6 +38,7 @@ cp .env.example .env
 npm run db:up              # sobe o Postgres via Docker Compose
 npx prisma generate        # gera o Prisma Client
 npx prisma migrate dev     # aplica as migrations (quando houver models)
+npm run prisma:seed        # estados/cidades (IBGE) + empresa e SUPER_ADMIN iniciais
 
 npm run start:dev
 ```
@@ -52,6 +55,8 @@ API sobe em `http://localhost:3333` (ou a `PORT` configurada).
 | `JWT_EXPIRES_IN` | sim | Validade do access token (ex.: `1h`) |
 | `CORS_ORIGIN` | não | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | sim (Docker) | Credenciais do container do `docker-compose.yml` |
+| `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara) |
+| `SEED_SUPER_ADMIN_NAME` / `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` | não | SUPER_ADMIN inicial criado pelo seed. Sem todas as `SEED_*`, o seed pula essa etapa |
 
 Veja `.env.example` para os valores de referência.
 
@@ -70,6 +75,8 @@ Veja `.env.example` para os valores de referência.
 | `npm run db:up` / `db:down` | Sobe/derruba o Postgres local |
 | `npm run prisma:generate` | Gera o Prisma Client |
 | `npm run prisma:migrate:dev` | Nova migration a partir do schema |
+| `npm run prisma:seed` | Popula estados e cidades (snapshot do IBGE) e cria a empresa da plataforma e o SUPER_ADMIN iniciais (idempotente) |
+| `npm run seed:demo` | Cria um cadastro completo de demonstração (empresa, agenda, recorrência e pagamentos), usando os services (idempotente) |
 | `npm run prisma:studio` | UI de inspeção do banco |
 
 ## CI
@@ -105,6 +112,12 @@ das regras de negócio precede o código, nunca o contrário.
 - `database.md` — convenções de banco de dados (Prisma/PostgreSQL)
 - `auth.md` — padrão de autenticação/autorização a seguir quando implementada
 
-Outros documentos (`domain.md`, `business-rules.md`, `decisions.md`,
-`technical-debt.md`, `progress.md`, `journal.md`) podem ser adicionados
-conforme o projeto que utilizar este template evoluir.
+- `domain.md` — entidades, atributos e relacionamentos
+- `business-rules.md` — regras de negócio do domínio
+- `review/` — guias de revisão por funcionalidade: regra em resumo, onde está no
+  código, testes e pontos de atenção (comece pelo
+  [`review/README.md`](docs/review/README.md))
+- `implementation-summary.md` — resumo do que foi implementado e pendências
+
+Outros documentos (`decisions.md`, `technical-debt.md`, `progress.md`,
+`journal.md`) podem ser adicionados conforme o projeto evoluir.

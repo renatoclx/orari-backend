@@ -4,15 +4,18 @@ import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { APP_GUARD } from "@nestjs/core";
 import type { StringValue } from "ms";
+import { CompanyModule } from "../company/company.module";
 import { UserModule } from "../user/user.module";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { RolesGuard } from "./guards/roles.guard";
 
 @Module({
   imports: [
     UserModule,
+    CompanyModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -29,9 +32,14 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
   providers: [
     AuthService,
     JwtStrategy,
+    // A ordem importa: o RolesGuard depende do request.user preenchido pelo JwtAuthGuard.
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })
