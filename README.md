@@ -112,6 +112,12 @@ das regras de negócio precede o código, nunca o contrário.
 - `database.md` — convenções de banco de dados (Prisma/PostgreSQL)
 - `auth.md` — padrão de autenticação/autorização a seguir quando implementada
 
-Outros documentos (`domain.md`, `business-rules.md`, `decisions.md`,
-`technical-debt.md`, `progress.md`, `journal.md`) podem ser adicionados
-conforme o projeto que utilizar este template evoluir.
+- `domain.md` — entidades, atributos e relacionamentos
+- `business-rules.md` — regras de negócio do domínio
+- `review/` — guias de revisão por funcionalidade: regra em resumo, onde está no
+  código, testes e pontos de atenção (comece pelo
+  [`review/README.md`](docs/review/README.md))
+- `implementation-summary.md` — resumo do que foi implementado e pendências
+
+Outros documentos (`decisions.md`, `technical-debt.md`, `progress.md`,
+`journal.md`) podem ser adicionados conforme o projeto evoluir.
