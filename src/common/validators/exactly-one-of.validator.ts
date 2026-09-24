@@ -5,6 +5,8 @@ import {
 } from "class-validator";
 import { isFilled } from "./is-filled";
 
+// Decorator de propriedade: válido quando exatamente uma das `properties`
+// informadas no DTO estiver preenchida (ex.: OwnerDto exige companyId XOR peopleId).
 export function ExactlyOneOf(
   properties: string[],
   validationOptions?: ValidationOptions,

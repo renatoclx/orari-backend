@@ -63,6 +63,8 @@ export function isValidCnpj(value: string): boolean {
   return value.endsWith(`${first}${second}`);
 }
 
+// Fábrica compartilhada por IsCpf e IsCnpj: evita duplicar o boilerplate do
+// registerDecorator para cada validação de documento.
 function documentDecorator(
   name: string,
   isValid: (value: string) => boolean,
@@ -83,6 +85,7 @@ function documentDecorator(
   };
 }
 
+// Decorator de propriedade para validar CPF de People (ver isValidCpf).
 export const IsCpf = (validationOptions?: ValidationOptions) =>
   documentDecorator(
     "isCpf",
@@ -91,6 +94,7 @@ export const IsCpf = (validationOptions?: ValidationOptions) =>
     validationOptions,
   );
 
+// Decorator de propriedade para validar CNPJ de Company (ver isValidCnpj).
 export const IsCnpj = (validationOptions?: ValidationOptions) =>
   documentDecorator(
     "isCnpj",

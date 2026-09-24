@@ -5,6 +5,8 @@ import {
 } from "class-validator";
 import { isFilled } from "./is-filled";
 
+// Decorator de propriedade: válido quando ao menos uma das `properties`
+// informadas no DTO estiver preenchida (ex.: Contact exige phone e/ou email).
 export function AtLeastOneOf(
   properties: string[],
   validationOptions?: ValidationOptions,
