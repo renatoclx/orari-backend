@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Min,
 } from "class-validator";
 
@@ -35,4 +36,10 @@ export class CreateServiceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
+    message: "color deve ser uma cor hexadecimal válida (ex.: #3BB2F6 ou #FFF)",
+  })
+  color?: string;
 }

@@ -208,6 +208,7 @@
 | duration    | Duração do serviço em minutos         |
 | companyId   | Empresa a qual pertence o serviço     |
 | isActive    | Serviço Ativo ou inativo              |
+| color       | Cor associada ao serviço (opcional)   |
 
 ### Relacionamentos
 

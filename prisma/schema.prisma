@@ -230,6 +230,7 @@ model Service {
   normalizedName String
   description    String?
   price          Decimal?  @db.Decimal(10, 2)
+  color          String?
   // Duração em minutos, usada para calcular o fim do agendamento.
   duration       Int
   companyId      String

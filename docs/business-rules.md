@@ -67,6 +67,7 @@
 - O nome do serviço é único entre os serviços não excluídos da mesma empresa.
 - A duração é informada em minutos e é o que define o fim dos agendamentos desse serviço.
 - Serviços inativos não podem ser usados em novos agendamentos nem em recorrências.
+- A cor (`color`), quando informada, deve ser uma string hexadecimal válida (`#RGB` ou `#RRGGBB`).
 
 ## Agendamentos
 
