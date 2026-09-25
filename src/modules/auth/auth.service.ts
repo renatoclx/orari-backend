@@ -21,6 +21,7 @@ export class AuthService {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
+    // Verifica se o password enviado corresponde ao bcrypt já registrado.
     const passwordMatches = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatches) {
       throw new UnauthorizedException("Credenciais inválidas");

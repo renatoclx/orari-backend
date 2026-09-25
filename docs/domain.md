@@ -122,6 +122,7 @@
 | birthDate  | Data de nascimento   |
 | profession | Profissão (opcional) |
 | type       | Tipo de pessoa       |
+| note       | Observações (opcional) |
 | companyId  | Código da empresa    |
 
 ### Relacionamentos
@@ -172,17 +173,18 @@
 
 ### Atributos
 
-| Nome        | Descrição                    |
-| ----------- | ---------------------------- |
-| id          | Identificador único          |
-| type        | Tipo de endereço             |
-| cep         | Código postal                |
-| publicPlace | Logradouro                   |
-| number      | Número                       |
-| complement  | Complemento (opcional)       |
-| peopleId    | Código da Pessoa (opcional)  |
-| companyId   | Código da empresa (opcional) |
-| cityId      | Código da cidade             |
+| Nome         | Descrição                    |
+| ------------ | ----------------------------- |
+| id           | Identificador único           |
+| type         | Tipo de endereço              |
+| cep          | Código postal                 |
+| street       | Logradouro                    |
+| neighborhood | Bairro (opcional)              |
+| number       | Número                        |
+| complement   | Complemento (opcional)        |
+| peopleId     | Código da Pessoa (opcional)   |
+| companyId    | Código da empresa (opcional)  |
+| cityId       | Código da cidade              |
 
 ### Relacionamentos
 

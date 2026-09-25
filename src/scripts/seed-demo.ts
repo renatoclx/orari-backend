@@ -152,7 +152,7 @@ async function main() {
     {
       type: "MAIN",
       cep: "30130000",
-      publicPlace: "Avenida Afonso Pena",
+      street: "Avenida Afonso Pena",
       number: "1000",
       complement: "Sala 302",
       cityId: beloHorizonte.id,
@@ -219,7 +219,7 @@ async function main() {
     {
       type: "MAIN",
       cep: "30140071",
-      publicPlace: "Rua da Bahia",
+      street: "Rua da Bahia",
       number: "500",
       cityId: beloHorizonte.id,
       peopleId: clientOne.id,

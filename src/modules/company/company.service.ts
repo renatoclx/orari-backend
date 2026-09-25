@@ -34,6 +34,7 @@ export class CompanyService {
     }
   }
 
+  // Busca todas as empresas e retorna a interface genérica baseada na empresa.
   async findAll(
     { page, limit, isActive }: FindCompaniesQueryDto,
     currentUser: AuthenticatedUser,

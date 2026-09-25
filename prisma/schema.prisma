@@ -133,6 +133,7 @@ model People {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime?
   deletedAt      DateTime?
+  note           String?
 
   company   Company   @relation(fields: [companyId], references: [id])
   contacts  Contact[]
@@ -174,18 +175,19 @@ model Contact {
 
 // Pertence a exatamente um dono (empresa ou pessoa), garantido por CHECK na migration
 model Address {
-  id          String      @id @default(uuid())
-  type        AddressType
-  cep         String      @db.Char(8)
-  publicPlace String
-  number      String
-  complement  String?
-  cityId      String
-  companyId   String?
-  peopleId    String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime?
-  deletedAt   DateTime?
+  id            String      @id @default(uuid())
+  type          AddressType
+  cep           String      @db.Char(8)
+  street        String
+  neighborhood  String?
+  number        String
+  complement    String?
+  cityId        String
+  companyId     String?
+  peopleId      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime?
+  deletedAt     DateTime?
 
   city    City     @relation(fields: [cityId], references: [id])
   company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
