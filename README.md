@@ -16,7 +16,8 @@ para servir de ponto de partida para novos projetos.
 O template já inclui um módulo básico de autenticação JWT (`AuthModule` +
 `UserModule`, ver `docs/auth.md`): `JwtAuthGuard` como guard global — toda
 rota exige Bearer token por padrão, exceto as marcadas com `@Public()`
-(hoje: `GET /` e `POST /auth/login`). Usuários são gerenciados em `/users`,
+(hoje: `GET /`, `POST /auth/login`, `POST /auth/refresh` e
+`POST /auth/logout`). Usuários são gerenciados em `/users`,
 restrito a `SUPER_ADMIN` (plataforma) e `ADMIN` (própria empresa) — o
 primeiro SUPER_ADMIN é criado pelo seed (`npm run prisma:seed`, variáveis
 `SEED_*`). Os demais recursos são isolados por empresa. Regras de acesso em
@@ -52,7 +53,8 @@ API sobe em `http://localhost:3333` (ou a `PORT` configurada).
 | `PORT`                                                                                                            | sim          | Porta da API                                                                         |
 | `DATABASE_URL`                                                                                                    | sim          | Connection string do PostgreSQL                                                      |
 | `JWT_SECRET`                                                                                                      | sim          | Segredo de assinatura do JWT                                                         |
-| `JWT_EXPIRES_IN`                                                                                                  | sim          | Validade do access token (ex.: `1h`)                                                 |
+| `JWT_EXPIRES_IN`                                                                                                  | sim          | Validade do access token (ex.: `1d`)                                                 |
+| `JWT_REFRESH_EXPIRES_IN`                                                                                          | sim          | Validade do refresh token (ex.: `7d`)                                                |
 | `CORS_ORIGIN`                                                                                                     | não          | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`                                           | sim (Docker) | Credenciais do container do `docker-compose.yml`                                     |
 | `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não          | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara)                    |

@@ -102,6 +102,27 @@
 
 ---
 
+## RefreshToken
+
+- Representa uma sessão de autenticação renovável de um usuário (ver `auth.md`).
+
+### Atributos
+
+| Nome      | Descrição                                          |
+| --------- | --------------------------------------------------- |
+| id        | Identificador único                                 |
+| userId    | Código do usuário                                   |
+| tokenHash | Hash do token (o valor bruto nunca é persistido)     |
+| expiresAt | Data de expiração                                    |
+| revokedAt | Data em que o token foi revogado (opcional)          |
+
+### Relacionamentos
+
+- Um refresh token pertence a um usuário.
+- Um usuário pode ter mais de um refresh token (uma sessão por dispositivo).
+
+---
+
 ## People
 
 - Representa uma pessoa cadastrada na aplicação.

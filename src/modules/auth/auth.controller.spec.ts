@@ -8,6 +8,8 @@ describe("AuthController", () => {
 
   const authServiceMock = {
     login: vi.fn(),
+    refresh: vi.fn(),
+    logout: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -30,6 +32,35 @@ describe("AuthController", () => {
 
       expect(authServiceMock.login).toHaveBeenCalledWith(dto);
       expect(result).toEqual({ accessToken: "token" });
+    });
+  });
+
+  describe("refresh", () => {
+    it("deve delegar o refresh para o AuthService e repassar o resultado", async () => {
+      const dto = { refreshToken: "raw-token" };
+      authServiceMock.refresh.mockResolvedValue({
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+      });
+
+      const result = await authController.refresh(dto);
+
+      expect(authServiceMock.refresh).toHaveBeenCalledWith(dto);
+      expect(result).toEqual({
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+      });
+    });
+  });
+
+  describe("logout", () => {
+    it("deve delegar o logout para o AuthService", async () => {
+      const dto = { refreshToken: "raw-token" };
+      authServiceMock.logout.mockResolvedValue(undefined);
+
+      await authController.logout(dto);
+
+      expect(authServiceMock.logout).toHaveBeenCalledWith(dto);
     });
   });
 });

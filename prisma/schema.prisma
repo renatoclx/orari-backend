@@ -25,12 +25,32 @@ model User {
   updatedAt DateTime?
   deletedAt DateTime?
 
-  company Company @relation(fields: [companyId], references: [id])
+  company       Company        @relation(fields: [companyId], references: [id])
+  refreshTokens RefreshToken[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
   @@map("users")
+}
+
+// Sessão de refresh token (ver auth.md). Sem deletedAt: não é uma entidade de
+// domínio, é revogada (revokedAt) em vez de excluída, como Notification.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  // SHA-256 do token bruto: permite localizar o registro por igualdade sem
+  // guardar o valor original (o token nunca é persistido em texto puro).
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([tokenHash])
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 // SUPER_ADMIN administra a plataforma (todas as empresas); ADMIN, apenas a própria empresa.
@@ -175,19 +195,19 @@ model Contact {
 
 // Pertence a exatamente um dono (empresa ou pessoa), garantido por CHECK na migration
 model Address {
-  id            String      @id @default(uuid())
-  type          AddressType
-  cep           String      @db.Char(8)
-  street        String
-  neighborhood  String?
-  number        String
-  complement    String?
-  cityId        String
-  companyId     String?
-  peopleId      String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime?
-  deletedAt     DateTime?
+  id           String      @id @default(uuid())
+  type         AddressType
+  cep          String      @db.Char(8)
+  street       String
+  neighborhood String?
+  number       String
+  complement   String?
+  cityId       String
+  companyId    String?
+  peopleId     String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime?
+  deletedAt    DateTime?
 
   city    City     @relation(fields: [cityId], references: [id])
   company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
