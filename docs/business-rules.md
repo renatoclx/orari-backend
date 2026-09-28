@@ -138,3 +138,12 @@
 
 - Estados e cidades são mantidos via seed (base do IBGE) e são somente leitura pela API.
 - A busca de cidades por nome é parcial e ignora acentos e maiúsculas (ex.: "sao paulo" encontra "São Paulo"). A mesma regra vale para as buscas por nome de pessoas, serviços e métodos de pagamento.
+
+## Status dos Agendamentos
+
+- SCHEDULED - Quando o agendamento é criado na aplicação, status inicial.
+- CONFIRMED - Quando o cliente confirma o agendamento (feature futura).
+- IN_PROGRESS - Quando o agendamento começa a ser válido através do dia e horário agendado.
+- COMPLETED - Quando o atendimento é encerrado, baseado no horário final do agendamento.
+- CANCELLED - Quando o agendamento é encerrado manualmente pelo usuário.
+- NO_SHOW - Será implementado futuramente.

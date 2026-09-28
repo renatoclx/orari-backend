@@ -202,6 +202,7 @@ model Address {
 enum AppointmentStatus {
   SCHEDULED
   CONFIRMED
+  IN_PROGRESS
   COMPLETED
   CANCELLED
   NO_SHOW
@@ -276,6 +277,7 @@ model Appointment {
   @@index([companyId, startAt])
   @@index([professionalId, startAt])
   @@index([clientId, startAt])
+  @@index([status, endAt])
   @@index([serviceId])
   @@index([recurringAppointmentId])
   @@map("appointments")

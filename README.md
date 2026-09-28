@@ -47,37 +47,37 @@ API sobe em `http://localhost:3333` (ou a `PORT` configurada).
 
 ## Variáveis de ambiente (`.env`)
 
-| Variável | Obrigatória | Descrição |
-| --- | --- | --- |
-| `PORT` | sim | Porta da API |
-| `DATABASE_URL` | sim | Connection string do PostgreSQL |
-| `JWT_SECRET` | sim | Segredo de assinatura do JWT |
-| `JWT_EXPIRES_IN` | sim | Validade do access token (ex.: `1h`) |
-| `CORS_ORIGIN` | não | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | sim (Docker) | Credenciais do container do `docker-compose.yml` |
-| `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara) |
-| `SEED_SUPER_ADMIN_NAME` / `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` | não | SUPER_ADMIN inicial criado pelo seed. Sem todas as `SEED_*`, o seed pula essa etapa |
+| Variável                                                                                                          | Obrigatória  | Descrição                                                                            |
+| ----------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
+| `PORT`                                                                                                            | sim          | Porta da API                                                                         |
+| `DATABASE_URL`                                                                                                    | sim          | Connection string do PostgreSQL                                                      |
+| `JWT_SECRET`                                                                                                      | sim          | Segredo de assinatura do JWT                                                         |
+| `JWT_EXPIRES_IN`                                                                                                  | sim          | Validade do access token (ex.: `1h`)                                                 |
+| `CORS_ORIGIN`                                                                                                     | não          | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`                                           | sim (Docker) | Credenciais do container do `docker-compose.yml`                                     |
+| `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não          | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara)                    |
+| `SEED_SUPER_ADMIN_NAME` / `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`                                  | não          | SUPER_ADMIN inicial criado pelo seed. Sem todas as `SEED_*`, o seed pula essa etapa  |
 
 Veja `.env.example` para os valores de referência.
 
 ## Scripts
 
-| Comando | Descrição |
-| --- | --- |
-| `npm run start:dev` | Desenvolvimento, com watch |
-| `npm run build` | Build de produção (`nest build`) |
-| `npm run start:prod` | Sobe o build (`dist/src/main`) |
-| `npm run lint` | ESLint + Prettier (`--fix`) |
-| `npm run test` | Testes unitários (Vitest) — `src/**/*.spec.ts` |
-| `npm run test:watch` | Testes unitários em modo watch |
-| `npm run test:cov` | Testes unitários com relatório de cobertura |
-| `npm run test:e2e` | Testes e2e (Vitest + Supertest) — `test/**/*.e2e-spec.ts`, requer banco no ar |
-| `npm run db:up` / `db:down` | Sobe/derruba o Postgres local |
-| `npm run prisma:generate` | Gera o Prisma Client |
-| `npm run prisma:migrate:dev` | Nova migration a partir do schema |
-| `npm run prisma:seed` | Popula estados e cidades (snapshot do IBGE) e cria a empresa da plataforma e o SUPER_ADMIN iniciais (idempotente) |
-| `npm run seed:demo` | Cria um cadastro completo de demonstração (empresa, agenda, recorrência e pagamentos), usando os services (idempotente) |
-| `npm run prisma:studio` | UI de inspeção do banco |
+| Comando                      | Descrição                                                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `npm run start:dev`          | Desenvolvimento, com watch                                                                                              |
+| `npm run build`              | Build de produção (`nest build`)                                                                                        |
+| `npm run start:prod`         | Sobe o build (`dist/src/main`)                                                                                          |
+| `npm run lint`               | ESLint + Prettier (`--fix`)                                                                                             |
+| `npm run test`               | Testes unitários (Vitest) — `src/**/*.spec.ts`                                                                          |
+| `npm run test:watch`         | Testes unitários em modo watch                                                                                          |
+| `npm run test:cov`           | Testes unitários com relatório de cobertura                                                                             |
+| `npm run test:e2e`           | Testes e2e (Vitest + Supertest) — `test/**/*.e2e-spec.ts`, requer banco no ar                                           |
+| `npm run db:up` / `db:down`  | Sobe/derruba o Postgres local                                                                                           |
+| `npm run prisma:generate`    | Gera o Prisma Client                                                                                                    |
+| `npm run prisma:migrate:dev` | Nova migration a partir do schema                                                                                       |
+| `npm run prisma:seed`        | Popula estados e cidades (snapshot do IBGE) e cria a empresa da plataforma e o SUPER_ADMIN iniciais (idempotente)       |
+| `npm run seed:demo`          | Cria um cadastro completo de demonstração (empresa, agenda, recorrência e pagamentos), usando os services (idempotente) |
+| `npm run prisma:studio`      | UI de inspeção do banco                                                                                                 |
 
 ## CI
 
@@ -121,3 +121,8 @@ das regras de negócio precede o código, nunca o contrário.
 
 Outros documentos (`decisions.md`, `technical-debt.md`, `progress.md`,
 `journal.md`) podem ser adicionados conforme o projeto evoluir.
+
+NotificationModule:
+
+Todo job de envio precisa de um campo de controle (como reminderSentAt) no where, para que cada mensagem saia uma vez só.
+Antes de escalar para várias réplicas, revisar os jobs com efeito não idempotente e adicione o lock distribuído neles.
