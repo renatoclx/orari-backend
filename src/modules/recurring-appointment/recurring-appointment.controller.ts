@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
@@ -17,6 +18,8 @@ import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointmen
 import { RecurringAppointmentService } from "./recurring-appointment.service";
 
 // Sem DELETE: a recorrência é desativada por isActive (ver domain.md).
+@ApiTags("Agendamentos recorrentes")
+@ApiBearerAuth()
 @Controller("recurring-appointments")
 export class RecurringAppointmentController {
   constructor(

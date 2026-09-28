@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateBusinessHourDto } from "./dto/create-business-hour.dto";
@@ -18,6 +19,8 @@ import { UpdateBusinessHourDto } from "./dto/update-business-hour.dto";
 import { BusinessHourService } from "./business-hour.service";
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
+@ApiTags("Horário de funcionamento")
+@ApiBearerAuth()
 @Controller("business-hours")
 export class BusinessHourController {
   constructor(private readonly businessHourService: BusinessHourService) {}

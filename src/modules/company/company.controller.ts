@@ -8,6 +8,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -18,6 +19,8 @@ import { FindCompaniesQueryDto } from "./dto/find-companies-query.dto";
 import { UpdateCompanyDto } from "./dto/update-company.dto";
 
 // Sem DELETE: empresas são inativadas via PATCH (isActive: false).
+@ApiTags("Empresas")
+@ApiBearerAuth()
 @Controller("companies")
 export class CompanyController {
   constructor(private readonly companyService: CompanyService) {}

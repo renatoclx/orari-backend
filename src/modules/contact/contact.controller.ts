@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { FindOwnedQueryDto } from "../../common/dto/find-owned-query.dto";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
@@ -18,6 +19,8 @@ import { CreateContactDto } from "./dto/create-contact.dto";
 import { UpdateContactDto } from "./dto/update-contact.dto";
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
+@ApiTags("Contatos")
+@ApiBearerAuth()
 @Controller("contacts")
 export class ContactController {
   constructor(private readonly contactService: ContactService) {}

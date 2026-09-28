@@ -1,4 +1,4 @@
-import { OmitType, PartialType } from "@nestjs/mapped-types";
+import { OmitType, PartialType } from "@nestjs/swagger";
 import { CreateUserDto } from "./create-user.dto";
 
 // A senha tem rota própria (PATCH /users/:id/password) e a empresa do usuário não muda.

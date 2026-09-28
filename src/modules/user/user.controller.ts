@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -20,6 +21,8 @@ import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { UserService } from "./user.service";
 
+@ApiTags("Usuários")
+@ApiBearerAuth()
 @Controller("users")
 // O alcance de cada tipo (empresa, contas visíveis) é aplicado no UserService.
 @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)

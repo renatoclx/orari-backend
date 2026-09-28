@@ -1,4 +1,4 @@
-import { OmitType, PartialType } from "@nestjs/mapped-types";
+import { OmitType, PartialType } from "@nestjs/swagger";
 import { CreateAddressDto } from "./create-address.dto";
 
 // O dono (empresa ou pessoa) é definido na criação e não pode ser trocado.
