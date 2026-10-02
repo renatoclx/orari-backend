@@ -65,6 +65,12 @@ type RecurringAppointmentWithDays = Prisma.RecurringAppointmentGetPayload<
  *
  * Não existe exclusão (ver domain.md): a recorrência é desativada por isActive.
  * Os dias fazem parte da recorrência e são substituídos em bloco.
+ *
+ * Este service não grava Appointment diretamente: ele calcula QUANDO cada
+ * ocorrência deveria acontecer (buildOccurrences) e delega a criação/
+ * cancelamento ao AppointmentService (createFromRecurrence,
+ * cancelFutureFromRecurrence), que é quem valida janela de atendimento e
+ * conflito de horário. Por isso as regras de agenda em si ficam lá, não aqui.
  */
 @Injectable()
 export class RecurringAppointmentService {
@@ -83,6 +89,8 @@ export class RecurringAppointmentService {
     const { days, ...data } = dto;
 
     await this.ensureParticipants(dto.clientId, dto.professionalId, companyId);
+    // O serviço precisa ser buscado antes de validar os dias: a duração dele
+    // é o que define quantos minutos cada dia precisa reservar.
     const service = await this.serviceService.findActive(
       dto.serviceId,
       companyId,
@@ -323,6 +331,9 @@ export class RecurringAppointmentService {
       }
     }
 
+    // Agrupa por dia da semana e ordena cada grupo por horário de início: assim,
+    // uma sobreposição só pode acontecer entre vizinhos na lista ordenada — não
+    // é preciso comparar todos os pares com todos.
     const byWeekDay = new Map<WeekDay, RecurringDayDto[]>();
     for (const day of days) {
       byWeekDay.set(day.weekDay, [...(byWeekDay.get(day.weekDay) ?? []), day]);
@@ -333,6 +344,8 @@ export class RecurringAppointmentService {
         a.startTime.localeCompare(b.startTime),
       );
 
+      // Basta comparar cada dia com o anterior (já ordenado): se o início dele
+      // vem antes do fim do anterior, os dois se sobrepõem.
       const overlaps = ordered.some(
         (day, index) => index > 0 && day.startTime < ordered[index - 1].endTime,
       );
@@ -407,6 +420,23 @@ export class RecurringAppointmentService {
 
     return occurrences;
   }
+
+  /*
+   * As cinco funções abaixo (toDateParts, addDays, weekDayIndex,
+   * isBeforeOrSameDay, advanceOneDay) formam um pequeno "kit de calendário"
+   * usado só pelo buildOccurrences, para andar dia a dia entre o início e o
+   * fim da recorrência.
+   *
+   * Por que não usar `Date` diretamente como cursor? Porque `Date` representa
+   * um instante (amarrado a um fuso), e o que se quer aqui é andar por dias de
+   * calendário "puros" (2026-10-01, 2026-10-02, ...), sem hora nem fuso — do
+   * contrário, perto da virada do dia no fuso da empresa, o cursor correria o
+   * risco de pular ou repetir um dia (mesmo problema explicado para
+   * `startDate`/`endDate` no comentário de buildOccurrences). Por isso o
+   * cursor é um objeto simples `{ year, month, day }`, e `Date.UTC(...)` entra
+   * só como calculadora (ela já sabe lidar com "dia 32" virando o mês
+   * seguinte, ano bissexto etc.), nunca como o valor guardado.
+   */
 
   // Data pura (coluna `date`): o dia é o que está gravado, sem conversão de fuso.
   private toDateParts(value: Date) {

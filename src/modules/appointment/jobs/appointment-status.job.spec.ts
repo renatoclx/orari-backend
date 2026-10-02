@@ -78,7 +78,7 @@ describe("AppointmentStatusJob", () => {
         startAt: { lte: now },
         endAt: { gt: now },
       },
-      data: { status: AppointmentStatus.IN_PROGRESS },
+      data: { status: AppointmentStatus.IN_PROGRESS, updatedAt: now },
     });
 
     expect(prismaMock.appointment.updateMany).toHaveBeenNthCalledWith(2, {
@@ -86,7 +86,7 @@ describe("AppointmentStatusJob", () => {
         status: AppointmentStatus.IN_PROGRESS,
         endAt: { lte: now },
       },
-      data: { status: AppointmentStatus.COMPLETED },
+      data: { status: AppointmentStatus.COMPLETED, updatedAt: now },
     });
 
     expect(prismaMock.appointment.updateMany).toHaveBeenNthCalledWith(3, {
@@ -96,7 +96,7 @@ describe("AppointmentStatusJob", () => {
         },
         endAt: { lte: now },
       },
-      data: { status: AppointmentStatus.COMPLETED },
+      data: { status: AppointmentStatus.COMPLETED, updatedAt: now },
     });
   });
 
