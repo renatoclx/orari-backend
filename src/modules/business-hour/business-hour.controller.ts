@@ -5,12 +5,13 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseArrayPipe,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiBody, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateBusinessHourDto } from "./dto/create-business-hour.dto";
@@ -31,6 +32,18 @@ export class BusinessHourController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.businessHourService.create(dto, currentUser.companyId);
+  }
+
+  // Cria várias janelas de uma vez (ex.: a semana inteira no setup da
+  // empresa). Corpo é um array no lugar de um único objeto.
+  @Post("batch")
+  @ApiBody({ type: [CreateBusinessHourDto] })
+  createMany(
+    @Body(new ParseArrayPipe({ items: CreateBusinessHourDto }))
+    dtos: CreateBusinessHourDto[],
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.businessHourService.createMany(dtos, currentUser.companyId);
   }
 
   @Get()
