@@ -20,7 +20,12 @@ export class CreateAddressDto extends OwnerDto {
 
   @IsString()
   @IsNotEmpty()
-  publicPlace!: string;
+  street!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  neighborhood?: string;
 
   @IsString()
   @IsNotEmpty()

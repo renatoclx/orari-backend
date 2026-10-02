@@ -2,6 +2,7 @@ import { ForbiddenException } from "@nestjs/common";
 import { UserType } from "../../../generated/prisma/enums";
 import { AuthenticatedUser } from "../interfaces/authenticated-user.interface";
 
+// Centraliza a checagem de tipo, para não espalhar a comparação com o enum pelo código.
 export const isSuperAdmin = (user: AuthenticatedUser) =>
   user.type === UserType.SUPER_ADMIN;
 

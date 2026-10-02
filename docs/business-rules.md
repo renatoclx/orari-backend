@@ -67,6 +67,7 @@
 - O nome do serviço é único entre os serviços não excluídos da mesma empresa.
 - A duração é informada em minutos e é o que define o fim dos agendamentos desse serviço.
 - Serviços inativos não podem ser usados em novos agendamentos nem em recorrências.
+- A cor (`color`), quando informada, deve ser uma string hexadecimal válida (`#RGB` ou `#RRGGBB`).
 
 ## Agendamentos
 
@@ -91,6 +92,7 @@
 - Dias sem janela cadastrada são considerados fechados.
 - Enquanto a empresa não cadastrar nenhuma janela, o horário não é restringido: a regra passa a valer a partir do primeiro cadastro.
 - Um atendimento precisa começar e terminar dentro da mesma janela.
+- `POST /business-hours/batch` cadastra várias janelas de uma vez (ex.: a semana inteira no setup da empresa). É tudo ou nada: valem as mesmas regras do cadastro individual, tanto contra janelas já existentes quanto entre os itens do próprio lote.
 
 ## Agendamentos recorrentes
 
@@ -137,3 +139,12 @@
 
 - Estados e cidades são mantidos via seed (base do IBGE) e são somente leitura pela API.
 - A busca de cidades por nome é parcial e ignora acentos e maiúsculas (ex.: "sao paulo" encontra "São Paulo"). A mesma regra vale para as buscas por nome de pessoas, serviços e métodos de pagamento.
+
+## Status dos Agendamentos
+
+- SCHEDULED - Quando o agendamento é criado na aplicação, status inicial.
+- CONFIRMED - Quando o cliente confirma o agendamento (feature futura).
+- IN_PROGRESS - Quando o agendamento começa a ser válido através do dia e horário agendado.
+- COMPLETED - Quando o atendimento é encerrado, baseado no horário final do agendamento.
+- CANCELLED - Quando o agendamento é encerrado manualmente pelo usuário.
+- NO_SHOW - Será implementado futuramente.

@@ -6,12 +6,15 @@ import {
   Patch,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { FindNotificationsQueryDto } from "./dto/find-notifications-query.dto";
 import { NotificationService } from "./notification.service";
 
 // Sem POST nem DELETE: as notificações são criadas e resolvidas pela própria API.
+@ApiTags("Notificações")
+@ApiBearerAuth()
 @Controller("notifications")
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}

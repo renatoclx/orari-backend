@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
@@ -18,6 +19,8 @@ import { UpdatePaymentDto } from "./dto/update-payment.dto";
 import { PaymentService } from "./payment.service";
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
+@ApiTags("Pagamentos")
+@ApiBearerAuth()
 @Controller("payments")
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}

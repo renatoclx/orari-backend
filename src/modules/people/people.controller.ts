@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePeopleDto } from "./dto/create-people.dto";
@@ -18,6 +19,8 @@ import { UpdatePeopleDto } from "./dto/update-people.dto";
 import { PeopleService } from "./people.service";
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
+@ApiTags("Pessoas")
+@ApiBearerAuth()
 @Controller("people")
 export class PeopleController {
   constructor(private readonly peopleService: PeopleService) {}

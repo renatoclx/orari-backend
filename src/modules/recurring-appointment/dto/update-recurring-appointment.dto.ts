@@ -1,4 +1,4 @@
-import { PartialType } from "@nestjs/mapped-types";
+import { PartialType } from "@nestjs/swagger";
 import { CreateRecurringAppointmentDto } from "./create-recurring-appointment.dto";
 
 // Quando `days` é informado, a lista substitui inteiramente os dias atuais.

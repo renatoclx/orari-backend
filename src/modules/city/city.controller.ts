@@ -1,7 +1,10 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CityService } from "./city.service";
 import { FindCitiesQueryDto } from "./dto/find-cities-query.dto";
 
+@ApiTags("Cidades")
+@ApiBearerAuth()
 @Controller("cities")
 export class CityController {
   constructor(private readonly cityService: CityService) {}

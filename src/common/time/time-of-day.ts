@@ -8,10 +8,14 @@
  */
 export const TIME_OF_DAY_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+// A data de referência é fixa e em UTC, para que o valor gravado não dependa
+// do fuso do processo que está rodando a API.
 export function parseTimeOfDay(value: string): Date {
   return new Date(`1970-01-01T${value}:00.000Z`);
 }
 
+// toISOString() sempre devolve "1970-01-01THH:MM:SS.sssZ" para este valor,
+// então o horário está sempre nas mesmas posições da string.
 export function formatTimeOfDay(value: Date): string {
   return value.toISOString().slice(11, 16);
 }

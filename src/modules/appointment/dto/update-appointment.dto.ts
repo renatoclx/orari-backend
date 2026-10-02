@@ -1,4 +1,4 @@
-import { PartialType } from "@nestjs/mapped-types";
+import { PartialType } from "@nestjs/swagger";
 import { IsEnum, IsOptional } from "class-validator";
 import { AppointmentStatus } from "../../../../generated/prisma/enums";
 import { CreateAppointmentDto } from "./create-appointment.dto";

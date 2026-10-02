@@ -40,6 +40,8 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return formatter;
 }
 
+// O Intl só valida o identificador na construção do formatador; não há API
+// dedicada para checar um fuso sem tentar usá-lo.
 export function isValidTimeZone(timeZone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone });

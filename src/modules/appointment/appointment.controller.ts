@@ -8,6 +8,7 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { AppointmentService } from "./appointment.service";
@@ -16,6 +17,8 @@ import { FindAppointmentsQueryDto } from "./dto/find-appointments-query.dto";
 import { UpdateAppointmentDto } from "./dto/update-appointment.dto";
 
 // Sem DELETE: agendamentos são cancelados pelo status (ver domain.md).
+@ApiTags("Agendamentos")
+@ApiBearerAuth()
 @Controller("appointments")
 export class AppointmentController {
   constructor(private readonly appointmentService: AppointmentService) {}

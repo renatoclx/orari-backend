@@ -1,4 +1,4 @@
-import { OmitType, PartialType } from "@nestjs/mapped-types";
+import { OmitType, PartialType } from "@nestjs/swagger";
 import { CreatePaymentDto } from "./create-payment.dto";
 
 // O agendamento é definido na criação: cada agendamento tem um pagamento.

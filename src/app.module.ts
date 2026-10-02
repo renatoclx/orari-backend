@@ -17,6 +17,7 @@ import { RecurringAppointmentModule } from "./modules/recurring-appointment/recu
 import { ServiceModule } from "./modules/service/service.module";
 import { StateModule } from "./modules/state/state.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
   imports: [
@@ -33,6 +34,9 @@ import { PrismaModule } from "./prisma/prisma.module";
     AddressModule,
     ServiceModule,
     BusinessHourModule,
+    // forRoot(0) Inicializa o motor do agendamento uma vez na aplicação quando
+    //houver um provider com @Cron()
+    ScheduleModule.forRoot(),
     AppointmentModule,
     RecurringAppointmentModule,
     NotificationModule,

@@ -40,7 +40,7 @@ describe("AddressService", () => {
   const dto: CreateAddressDto = {
     type: "MAIN",
     cep: "30130000",
-    publicPlace: "Avenida Afonso Pena",
+    street: "Avenida Afonso Pena",
     number: "100",
     cityId: "city-1",
     companyId: COMPANY_ID,

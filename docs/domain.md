@@ -102,6 +102,27 @@
 
 ---
 
+## RefreshToken
+
+- Representa uma sessão de autenticação renovável de um usuário (ver `auth.md`).
+
+### Atributos
+
+| Nome      | Descrição                                          |
+| --------- | --------------------------------------------------- |
+| id        | Identificador único                                 |
+| userId    | Código do usuário                                   |
+| tokenHash | Hash do token (o valor bruto nunca é persistido)     |
+| expiresAt | Data de expiração                                    |
+| revokedAt | Data em que o token foi revogado (opcional)          |
+
+### Relacionamentos
+
+- Um refresh token pertence a um usuário.
+- Um usuário pode ter mais de um refresh token (uma sessão por dispositivo).
+
+---
+
 ## People
 
 - Representa uma pessoa cadastrada na aplicação.
@@ -122,6 +143,7 @@
 | birthDate  | Data de nascimento   |
 | profession | Profissão (opcional) |
 | type       | Tipo de pessoa       |
+| note       | Observações (opcional) |
 | companyId  | Código da empresa    |
 
 ### Relacionamentos
@@ -172,17 +194,18 @@
 
 ### Atributos
 
-| Nome        | Descrição                    |
-| ----------- | ---------------------------- |
-| id          | Identificador único          |
-| type        | Tipo de endereço             |
-| cep         | Código postal                |
-| publicPlace | Logradouro                   |
-| number      | Número                       |
-| complement  | Complemento (opcional)       |
-| peopleId    | Código da Pessoa (opcional)  |
-| companyId   | Código da empresa (opcional) |
-| cityId      | Código da cidade             |
+| Nome         | Descrição                    |
+| ------------ | ----------------------------- |
+| id           | Identificador único           |
+| type         | Tipo de endereço              |
+| cep          | Código postal                 |
+| street       | Logradouro                    |
+| neighborhood | Bairro (opcional)              |
+| number       | Número                        |
+| complement   | Complemento (opcional)        |
+| peopleId     | Código da Pessoa (opcional)   |
+| companyId    | Código da empresa (opcional)  |
+| cityId       | Código da cidade              |
 
 ### Relacionamentos
 
@@ -206,6 +229,7 @@
 | duration    | Duração do serviço em minutos         |
 | companyId   | Empresa a qual pertence o serviço     |
 | isActive    | Serviço Ativo ou inativo              |
+| color       | Cor associada ao serviço (opcional)   |
 
 ### Relacionamentos
 

@@ -1,17 +1,37 @@
 # Autenticação
 
-> Implementação atual: `AuthModule` (login, `JwtStrategy`, guards globais
-> `JwtAuthGuard` e `RolesGuard`) e `UserModule` (CRUD em `/users` e
-> redefinição de senha). Rotas isentas de autenticação usam `@Public()`; rotas
-> restritas por tipo de usuário usam `@Roles()`. O primeiro SUPER_ADMIN é
-> criado pelo seed (`npm run prisma:seed`, variáveis `SEED_*`). As regras de
-> acesso estão em `business-rules.md`.
+> Implementação atual: `AuthModule` (login, refresh, logout, `JwtStrategy`,
+> guards globais `JwtAuthGuard` e `RolesGuard`) e `UserModule` (CRUD em
+> `/users` e redefinição de senha). Rotas isentas de autenticação usam
+> `@Public()`; rotas restritas por tipo de usuário usam `@Roles()`. O
+> primeiro SUPER_ADMIN é criado pelo seed (`npm run prisma:seed`, variáveis
+> `SEED_*`). As regras de acesso estão em `business-rules.md`.
 
 ## Estratégia
 
-- A autenticação será realizada através de JWT;
-- O tempo de expiração do Access Token será definido pela configuração da aplicação.
-- Não implementar refresh token;
+- A autenticação será realizada através de JWT.
+- O tempo de expiração do access token será definido pela configuração da
+  aplicação (`JWT_EXPIRES_IN`, padrão `1d`).
+- Refresh token: `POST /auth/login` retorna `{ accessToken, refreshToken }`.
+  Quando o access token expira, `POST /auth/refresh` troca um refresh token
+  válido por um novo par — sem pedir a senha de novo.
+
+## Refresh token
+
+- É uma string aleatória opaca (não é JWT), gerada com alta entropia; só o
+  seu hash (SHA-256) é persistido, nunca o valor bruto.
+- Validade própria, configurada por `JWT_REFRESH_EXPIRES_IN` (padrão `7d`),
+  independente do access token.
+- **Rotação:** cada refresh token só pode ser usado uma vez. A cada
+  `POST /auth/refresh`, o token apresentado é revogado e um novo par
+  (access + refresh) é emitido. Um token já revogado ou expirado é
+  recusado (401).
+- **Múltiplas sessões:** cada login gera um refresh token independente
+  (tabela `RefreshToken`), permitindo o mesmo usuário autenticado em mais
+  de um dispositivo ao mesmo tempo; revogar um não afeta os demais.
+- As mesmas checagens do login valem no refresh: usuário precisa continuar
+  ativo e a empresa, ativa — caso contrário, o token é revogado e a troca é
+  recusada.
 
 ## Tokens
 
@@ -57,6 +77,8 @@ Exemplo:
 
 ## Logout
 
-- O logout ocorre apenas no cliente através da remoção do token.
-- Não haverá blacklist de tokens.
-- Sempre remover o token após a realização de um logout.
+- `POST /auth/logout` revoga o refresh token informado, para que não possa
+  mais ser trocado por um novo access token.
+- O access token em si não é invalidado (não há blacklist dele): continua
+  válido até sua própria expiração (`JWT_EXPIRES_IN`).
+- O cliente sempre remove ambos os tokens localmente após o logout.

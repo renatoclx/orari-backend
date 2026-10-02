@@ -70,6 +70,7 @@ Todas as entidades persistentes devem possuir:
 - **RecurringAppointment**: não possui exclusão; é desativado por `isActive`. Não utiliza `deletedAt`.
 - **RecurringDay**: faz parte do agendamento recorrente e é substituído em bloco junto com ele, por isso usa exclusão física (`onDelete: Cascade`). Não utiliza `deletedAt`.
 - **Notification**: não possui exclusão; é resolvida (`resolvedAt`). Não utiliza `deletedAt`.
+- **RefreshToken**: não é uma entidade de domínio, é um artefato de sessão (ver `auth.md`). Não possui exclusão; é revogado (`revokedAt`). Não utiliza `deletedAt`.
 
 ## Índices
 
