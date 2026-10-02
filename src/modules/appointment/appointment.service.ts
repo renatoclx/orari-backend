@@ -33,7 +33,11 @@ export interface RecurrenceAppointmentData {
   serviceId: string;
 }
 
-// Aceita tanto o PrismaService quanto o cliente de uma transação em andamento.
+// Aceita tanto o PrismaService quanto o cliente de uma transação em andamento
+// (tx dentro de $transaction tem outro tipo no Prisma). Necessário porque
+// createFromRecurrence/cancelFutureFromRecurrence rodam dentro da transação
+// aberta pelo RecurringAppointmentService, e precisam gravar com o mesmo `tx`
+// — nunca com o `this.prisma` direto, ou ficariam fora da transação.
 type PrismaClientLike = Pick<PrismaService, "appointment">;
 
 /**
@@ -42,6 +46,11 @@ type PrismaClientLike = Pick<PrismaService, "appointment">;
  *
  * Não existe exclusão (ver domain.md): o ciclo de vida é controlado pelo status,
  * e cancelar é mudar o status para CANCELLED.
+ *
+ * createFromRecurrence e cancelFutureFromRecurrence existem para serem
+ * chamados pelo RecurringAppointmentService (nunca por um controller): é aqui
+ * que ficam as regras de conflito de horário e janela de atendimento, e a
+ * recorrência as reaproveita em vez de duplicá-las.
  */
 @Injectable()
 export class AppointmentService {
@@ -52,6 +61,11 @@ export class AppointmentService {
     private readonly businessHourService: BusinessHourService,
   ) {}
 
+  // Ordem das checagens: primeiro as baratas e sem banco (data no futuro),
+  // depois as que dependem de outras entidades, e por último as que batem
+  // contra a agenda (janela de atendimento, depois conflito de horário) — a
+  // mais cara é a última, para não gastar uma consulta de conflito num
+  // agendamento que já ia falhar por outro motivo.
   async create(
     dto: CreateAppointmentDto,
     companyId: string,

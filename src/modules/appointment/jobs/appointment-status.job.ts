@@ -39,7 +39,7 @@ export class AppointmentStatusJob {
           startAt: { lte: now }, // lte: less than or equal (<=)
           endAt: { gt: now }, // gt: greater than (>)
         },
-        data: { status: AppointmentStatus.IN_PROGRESS },
+        data: { status: AppointmentStatus.IN_PROGRESS, updatedAt: new Date() },
       });
 
       // Devido a endAt estar como now em todas as chamadas, não importa a ordem de execução dos jobs
@@ -49,7 +49,7 @@ export class AppointmentStatusJob {
           status: AppointmentStatus.IN_PROGRESS,
           endAt: { lte: now },
         },
-        data: { status: AppointmentStatus.COMPLETED },
+        data: { status: AppointmentStatus.COMPLETED, updatedAt: new Date() },
       });
 
       // Verifica se existe chamado antigo não completado e altera o status para COMPLETED
@@ -60,7 +60,7 @@ export class AppointmentStatusJob {
           },
           endAt: { lte: now },
         },
-        data: { status: AppointmentStatus.COMPLETED },
+        data: { status: AppointmentStatus.COMPLETED, updatedAt: new Date() },
       });
 
       // Só mostra a mensagem se de fato houver alteração de registro

@@ -15,8 +15,10 @@ const time = (value: string) => new Date(`1970-01-01T${value}:00.000Z`);
 describe("BusinessHourService", () => {
   let businessHourService: BusinessHourService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Suporta as duas formas: lista de operações e transação interativa.
+    $transaction: vi.fn(
+      (arg: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+        typeof arg === "function" ? arg(prismaMock) : Promise.all(arg),
     ),
     businessHour: {
       create: vi.fn(),
@@ -96,6 +98,82 @@ describe("BusinessHourService", () => {
         businessHourService.create(dto, COMPANY_ID),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prismaMock.businessHour.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("createMany", () => {
+    const monday = {
+      weekDay: "MONDAY" as const,
+      openAt: "09:00",
+      closeAt: "12:00",
+    };
+    const tuesday = {
+      weekDay: "TUESDAY" as const,
+      openAt: "09:00",
+      closeAt: "12:00",
+    };
+
+    it("deve criar todos os itens do lote numa única transação", async () => {
+      prismaMock.businessHour.findFirst.mockResolvedValue(null);
+      prismaMock.businessHour.create
+        .mockResolvedValueOnce({ ...stored, weekDay: "MONDAY" })
+        .mockResolvedValueOnce({ ...stored, weekDay: "TUESDAY" });
+
+      const result = await businessHourService.createMany(
+        [monday, tuesday],
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.businessHour.create).toHaveBeenCalledTimes(2);
+      expect(result).toHaveLength(2);
+      expect(result.map((item) => item.weekDay)).toEqual(["MONDAY", "TUESDAY"]);
+    });
+
+    it("deve recusar o lote inteiro se um item tiver fechamento antes da abertura", async () => {
+      await expect(
+        businessHourService.createMany(
+          [monday, { ...tuesday, openAt: "18:00", closeAt: "09:00" }],
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.businessHour.create).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar quando dois itens do mesmo lote se sobrepõem", async () => {
+      await expect(
+        businessHourService.createMany(
+          [monday, { ...monday, openAt: "11:00", closeAt: "14:00" }],
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.businessHour.create).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar itens do mesmo lote que apenas se encostam", async () => {
+      prismaMock.businessHour.findFirst.mockResolvedValue(null);
+      prismaMock.businessHour.create.mockResolvedValue(stored);
+
+      await expect(
+        businessHourService.createMany(
+          [monday, { ...monday, openAt: "12:00", closeAt: "15:00" }],
+          COMPANY_ID,
+        ),
+      ).resolves.toHaveLength(2);
+    });
+
+    it("deve recusar o lote quando um item conflita com uma janela já existente", async () => {
+      prismaMock.businessHour.findFirst
+        .mockResolvedValueOnce(null) // monday: livre
+        .mockResolvedValueOnce({ id: "hour-0" }); // tuesday: conflita
+      prismaMock.businessHour.create.mockResolvedValueOnce(stored);
+
+      await expect(
+        businessHourService.createMany([monday, tuesday], COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+      // O monday já tinha sido criado dentro da transação; o teste só confirma
+      // que a função rejeita — a própria transação é quem desfaz no Postgres
+      // de verdade (o mock aqui não simula rollback).
+      expect(prismaMock.businessHour.create).toHaveBeenCalledTimes(1);
     });
   });
 

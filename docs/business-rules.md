@@ -92,6 +92,7 @@
 - Dias sem janela cadastrada são considerados fechados.
 - Enquanto a empresa não cadastrar nenhuma janela, o horário não é restringido: a regra passa a valer a partir do primeiro cadastro.
 - Um atendimento precisa começar e terminar dentro da mesma janela.
+- `POST /business-hours/batch` cadastra várias janelas de uma vez (ex.: a semana inteira no setup da empresa). É tudo ou nada: valem as mesmas regras do cadastro individual, tanto contra janelas já existentes quanto entre os itens do próprio lote.
 
 ## Agendamentos recorrentes
 

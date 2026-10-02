@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { BusinessHour } from "../../../generated/prisma/client";
+import { WeekDay } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import {
   formatTimeOfDay,
@@ -25,6 +26,11 @@ import { UpdateBusinessHourDto } from "./dto/update-business-hour.dto";
 // Colunas `time` vêm como Date na data de referência 1970-01-01 em UTC.
 const minutesOfStoredTime = (value: Date) =>
   value.getUTCHours() * 60 + value.getUTCMinutes();
+
+// Aceita tanto o PrismaService quanto o cliente de uma transação em andamento
+// (ver o mesmo padrão em appointment.service.ts) — usado por createMany, que
+// roda tudo dentro de uma única transação.
+type PrismaClientLike = Pick<PrismaService, "businessHour">;
 
 // Como a janela sai na API: horários em "HH:MM".
 export interface BusinessHourResponse extends Omit<
@@ -67,6 +73,47 @@ export class BusinessHourService {
     });
 
     return this.toResponse(created);
+  }
+
+  /**
+   * Cria várias janelas de uma vez (ex.: toda a semana no setup inicial da
+   * empresa). Tudo roda em uma única transação: se qualquer horário for
+   * inválido ou conflitar — com um já existente ou com outro item do mesmo
+   * lote — nada é criado.
+   */
+  async createMany(
+    dtos: CreateBusinessHourDto[],
+    companyId: string,
+  ): Promise<BusinessHourResponse[]> {
+    for (const dto of dtos) {
+      this.ensureOpensBeforeCloses(dto.openAt, dto.closeAt);
+    }
+    this.ensureBatchDoesNotOverlapItself(dtos);
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const rows: BusinessHour[] = [];
+
+      // Sequencial (não Promise.all): cada checagem de sobreposição precisa
+      // enxergar as linhas já criadas pelos itens anteriores do mesmo lote.
+      for (const dto of dtos) {
+        await this.ensureDoesNotOverlap(dto, companyId, undefined, tx);
+
+        rows.push(
+          await tx.businessHour.create({
+            data: {
+              weekDay: dto.weekDay,
+              openAt: parseTimeOfDay(dto.openAt),
+              closeAt: parseTimeOfDay(dto.closeAt),
+              companyId,
+            },
+          }),
+        );
+      }
+
+      return rows;
+    });
+
+    return created.map((item) => this.toResponse(item));
   }
 
   async findAll(
@@ -148,6 +195,11 @@ export class BusinessHourService {
    *
    * O dia da semana e os horários são lidos no fuso da empresa: uma janela
    * "09:00–18:00" vale no relógio dela, não em UTC.
+   *
+   * Chamado pelo AppointmentService — tanto para um agendamento avulso
+   * (create/update) quanto para cada ocorrência gerada por uma recorrência
+   * (createFromRecurrence). É o único ponto de entrada; este service nunca é
+   * acessado diretamente por controllers de outro módulo.
    */
   async ensureWithinBusinessHours(
     companyId: string,
@@ -215,8 +267,9 @@ export class BusinessHourService {
     { weekDay, openAt, closeAt }: CreateBusinessHourDto,
     companyId: string,
     ignoreId?: string,
+    db: PrismaClientLike = this.prisma,
   ) {
-    const overlap = await this.prisma.businessHour.findFirst({
+    const overlap = await db.businessHour.findFirst({
       where: {
         companyId,
         weekDay,
@@ -232,6 +285,36 @@ export class BusinessHourService {
       throw new ConflictException(
         "Já existe uma janela de atendimento neste intervalo",
       );
+    }
+  }
+
+  /**
+   * Mesma regra de sobreposição de ensureDoesNotOverlap, mas comparando os
+   * itens do lote entre si (ainda não existem no banco, então uma consulta
+   * não os enxergaria). Mesmo algoritmo usado em
+   * RecurringAppointmentService.ensureDaysAreValid: agrupa por dia da semana,
+   * ordena por horário de início e compara só vizinhos.
+   */
+  private ensureBatchDoesNotOverlapItself(dtos: CreateBusinessHourDto[]) {
+    const byWeekDay = new Map<WeekDay, CreateBusinessHourDto[]>();
+    for (const dto of dtos) {
+      byWeekDay.set(dto.weekDay, [...(byWeekDay.get(dto.weekDay) ?? []), dto]);
+    }
+
+    for (const [weekDay, sameDay] of byWeekDay) {
+      const ordered = [...sameDay].sort((a, b) =>
+        a.openAt.localeCompare(b.openAt),
+      );
+
+      const overlaps = ordered.some(
+        (dto, index) => index > 0 && dto.openAt < ordered[index - 1].closeAt,
+      );
+
+      if (overlaps) {
+        throw new ConflictException(
+          `Há horários sobrepostos em ${weekDay} no mesmo lote`,
+        );
+      }
     }
   }
 
