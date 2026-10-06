@@ -59,6 +59,8 @@ Ao implementar funcionalidades, considere:
 - Toda implementação deve respeitar estritamente o escopo solicitado.
 - Não implemente funcionalidades futuras "aproveitando a oportunidade".
 - Caso uma funcionalidade dependa de outra ainda não solicitada, informe essa dependência e aguarde aprovação.
+- Utilizar padrão clean code e SOLID na codificação.
+- Documentar (comentar) o código para melhor entendimento.
 
 ---
 
