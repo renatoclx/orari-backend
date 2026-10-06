@@ -41,15 +41,11 @@ export interface RecurringAppointmentResponse {
   days: RecurringDayDto[];
 }
 
-/**
- * Até onde gerar agendamentos de uma vez. Recorrências sem data final são
- * "abertas": o horizonte não avança sozinho — quando ele está acabando, uma
- * notificação avisa a empresa, que estende manualmente (ver NotificationService).
- */
-export const GENERATION_HORIZON_DAYS = 90;
+// Período máximo de uma recorrência avulsa (ver docs/business-rules.md).
+export const MAX_RECURRENCE_DAYS = 60;
 
-// Com menos dias gerados do que isto, a recorrência precisa ser estendida.
-export const HORIZON_WARNING_DAYS = 30;
+// Um dia em milissegundos: usado para medir a distância entre duas datas puras.
+const DAY_IN_MS = 86_400_000;
 
 const withDays = {
   include: { days: { orderBy: { startTime: "asc" } } },
@@ -95,6 +91,7 @@ export class RecurringAppointmentService {
       dto.serviceId,
       companyId,
     );
+    // Valida o período antes de gravar: data final obrigatória, em ordem e com até 60 dias.
     this.ensurePeriodIsValid(dto.startDate, dto.endDate);
     this.ensureDaysAreValid(days, service.duration);
 
@@ -121,7 +118,7 @@ export class RecurringAppointmentService {
           this.buildOccurrences(
             days,
             recurring.startDate,
-            recurring.endDate,
+            dto.endDate,
             service.duration,
             timeZone,
             new Date(),
@@ -209,10 +206,14 @@ export class RecurringAppointmentService {
       companyId,
     );
 
-    this.ensurePeriodIsValid(
-      dto.startDate ?? current.startDate,
-      dto.endDate === undefined ? current.endDate : dto.endDate,
-    );
+    // Só valida o período quando ele veio no payload. Quando um dos lados não veio,
+    // o valor atual do registro completa a regra.
+    if (dto.startDate !== undefined || dto.endDate !== undefined) {
+      this.ensurePeriodIsValid(
+        dto.startDate ?? current.startDate,
+        dto.endDate ?? current.endDate,
+      );
+    }
 
     if (days) {
       this.ensureDaysAreValid(days, service.duration);
@@ -249,7 +250,11 @@ export class RecurringAppointmentService {
         new Date(),
       );
 
+      // Recorrências antigas podem ter sido criadas sem data final: regerar exige uma.
+      // Esta validação roda dentro da transação: se falhar, o cancelamento acima é desfeito.
       if (recurring.isActive) {
+        this.ensurePeriodIsValid(recurring.startDate, recurring.endDate);
+
         await this.appointmentService.createFromRecurrence(
           tx,
           {
@@ -304,9 +309,34 @@ export class RecurringAppointmentService {
     }
   }
 
-  private ensurePeriodIsValid(startDate: Date, endDate?: Date | null) {
-    if (endDate && endDate < startDate) {
+  /**
+   * O período vai da data inicial à final, que é obrigatória e não pode passar
+   * de MAX_RECURRENCE_DAYS. Sem ele, não há como gerar a agenda por completo.
+   *
+   * A assinatura `asserts endDate is Date` faz o TypeScript tratar `endDate`
+   * como Date depois da chamada: quem chama não precisa checar null de novo.
+   */
+  private ensurePeriodIsValid(
+    startDate: Date,
+    endDate: Date | null,
+  ): asserts endDate is Date {
+    if (!endDate) {
+      throw new BadRequestException(
+        "Informe a data final: a recorrência precisa de endDate",
+      );
+    }
+
+    if (endDate < startDate) {
       throw new BadRequestException("endDate deve ser posterior a startDate");
+    }
+
+    const days = Math.round(
+      (endDate.getTime() - startDate.getTime()) / DAY_IN_MS,
+    );
+    if (days > MAX_RECURRENCE_DAYS) {
+      throw new BadRequestException(
+        `O período da recorrência não pode passar de ${MAX_RECURRENCE_DAYS} dias`,
+      );
     }
   }
 
@@ -362,14 +392,13 @@ export class RecurringAppointmentService {
    * Monta os horários que a recorrência ocupa.
    *
    * Gera do maior valor entre o início da recorrência e hoje (não se cria
-   * histórico) até a data final ou, quando não houver, o horizonte padrão. Cada
-   * ocorrência começa no horário reservado do dia e termina conforme a duração
-   * do serviço.
+   * histórico) até a data final. Cada ocorrência começa no horário reservado do
+   * dia e termina conforme a duração do serviço.
    */
   private buildOccurrences(
     days: RecurringDayDto[],
     startDate: Date,
-    endDate: Date | null,
+    endDate: Date,
     serviceDuration: number,
     timeZone: string,
     from: Date,
@@ -383,20 +412,15 @@ export class RecurringAppointmentService {
      * startDate e endDate são datas puras (coluna `date`), então entram pelo
      * calendário, sem conversão de fuso — convertê-las deslocaria o dia (em
      * UTC-3, "2026-12-15" viraria 14/12 às 21h e perderia o último dia).
-     * Já `from` e o horizonte são instantes, e por isso são lidos no fuso.
+     * `from` é um instante, e por isso é lido no fuso da empresa.
      */
     const cursor =
       startDate > from
         ? this.toDateParts(startDate)
         : toZonedParts(from, timeZone);
 
-    const horizon = this.addDays(cursor, GENERATION_HORIZON_DAYS);
-    const endDateParts = endDate ? this.toDateParts(endDate) : null;
-    const limit =
-      endDateParts && this.isBeforeOrSameDay(endDateParts, horizon)
-        ? endDateParts
-        : horizon;
-
+    // A geração termina na data final, que é obrigatória (não há mais horizonte).
+    const limit = this.toDateParts(endDate);
     const occurrences: AppointmentOccurrence[] = [];
 
     while (this.isBeforeOrSameDay(cursor, limit)) {
@@ -422,8 +446,8 @@ export class RecurringAppointmentService {
   }
 
   /*
-   * As cinco funções abaixo (toDateParts, addDays, weekDayIndex,
-   * isBeforeOrSameDay, advanceOneDay) formam um pequeno "kit de calendário"
+   * As quatro funções abaixo (toDateParts, weekDayIndex, isBeforeOrSameDay,
+   * advanceOneDay) formam um pequeno "kit de calendário"
    * usado só pelo buildOccurrences, para andar dia a dia entre o início e o
    * fim da recorrência.
    *
@@ -444,21 +468,6 @@ export class RecurringAppointmentService {
       year: value.getUTCFullYear(),
       month: value.getUTCMonth() + 1,
       day: value.getUTCDate(),
-      hours: 0,
-      minutes: 0,
-    };
-  }
-
-  private addDays(
-    { year, month, day }: { year: number; month: number; day: number },
-    days: number,
-  ) {
-    const shifted = new Date(Date.UTC(year, month - 1, day + days));
-
-    return {
-      year: shifted.getUTCFullYear(),
-      month: shifted.getUTCMonth() + 1,
-      day: shifted.getUTCDate(),
       hours: 0,
       minutes: 0,
     };
@@ -497,117 +506,6 @@ export class RecurringAppointmentService {
     cursor.year = next.getUTCFullYear();
     cursor.month = next.getUTCMonth() + 1;
     cursor.day = next.getUTCDate();
-  }
-
-  /**
-   * Até quando a recorrência já tem agendamentos gerados, e se ela precisa ser
-   * estendida: continua ativa, ainda tem período pela frente e o que foi gerado
-   * termina dentro da janela de aviso.
-   */
-  async findNeedingExtension(companyId: string): Promise<
-    {
-      id: string;
-      generatedUntil: Date | null;
-    }[]
-  > {
-    const recurrences = await this.prisma.recurringAppointment.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        OR: [{ endDate: null }, { endDate: { gt: new Date() } }],
-      },
-      select: {
-        id: true,
-        endDate: true,
-        appointments: {
-          where: { status: { not: "CANCELLED" } },
-          orderBy: { startAt: "desc" },
-          take: 1,
-          select: { startAt: true },
-        },
-      },
-    });
-
-    const warningLimit = new Date();
-    warningLimit.setUTCDate(warningLimit.getUTCDate() + HORIZON_WARNING_DAYS);
-
-    return recurrences
-      .map((recurrence) => ({
-        id: recurrence.id,
-        endDate: recurrence.endDate,
-        generatedUntil: recurrence.appointments[0]?.startAt ?? null,
-      }))
-      .filter(({ endDate, generatedUntil }) => {
-        // Já gerou tudo até o fim previsto: não há o que estender.
-        if (endDate && generatedUntil && generatedUntil >= endDate) {
-          return false;
-        }
-
-        return !generatedUntil || generatedUntil < warningLimit;
-      })
-      .map(({ id, generatedUntil }) => ({ id, generatedUntil }));
-  }
-
-  /**
-   * Estende manualmente o horizonte: gera mais um bloco de agendamentos a partir
-   * do último já gerado. É a ação que resolve a notificação de horizonte.
-   */
-  async extend(id: string, companyId: string): Promise<{ created: number }> {
-    const current = await this.findOne(id, companyId);
-
-    if (!current.isActive) {
-      throw new BadRequestException(
-        "Não é possível estender uma recorrência inativa",
-      );
-    }
-
-    const service = await this.serviceService.findActive(
-      current.serviceId,
-      companyId,
-    );
-    const timeZone = await this.companyService.getTimeZone(companyId);
-
-    const last = await this.prisma.appointment.aggregate({
-      where: { recurringAppointmentId: id, status: { not: "CANCELLED" } },
-      _max: { startAt: true },
-    });
-
-    // Continua do dia seguinte ao último gerado; sem nada gerado, começa de hoje.
-    const from = last._max.startAt
-      ? new Date(last._max.startAt.getTime() + 86_400_000)
-      : new Date();
-
-    const occurrences = this.buildOccurrences(
-      current.days,
-      current.startDate,
-      current.endDate,
-      service.duration,
-      timeZone,
-      from,
-    );
-
-    if (occurrences.length === 0) {
-      throw new BadRequestException(
-        "Não há novos horários a gerar para esta recorrência",
-      );
-    }
-
-    const created = await this.prisma.$transaction((tx) =>
-      this.appointmentService.createFromRecurrence(
-        tx,
-        {
-          companyId,
-          recurringAppointmentId: id,
-          clientId: current.clientId,
-          professionalId: current.professionalId,
-          serviceId: current.serviceId,
-        },
-        occurrences,
-        current.note,
-      ),
-    );
-
-    return { created };
   }
 
   private minutesBetween(startTime: string, endTime: string): number {

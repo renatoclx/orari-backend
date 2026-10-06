@@ -288,13 +288,15 @@ async function main() {
     companyId,
   );
 
-  // Recorrente: terças e quintas às 14h, sem data final — gera 90 dias de agenda.
+  // Recorrente: terças e quintas às 14h, por 60 dias (limite de uma recorrência avulsa).
+  const recurringStart = new Date();
   const recurringAppointment = await recurring.create(
     {
       clientId: clientTwo.id,
       professionalId: professionalTwo.id,
       serviceId: massagem.id,
-      startDate: new Date(),
+      startDate: recurringStart,
+      endDate: new Date(recurringStart.getTime() + 60 * 86_400_000),
       note: "Pacote semanal",
       days: [
         { weekDay: "TUESDAY", startTime: "14:00", endTime: "15:00" },

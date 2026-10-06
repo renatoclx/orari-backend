@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -51,16 +50,6 @@ export class RecurringAppointmentController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.recurringAppointmentService.findOne(id, currentUser.companyId);
-  }
-
-  // Amplia manualmente o horizonte de geração (ver notificações).
-  @Post(":id/extend")
-  @HttpCode(200)
-  extend(
-    @Param("id", ParseUUIDPipe) id: string,
-    @CurrentUser() currentUser: AuthenticatedUser,
-  ) {
-    return this.recurringAppointmentService.extend(id, currentUser.companyId);
   }
 
   @Patch(":id")

@@ -323,7 +323,6 @@ model RecurringAppointment {
   service       Service        @relation(fields: [serviceId], references: [id])
   days          RecurringDay[]
   appointments  Appointment[]
-  notifications Notification[]
 
   @@index([companyId, isActive])
   @@index([professionalId])
@@ -370,8 +369,11 @@ model PaymentMethod {
 
 model Payment {
   id              String        @id @default(uuid())
-  appointmentId   String
+  // Nulo nos pagamentos de contratação de plano (a partir da Etapa 6 do roadmap).
+  appointmentId   String?
   amount          Decimal       @db.Decimal(10, 2)
+  // Vencimento pelo calendário, opcional. Em agendamentos de recorrência, acompanha a data do agendamento.
+  dueDate         DateTime?     @db.Date
   // Preenchido apenas quando o pagamento está PAID.
   paidAt          DateTime?
   paymentMethodId String
@@ -380,7 +382,7 @@ model Payment {
   updatedAt       DateTime?
   deletedAt       DateTime?
 
-  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
@@ -408,30 +410,21 @@ model BusinessHour {
   @@map("business_hours")
 }
 
-enum NotificationType {
-  RECURRING_APPOINTMENT_HORIZON
-}
-
 /**
- * Aviso para a empresa agir. Hoje só existe um tipo: a recorrência está chegando
- * ao fim dos agendamentos já gerados e precisa ser estendida manualmente.
- * Notificações não são excluídas: são resolvidas (ver docs/database.md).
+ * Aviso para a empresa agir. Ainda não há tipos em uso: a entidade é mantida para
+ * implementações futuras. Notificações não são excluídas: são resolvidas (ver docs/database.md).
  */
 model Notification {
-  id                     String           @id @default(uuid())
-  companyId              String
-  type                   NotificationType
-  message                String
-  recurringAppointmentId String?
-  readAt                 DateTime?
-  resolvedAt             DateTime?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime?
+  id         String    @id @default(uuid())
+  companyId  String
+  message    String
+  readAt     DateTime?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime?
 
-  company              Company               @relation(fields: [companyId], references: [id])
-  recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
 
   @@index([companyId, resolvedAt])
-  @@index([recurringAppointmentId])
   @@map("notifications")
 }

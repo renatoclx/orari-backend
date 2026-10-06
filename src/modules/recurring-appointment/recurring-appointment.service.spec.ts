@@ -45,11 +45,15 @@ describe("RecurringAppointmentService", () => {
         { startAt: Date; endAt: Date }[] | undefined
     )?.map((occurrence) => occurrence.startAt.toISOString()) ?? [];
 
+  // 60 dias após o início: o máximo permitido para uma recorrência avulsa.
+  const endDate = new Date("2026-11-30");
+
   const dto: CreateRecurringAppointmentDto = {
     clientId: "client-1",
     professionalId: "professional-1",
     serviceId: "service-1",
     startDate: new Date("2026-10-01"),
+    endDate,
     days: [{ weekDay: "TUESDAY", startTime: "14:00", endTime: "15:00" }],
   };
 
@@ -61,7 +65,7 @@ describe("RecurringAppointmentService", () => {
     professionalId: "professional-1",
     serviceId: "service-1",
     startDate: dto.startDate,
-    endDate: null,
+    endDate,
     note: null,
     isActive: true,
     createdAt: new Date("2026-09-17"),
@@ -113,25 +117,21 @@ describe("RecurringAppointmentService", () => {
   });
 
   describe("geração de agendamentos", () => {
-    it("deve gerar uma ocorrência por dia da semana, respeitando o horizonte de 90 dias", async () => {
+    it("deve gerar uma ocorrência por dia da semana até a data final", async () => {
       await recurringService.create(dto, COMPANY_ID);
 
       const occurrences = generatedOccurrences();
-      // Terças a partir de 2026-10-06 (a de 2026-09-30 é quarta), até o horizonte.
+      // Terças a partir de 2026-10-06 (a de 2026-09-30 é quarta), até 2026-11-30.
       expect(occurrences[0]).toBe("2026-10-06T14:00:00.000Z");
       expect(occurrences[1]).toBe("2026-10-13T14:00:00.000Z");
-      expect(occurrences).toHaveLength(13);
+      expect(occurrences.at(-1)).toBe("2026-11-24T14:00:00.000Z");
+      expect(occurrences).toHaveLength(8);
     });
 
-    it("deve respeitar a data final quando ela é anterior ao horizonte", async () => {
-      const endDate = new Date("2026-10-20");
-      // O service usa a data final do registro criado, e não a do payload.
-      prismaMock.recurringAppointment.create.mockResolvedValueOnce({
-        ...stored,
-        endDate,
-      });
+    it("deve gerar até a data final informada", async () => {
+      const shortEnd = new Date("2026-10-20");
 
-      await recurringService.create({ ...dto, endDate }, COMPANY_ID);
+      await recurringService.create({ ...dto, endDate: shortEnd }, COMPANY_ID);
 
       expect(generatedOccurrences()).toEqual([
         "2026-10-06T14:00:00.000Z",
@@ -141,8 +141,13 @@ describe("RecurringAppointmentService", () => {
     });
 
     it("não deve gerar ocorrências no passado", async () => {
+      // Terças de setembro já passaram em 2026-09-30: a primeira gerada é 2026-10-06.
       await recurringService.create(
-        { ...dto, startDate: new Date("2026-01-01") },
+        {
+          ...dto,
+          startDate: new Date("2026-09-01"),
+          endDate: new Date("2026-10-20"),
+        },
         COMPANY_ID,
       );
 
@@ -209,102 +214,6 @@ describe("RecurringAppointmentService", () => {
       await recurringService.create(dto, COMPANY_ID);
 
       expect(generatedOccurrences()[0]).toBe("2026-10-06T17:00:00.000Z");
-    });
-  });
-
-  describe("extend", () => {
-    beforeEach(() => {
-      prismaMock.appointment.aggregate.mockResolvedValue({
-        _max: { startAt: new Date("2026-12-29T14:00:00.000Z") },
-      });
-      appointmentServiceMock.createFromRecurrence.mockResolvedValue(5);
-    });
-
-    it("deve continuar a partir do último agendamento gerado", async () => {
-      const { created } = await recurringService.extend(
-        "recurring-1",
-        COMPANY_ID,
-      );
-
-      expect(created).toBe(5);
-      // O bloco novo começa depois do último gerado (2026-12-29, terça), e não
-      // de hoje: a próxima terça é 2027-01-05.
-      expect(generatedOccurrences()[0]).toBe("2027-01-05T14:00:00.000Z");
-    });
-
-    it("deve recusar extensão de recorrência inativa", async () => {
-      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
-        ...stored,
-        isActive: false,
-      });
-
-      await expect(
-        recurringService.extend("recurring-1", COMPANY_ID),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it("deve recusar quando não há mais horários a gerar", async () => {
-      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
-        ...stored,
-        endDate: new Date("2026-10-10"),
-      });
-      prismaMock.appointment.aggregate.mockResolvedValue({
-        _max: { startAt: new Date("2026-10-06T14:00:00.000Z") },
-      });
-
-      await expect(
-        recurringService.extend("recurring-1", COMPANY_ID),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-  });
-
-  describe("findNeedingExtension", () => {
-    it("deve apontar recorrência cujo horizonte está acabando", async () => {
-      prismaMock.recurringAppointment.findMany.mockResolvedValue([
-        {
-          id: "recurring-1",
-          endDate: null,
-          // Dentro dos 30 dias de aviso a partir de 2026-09-30.
-          appointments: [{ startAt: new Date("2026-10-10T14:00:00.000Z") }],
-        },
-      ]);
-
-      await expect(
-        recurringService.findNeedingExtension(COMPANY_ID),
-      ).resolves.toEqual([
-        {
-          id: "recurring-1",
-          generatedUntil: new Date("2026-10-10T14:00:00.000Z"),
-        },
-      ]);
-    });
-
-    it("não deve apontar recorrência com horizonte folgado", async () => {
-      prismaMock.recurringAppointment.findMany.mockResolvedValue([
-        {
-          id: "recurring-1",
-          endDate: null,
-          appointments: [{ startAt: new Date("2026-12-20T14:00:00.000Z") }],
-        },
-      ]);
-
-      await expect(
-        recurringService.findNeedingExtension(COMPANY_ID),
-      ).resolves.toEqual([]);
-    });
-
-    it("não deve apontar recorrência que já gerou até a data final", async () => {
-      prismaMock.recurringAppointment.findMany.mockResolvedValue([
-        {
-          id: "recurring-1",
-          endDate: new Date("2026-10-10"),
-          appointments: [{ startAt: new Date("2026-10-10T14:00:00.000Z") }],
-        },
-      ]);
-
-      await expect(
-        recurringService.findNeedingExtension(COMPANY_ID),
-      ).resolves.toEqual([]);
     });
   });
 
@@ -437,6 +346,23 @@ describe("RecurringAppointmentService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it("deve recusar período maior que 60 dias", async () => {
+      // 2026-10-01 a 2026-12-01 são 61 dias.
+      await expect(
+        recurringService.create(
+          { ...dto, endDate: new Date("2026-12-01") },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar período de exatamente 60 dias", async () => {
+      await expect(
+        recurringService.create(dto, COMPANY_ID),
+      ).resolves.toBeDefined();
+    });
+
     it("deve recusar serviço inativo ou de outra empresa", async () => {
       serviceServiceMock.findActive.mockRejectedValueOnce(
         new NotFoundException(),
@@ -450,6 +376,34 @@ describe("RecurringAppointmentService", () => {
   });
 
   describe("update", () => {
+    it("deve recusar período que passa de 60 dias", async () => {
+      await expect(
+        recurringService.update(
+          "recurring-1",
+          { endDate: new Date("2026-12-31") },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("deve recusar regerar recorrência antiga sem data final", async () => {
+      // Recorrências criadas antes da regra podem não ter data final: ajuste o período antes de regerar.
+      prismaMock.recurringAppointment.update.mockResolvedValueOnce({
+        ...stored,
+        endDate: null,
+      });
+
+      await expect(
+        recurringService.update(
+          "recurring-1",
+          {
+            days: [{ weekDay: "MONDAY", startTime: "08:00", endTime: "09:30" }],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it("deve substituir todos os dias quando a lista é informada", async () => {
       await recurringService.update(
         "recurring-1",
