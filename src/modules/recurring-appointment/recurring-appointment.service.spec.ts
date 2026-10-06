@@ -33,12 +33,17 @@ describe("RecurringAppointmentService", () => {
   const peopleServiceMock = { findOne: vi.fn() };
   const serviceServiceMock = { findActive: vi.fn() };
   const appointmentServiceMock = {
+    findOne: vi.fn(),
+    rescheduleFromRecurrence: vi.fn(),
+    cancelFromRecurrence: vi.fn(),
     createFromRecurrence: vi.fn(),
     cancelFutureFromRecurrence: vi.fn(),
   };
   const paymentServiceMock = {
     createPendingForAppointments: vi.fn(),
     cancelPendingForRecurrence: vi.fn(),
+    moveDueDate: vi.fn(),
+    cancelPendingForAppointment: vi.fn(),
     settlePendingForRecurrence: vi.fn(),
   };
   // Os testes de geração usam UTC para facilitar a leitura das datas.
@@ -448,6 +453,125 @@ describe("RecurringAppointmentService", () => {
         recurringService.create(dto, COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("remanejamento e cancelamento de um agendamento", () => {
+    // Período da recorrência: 2026-10-01 a 2026-11-30.
+    const generated = {
+      id: "appointment-1",
+      recurringAppointmentId: "recurring-1",
+      status: "SCHEDULED",
+    };
+    const reschedule = (startAt: string) =>
+      recurringService.rescheduleAppointment(
+        "recurring-1",
+        "appointment-1",
+        { startAt: new Date(startAt) },
+        COMPANY_ID,
+      );
+
+    beforeEach(() => {
+      appointmentServiceMock.findOne.mockResolvedValue(generated);
+    });
+
+    it("deve remarcar e mover o vencimento na mesma transação", async () => {
+      const startAt = new Date("2026-10-08T10:00:00.000Z");
+
+      await reschedule(startAt.toISOString());
+
+      expect(
+        appointmentServiceMock.rescheduleFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, generated, startAt);
+      expect(paymentServiceMock.moveDueDate).toHaveBeenCalledWith(
+        prismaMock,
+        "appointment-1",
+        startAt,
+        "UTC",
+      );
+    });
+
+    it("deve aceitar o último dia do período", async () => {
+      await expect(
+        reschedule("2026-11-30T10:00:00.000Z"),
+      ).resolves.not.toThrow();
+    });
+
+    it.each(["2026-09-30T10:00:00.000Z", "2026-12-01T10:00:00.000Z"])(
+      "deve recusar data fora do período (%s)",
+      async (startAt) => {
+        await expect(reschedule(startAt)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(
+          appointmentServiceMock.rescheduleFromRecurrence,
+        ).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve considerar o dia no fuso da empresa", async () => {
+      // 01:00 UTC de 01/12 ainda é 30/11 em São Paulo: dentro do período.
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+
+      await expect(
+        reschedule("2026-12-01T01:00:00.000Z"),
+      ).resolves.not.toThrow();
+    });
+
+    it("deve recusar agendamento de outra recorrência", async () => {
+      appointmentServiceMock.findOne.mockResolvedValueOnce({
+        ...generated,
+        recurringAppointmentId: "recurring-2",
+      });
+
+      await expect(
+        reschedule("2026-10-08T10:00:00.000Z"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("deve cancelar um agendamento e o pagamento dele na mesma transação", async () => {
+      await recurringService.cancelAppointment(
+        "recurring-1",
+        "appointment-1",
+        COMPANY_ID,
+      );
+
+      expect(appointmentServiceMock.cancelFromRecurrence).toHaveBeenCalledWith(
+        prismaMock,
+        generated,
+      );
+      expect(
+        paymentServiceMock.cancelPendingForAppointment,
+      ).toHaveBeenCalledWith(prismaMock, "appointment-1");
+    });
+
+    it("deve recusar cancelar agendamento de outra recorrência", async () => {
+      appointmentServiceMock.findOne.mockResolvedValueOnce({
+        ...generated,
+        recurringAppointmentId: "recurring-2",
+      });
+
+      await expect(
+        recurringService.cancelAppointment(
+          "recurring-1",
+          "appointment-1",
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(
+        paymentServiceMock.cancelPendingForAppointment,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar remanejamento em recorrência cancelada", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
+        ...stored,
+        isActive: false,
+      });
+
+      await expect(
+        reschedule("2026-10-08T10:00:00.000Z"),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

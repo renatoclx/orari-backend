@@ -289,6 +289,135 @@ describe("AppointmentService", () => {
     });
   });
 
+  describe("remanejamento de recorrência", () => {
+    const fromRecurrence = {
+      ...appointment,
+      recurringAppointmentId: "recurring-1",
+    } as never;
+    const newStartAt = new Date(startAt.getTime() + 86_400_000);
+
+    it("deve remarcar o mesmo registro recalculando o fim", async () => {
+      await appointmentService.rescheduleFromRecurrence(
+        prismaMock as never,
+        fromRecurrence,
+        newStartAt,
+      );
+
+      expect(
+        businessHourServiceMock.ensureWithinBusinessHours,
+      ).toHaveBeenCalled();
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1" },
+        data: {
+          startAt: newStartAt,
+          endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+          updatedAt: anyDate,
+        },
+      });
+    });
+
+    it("deve recusar quando o novo horário está ocupado", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        professionalId: "professional-1",
+      });
+
+      await expect(
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          fromRecurrence,
+          newStartAt,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it.each(["COMPLETED", "CANCELLED", "NO_SHOW", "IN_PROGRESS"])(
+      "deve recusar agendamento com status %s",
+      async (status) => {
+        await expect(
+          appointmentService.rescheduleFromRecurrence(
+            prismaMock as never,
+            { ...appointment, status } as never,
+            newStartAt,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    );
+
+    it("deve aceitar agendamento CONFIRMED", async () => {
+      await expect(
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          { ...appointment, status: "CONFIRMED" } as never,
+          newStartAt,
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    it.each([
+      { startAt: newStartAt },
+      { serviceId: "service-2" },
+      { clientId: "client-2" },
+      { professionalId: "professional-2" },
+    ])("deve recusar %o no PATCH comum", async (change) => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(fromRecurrence);
+
+      await expect(
+        appointmentService.update("appointment-1", change, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar cancelamento pelo PATCH comum", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(fromRecurrence);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { status: "CANCELLED" },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve cancelar pelo apoio à recorrência", async () => {
+      await appointmentService.cancelFromRecurrence(
+        prismaMock as never,
+        fromRecurrence,
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1" },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
+    it("não deve cancelar agendamento já concluído", async () => {
+      await expect(
+        appointmentService.cancelFromRecurrence(
+          prismaMock as never,
+          { ...appointment, status: "COMPLETED" } as never,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve permitir status e observação no PATCH comum", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(fromRecurrence)
+        .mockResolvedValue(null);
+
+      await appointmentService.update(
+        "appointment-1",
+        { status: "CONFIRMED", note: "confirmado por telefone" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalled();
+    });
+  });
+
   describe("data no passado", () => {
     it("deve recusar agendamento com início no passado", async () => {
       await expect(

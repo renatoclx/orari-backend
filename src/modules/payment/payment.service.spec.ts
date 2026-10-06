@@ -429,6 +429,45 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve cancelar só o pagamento PENDING de um agendamento", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 1 });
+
+      await paymentService.cancelPendingForAppointment(
+        prismaMock as never,
+        "appointment-1",
+      );
+
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          appointmentId: "appointment-1",
+          status: "PENDING",
+          deletedAt: null,
+        },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
+    it("deve mover o vencimento só do pagamento PENDING", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 1 });
+
+      await paymentService.moveDueDate(
+        prismaMock as never,
+        "appointment-1",
+        // 01:00 UTC de 21/10 ainda é 20/10 em São Paulo.
+        new Date("2026-10-21T01:00:00.000Z"),
+        "America/Sao_Paulo",
+      );
+
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          appointmentId: "appointment-1",
+          status: "PENDING",
+          deletedAt: null,
+        },
+        data: { dueDate: new Date("2026-10-20"), updatedAt: anyDate },
+      });
+    });
+
     it("deve dar baixa em lote nos PENDING da recorrência com o mesmo método", async () => {
       prismaMock.payment.updateMany.mockResolvedValue({ count: 8 });
       const paidAt = new Date("2026-10-06T15:00:00.000Z");

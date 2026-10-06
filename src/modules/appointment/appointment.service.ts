@@ -18,6 +18,21 @@ import { UpdateAppointmentDto } from "./dto/update-appointment.dto";
 // Um agendamento cancelado libera o horário do cliente e do profissional.
 const BLOCKING_STATUSES = { not: AppointmentStatus.CANCELLED } as const;
 
+// Só um atendimento que ainda não aconteceu pode ser remanejado ou cancelado
+// pela recorrência.
+const UPCOMING_STATUSES: AppointmentStatus[] = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+];
+
+// O que foi contratado na recorrência: só o remanejamento muda data e horário.
+const RECURRENCE_LOCKED_FIELDS = [
+  "startAt",
+  "serviceId",
+  "clientId",
+  "professionalId",
+] as const;
+
 // Um horário que a recorrência quer ocupar.
 export interface AppointmentOccurrence {
   startAt: Date;
@@ -144,6 +159,10 @@ export class AppointmentService {
   ): Promise<Appointment> {
     const appointment = await this.findOne(id, companyId);
 
+    if (appointment.recurringAppointmentId) {
+      this.ensureRecurrenceTermsUnchanged(dto);
+    }
+
     // Estado final do agendamento, considerando o que veio no PATCH.
     const clientId = dto.clientId ?? appointment.clientId;
     const professionalId = dto.professionalId ?? appointment.professionalId;
@@ -190,6 +209,92 @@ export class AppointmentService {
       where: { id },
       data: { ...dto, endAt, updatedAt: new Date() },
     });
+  }
+
+  /**
+   * Remaneja um agendamento de recorrência para outro dia e horário, dentro da
+   * transação de quem chama. É o mesmo registro: o pagamento continua ligado a
+   * ele. Valem as regras de qualquer remarcação: data futura, janela de
+   * atendimento e agenda livre para cliente e profissional.
+   */
+  async rescheduleFromRecurrence(
+    db: PrismaClientLike,
+    appointment: Appointment,
+    startAt: Date,
+  ): Promise<Appointment> {
+    this.ensureIsUpcoming(appointment.status, "remanejado");
+    this.ensureIsNotInThePast(startAt);
+
+    const { companyId, clientId, professionalId } = appointment;
+    const endAt = await this.resolveEndAt(
+      appointment.serviceId,
+      startAt,
+      companyId,
+    );
+    await this.businessHourService.ensureWithinBusinessHours(
+      companyId,
+      startAt,
+      endAt,
+    );
+    await this.ensureSlotIsFree(
+      db,
+      { clientId, professionalId, startAt, endAt },
+      companyId,
+      appointment.id,
+    );
+
+    return db.appointment.update({
+      where: { id: appointment.id },
+      data: { startAt, endAt, updatedAt: new Date() },
+    });
+  }
+
+  /**
+   * Cancela um agendamento de recorrência dentro da transação de quem chama,
+   * que também cancela o pagamento dele. O horário volta a ficar livre.
+   */
+  async cancelFromRecurrence(
+    db: PrismaClientLike,
+    appointment: Appointment,
+  ): Promise<Appointment> {
+    this.ensureIsUpcoming(appointment.status, "cancelado");
+
+    return db.appointment.update({
+      where: { id: appointment.id },
+      data: { status: AppointmentStatus.CANCELLED, updatedAt: new Date() },
+    });
+  }
+
+  /**
+   * Pelo PATCH comum, um agendamento de recorrência não muda data, serviço nem
+   * participantes, e não é cancelado: remanejar e cancelar passam pela
+   * recorrência, que também cuida do pagamento.
+   */
+  private ensureRecurrenceTermsUnchanged(dto: UpdateAppointmentDto) {
+    const locked = RECURRENCE_LOCKED_FIELDS.filter(
+      (field) => dto[field] !== undefined,
+    );
+
+    if (locked.length > 0) {
+      throw new BadRequestException(
+        `Agendamento de recorrência não aceita ${locked.join(", ")}: ` +
+          "para mudar data e horário, use o remanejamento da recorrência",
+      );
+    }
+
+    if (dto.status === AppointmentStatus.CANCELLED) {
+      throw new BadRequestException(
+        "Agendamento de recorrência é cancelado pelo cancelamento da recorrência",
+      );
+    }
+  }
+
+  private ensureIsUpcoming(status: AppointmentStatus, action: string) {
+    if (!UPCOMING_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        `Agendamento com status ${status} não pode ser ${action}`,
+      );
+    }
   }
 
   // Agendar exige horário futuro; a recorrência também nunca gera ocorrências passadas.

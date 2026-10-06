@@ -14,6 +14,7 @@ import type { AuthenticatedUser } from "../../common/interfaces/authenticated-us
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
+import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 import { RecurringAppointmentService } from "./recurring-appointment.service";
 
@@ -76,6 +77,36 @@ export class RecurringAppointmentController {
     return this.recurringAppointmentService.settlePayments(
       id,
       dto,
+      currentUser.companyId,
+    );
+  }
+
+  // Remanejamento: remarca um agendamento da recorrência dentro do período dela.
+  @Patch(":id/appointments/:appointmentId/reschedule")
+  rescheduleAppointment(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("appointmentId", ParseUUIDPipe) appointmentId: string,
+    @Body() dto: RescheduleAppointmentDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.recurringAppointmentService.rescheduleAppointment(
+      id,
+      appointmentId,
+      dto,
+      currentUser.companyId,
+    );
+  }
+
+  // Cancela um único agendamento da recorrência e o pagamento pendente dele.
+  @Patch(":id/appointments/:appointmentId/cancel")
+  cancelAppointment(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("appointmentId", ParseUUIDPipe) appointmentId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.recurringAppointmentService.cancelAppointment(
+      id,
+      appointmentId,
       currentUser.companyId,
     );
   }

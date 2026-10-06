@@ -48,7 +48,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
 | Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle` | Qualquer tipo, só na própria empresa |
+| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
 | Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
@@ -135,6 +135,14 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Método na baixa:** `Payment.paymentMethodId` passou a ser opcional; é obrigatório quando o pagamento está `PAID`.
 - **Pagamento integral:** `POST /recurring-appointments/:id/payments/settle` dá baixa em todos os `PENDING` da recorrência com o mesmo método.
 - **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
+
+### 2.11 Remanejamento (Etapa 4)
+
+- **Rota dedicada:** `PATCH /recurring-appointments/:id/appointments/:appointmentId/reschedule` com `startAt`. Remarca o mesmo registro, então a quantidade de agendamentos e o pagamento ficam com ele.
+- **Validações:** recorrência ativa; agendamento da própria recorrência; status `SCHEDULED` ou `CONFIRMED`; nova data (dia local) dentro do período; data futura, janela de atendimento e agenda livre, reaproveitadas do `AppointmentService`.
+- **Vencimento:** o pagamento `PENDING` passa a vencer no novo dia, na mesma transação.
+- **Cancelamento de um agendamento:** `PATCH /recurring-appointments/:id/appointments/:appointmentId/cancel` cancela o agendamento (`SCHEDULED` ou `CONFIRMED`) e o pagamento `PENDING` dele, na mesma transação.
+- **PATCH comum bloqueado:** `PATCH /appointments/:id` recusa `startAt`, `serviceId`, `clientId`, `professionalId` e `status: CANCELLED` em agendamentos de recorrência.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

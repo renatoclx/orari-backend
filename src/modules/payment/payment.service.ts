@@ -213,6 +213,36 @@ export class PaymentService {
     return count;
   }
 
+  // Cancelar um agendamento da recorrência cancela o pagamento dele, se ainda pendente.
+  async cancelPendingForAppointment(
+    db: PrismaClientLike,
+    appointmentId: string,
+  ): Promise<void> {
+    await db.payment.updateMany({
+      where: { appointmentId, status: PaymentStatus.PENDING, deletedAt: null },
+      data: { status: PaymentStatus.CANCELLED, updatedAt: new Date() },
+    });
+  }
+
+  /**
+   * Remanejamento: o vencimento de um pagamento PENDING acompanha a nova data
+   * do agendamento. Pagamento já pago ou cancelado não muda.
+   */
+  async moveDueDate(
+    db: PrismaClientLike,
+    appointmentId: string,
+    startAt: Date,
+    timeZone: string,
+  ): Promise<void> {
+    await db.payment.updateMany({
+      where: { appointmentId, status: PaymentStatus.PENDING, deletedAt: null },
+      data: {
+        dueDate: this.toLocalDate(startAt, timeZone),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   /**
    * Baixa em lote: marca como PAID todos os pagamentos PENDING de uma
    * recorrência, com o mesmo método. Atende o cliente que paga tudo de uma vez.

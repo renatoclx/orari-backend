@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "../../../generated/prisma/client";
+import { Appointment, Prisma } from "../../../generated/prisma/client";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { PeopleType, WeekDay } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
@@ -26,6 +26,7 @@ import { ServiceService } from "../service/service.service";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
 import { RecurringDayDto } from "./dto/recurring-day.dto";
+import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 
 // Os dias são devolvidos com horários em "HH:MM", como entraram.
@@ -258,6 +259,99 @@ export class RecurringAppointmentService {
     return { settled };
   }
 
+  /**
+   * Remanejamento: move um agendamento da recorrência para outro dia e horário
+   * dentro do período dela. Agendamento e vencimento do pagamento mudam juntos,
+   * na mesma transação.
+   */
+  async rescheduleAppointment(
+    id: string,
+    appointmentId: string,
+    { startAt }: RescheduleAppointmentDto,
+    companyId: string,
+  ): Promise<Appointment> {
+    const { recurring, appointment } = await this.findActiveOccurrence(
+      id,
+      appointmentId,
+      companyId,
+    );
+
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    this.ensureWithinPeriod(startAt, recurring, timeZone);
+
+    return this.prisma.$transaction(async (tx) => {
+      const rescheduled =
+        await this.appointmentService.rescheduleFromRecurrence(
+          tx,
+          appointment,
+          startAt,
+        );
+      await this.paymentService.moveDueDate(
+        tx,
+        appointmentId,
+        startAt,
+        timeZone,
+      );
+
+      return rescheduled;
+    });
+  }
+
+  /**
+   * Cancela um único agendamento da recorrência. O horário fica livre e o
+   * pagamento pendente dele é cancelado, na mesma transação.
+   */
+  async cancelAppointment(
+    id: string,
+    appointmentId: string,
+    companyId: string,
+  ): Promise<Appointment> {
+    const { appointment } = await this.findActiveOccurrence(
+      id,
+      appointmentId,
+      companyId,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const cancelled = await this.appointmentService.cancelFromRecurrence(
+        tx,
+        appointment,
+      );
+      await this.paymentService.cancelPendingForAppointment(tx, appointmentId);
+
+      return cancelled;
+    });
+  }
+
+  /**
+   * Busca um agendamento que pertence a uma recorrência ativa da empresa.
+   * Agendamento de outra recorrência se comporta como inexistente (404).
+   */
+  private async findActiveOccurrence(
+    id: string,
+    appointmentId: string,
+    companyId: string,
+  ) {
+    const recurring = await this.findOne(id, companyId);
+    if (!recurring.isActive) {
+      throw new BadRequestException(
+        "Recorrência cancelada não aceita alterações em seus agendamentos",
+      );
+    }
+
+    const appointment = await this.appointmentService.findOne(
+      appointmentId,
+      companyId,
+    );
+    if (appointment.recurringAppointmentId !== id) {
+      throw new NotFoundException(
+        "Agendamento não encontrado nesta recorrência",
+      );
+    }
+
+    return { recurring, appointment };
+  }
+
   private async ensureParticipants(
     clientId: string,
     professionalId: string,
@@ -304,6 +398,35 @@ export class RecurringAppointmentService {
     if (days > MAX_RECURRENCE_DAYS) {
       throw new BadRequestException(
         `O período da recorrência não pode passar de ${MAX_RECURRENCE_DAYS} dias`,
+      );
+    }
+  }
+
+  /**
+   * A nova data, no calendário da empresa, precisa cair entre o início e o fim
+   * da recorrência. Recorrências antigas sem data final usam o limite de
+   * MAX_RECURRENCE_DAYS a partir do início.
+   */
+  private ensureWithinPeriod(
+    startAt: Date,
+    {
+      startDate,
+      endDate,
+    }: Pick<RecurringAppointmentResponse, "startDate" | "endDate">,
+    timeZone: string,
+  ) {
+    const day = toZonedParts(startAt, timeZone);
+    const lastDay =
+      endDate ??
+      new Date(startDate.getTime() + MAX_RECURRENCE_DAYS * DAY_IN_MS);
+
+    const withinPeriod =
+      this.isBeforeOrSameDay(this.toDateParts(startDate), day) &&
+      this.isBeforeOrSameDay(day, this.toDateParts(lastDay));
+
+    if (!withinPeriod) {
+      throw new BadRequestException(
+        "A nova data precisa estar dentro do período da recorrência",
       );
     }
   }

@@ -127,13 +127,16 @@
 - O cliente pode remanejar agendamentos da recorrência para outros dias e horários. Remanejar é remarcar o mesmo agendamento, que mantém seu pagamento.
 - Remanejar só é permitido desde que:
   - a quantidade de serviços contratados seja mantida;
-  - o período continue dentro do limite de 60 dias;
+  - a nova data, no calendário da empresa, fique entre a data inicial e a final da recorrência;
   - haja dia e horário disponíveis, pelas regras de agendamento.
+- Só agendamentos `SCHEDULED` ou `CONFIRMED` podem ser remanejados, e o status não muda. Uma recorrência cancelada não tem agendamentos remanejados.
+- Data, serviço, cliente e profissional de um agendamento de recorrência não mudam pela edição comum do agendamento; data e horário mudam só pelo remanejamento. Observação e os demais status continuam editáveis.
 - Se o pagamento do agendamento estiver `PENDING`, o vencimento passa para a nova data.
 - Remanejar não gera nova cobrança nem reembolso.
 
 ### Cancelamento
 
+- Um único agendamento da recorrência, em `SCHEDULED` ou `CONFIRMED`, pode ser cancelado pela própria recorrência: o horário fica livre e o pagamento `PENDING` dele passa para `CANCELLED`. Pagamento já pago não muda. Esse cancelamento não é feito pela edição comum do agendamento.
 - Cancelar a recorrência não gera reembolso de pagamentos já pagos.
 - Os pagamentos `PENDING` dos agendamentos futuros cancelados passam para `CANCELLED`.
 - Após o cancelamento, as novas datas negociadas diretamente com a empresa passam a ser agendamentos avulsos.
