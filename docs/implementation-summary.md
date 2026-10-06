@@ -32,7 +32,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | PaymentMethod | Soft delete | Nome único por empresa |
 | Payment | Soft delete | Um por agendamento; `paidAt` apenas quando `PAID`; valor herda o preço do serviço |
 | BusinessHour | Soft delete | Janelas de atendimento por dia da semana |
-| Notification | **Sem exclusão** (resolvida) | Aviso de horizonte da recorrência |
+| Notification | **Sem exclusão** (resolvida) | Sem tipos em uso (entidade mantida para o futuro) |
 
 ### Rotas
 
@@ -53,7 +53,6 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
 | Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
-| Recurring (extensão) | `POST /recurring-appointments/:id/extend` | Qualquer tipo, só na própria empresa |
 
 Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status HTTP seguem o `coding-standards.md` (201/200/204).
 
@@ -127,7 +126,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 - **Fuso por empresa:** `Company.timezone` (padrão `America/Sao_Paulo`). Janelas de atendimento e horários de recorrência passam a valer no relógio da empresa; os instantes seguem gravados em UTC. Conversões em `common/time/time-zone.ts`, com `Intl` e sem dependência nova.
 - **Datas puras pelo calendário:** o período da recorrência (`date`) não sofre conversão de fuso. Antes, em UTC-3, uma data final "2026-12-15" perdia o próprio dia 15.
-- **Horizonte só cresce por ação manual:** quando faltam menos de 30 dias de agenda, a API cria uma notificação (`RECURRING_APPOINTMENT_HORIZON`), e a ampliação é feita por `POST /recurring-appointments/:id/extend`. A lista de notificações se sincroniza a cada consulta, sem rotina agendada.
+- **Recorrência com data final obrigatória (até 60 dias):** o horizonte de 90 dias, a extensão manual e o aviso de horizonte foram removidos. Recorrências criadas antes dessa regra podem não ter data final; regerar uma delas exige ajustar o período antes.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
@@ -223,7 +222,6 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 7. Pendências e pontos de atenção
 
 **Pendente**
-- **Extensão do horizonte depende de alguém abrir as notificações:** a sincronização acontece na consulta a `/notifications`. Sem ninguém consultando, o aviso não é criado — foi a opção escolhida para não depender de rotina agendada.
 - **Dados provisórios do seed:** empresa "Orari", CNPJ `11111111000191`, `admin@orari.local`. É preciso trocar pelos dados reais antes de usar em outro ambiente e, como o seed não altera registros, atualizar também os registros já existentes.
 - **Commit:** todo o trabalho desde a criação das entidades ainda não foi commitado.
 
