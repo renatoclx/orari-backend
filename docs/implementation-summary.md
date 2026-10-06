@@ -30,7 +30,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | RecurringAppointment | **Sem exclusão** (`isActive`) | Período + dias da semana |
 | RecurringDay | Exclusão física (substituída em bloco) | Dia da semana e horários (`time`) |
 | PaymentMethod | Soft delete | Nome único por empresa |
-| Payment | Soft delete | Um por agendamento; `paidAt` apenas quando `PAID`; valor herda o preço do serviço |
+| Payment | Soft delete | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
 | BusinessHour | Soft delete | Janelas de atendimento por dia da semana |
 | Notification | **Sem exclusão** (resolvida) | Sem tipos em uso (entidade mantida para o futuro) |
 
@@ -48,7 +48,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
 | Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
+| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
 | Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
@@ -126,7 +126,15 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 - **Fuso por empresa:** `Company.timezone` (padrão `America/Sao_Paulo`). Janelas de atendimento e horários de recorrência passam a valer no relógio da empresa; os instantes seguem gravados em UTC. Conversões em `common/time/time-zone.ts`, com `Intl` e sem dependência nova.
 - **Datas puras pelo calendário:** o período da recorrência (`date`) não sofre conversão de fuso. Antes, em UTC-3, uma data final "2026-12-15" perdia o próprio dia 15.
-- **Recorrência com data final obrigatória (até 60 dias):** o horizonte de 90 dias, a extensão manual e o aviso de horizonte foram removidos. Recorrências criadas antes dessa regra podem não ter data final; regerar uma delas exige ajustar o período antes.
+- **Recorrência com data final obrigatória (até 60 dias):** o horizonte de 90 dias, a extensão manual e o aviso de horizonte foram removidos. Recorrências criadas antes dessa regra podem não ter data final; elas continuam existindo e podem ser canceladas.
+
+### 2.10 Pagamento da recorrência (Etapa 3)
+
+- **Sem regeneração:** a edição aceita só `note` e `isActive: false`. Mudar o padrão é encerrar e criar outra recorrência; uma cancelada não é reativada.
+- **Pagamento por agendamento:** a criação gera um pagamento `PENDING` por agendamento, na mesma transação, com o preço do serviço e vencimento no dia local do agendamento. Serviço sem preço é recusado.
+- **Método na baixa:** `Payment.paymentMethodId` passou a ser opcional; é obrigatório quando o pagamento está `PAID`.
+- **Pagamento integral:** `POST /recurring-appointments/:id/payments/settle` dá baixa em todos os `PENDING` da recorrência com o mesmo método.
+- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

@@ -306,20 +306,7 @@ async function main() {
     companyId,
   );
 
-  // Pagamento pendente no primeiro atendimento gerado; o valor vem do serviço.
-  const [firstGenerated] = (
-    await appointments.findAll({ page: 1, limit: 100 }, companyId)
-  ).items.filter(
-    (appointment) =>
-      appointment.recurringAppointmentId === recurringAppointment.id,
-  );
-  if (firstGenerated) {
-    await payments.create(
-      { appointmentId: firstGenerated.id, paymentMethodId: pix.id },
-      companyId,
-    );
-  }
-
+  // Cada agendamento da recorrência já nasce com pagamento PENDING (valor do serviço).
   const generated = await prisma.appointment.count({
     where: { recurringAppointmentId: recurringAppointment.id },
   });

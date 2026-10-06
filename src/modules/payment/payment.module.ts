@@ -9,5 +9,6 @@ import { PaymentService } from "./payment.service";
   imports: [AppointmentModule, PaymentMethodModule, ServiceModule],
   controllers: [PaymentController],
   providers: [PaymentService],
+  exports: [PaymentService],
 })
 export class PaymentModule {}

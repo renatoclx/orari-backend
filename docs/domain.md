@@ -491,7 +491,7 @@
 | dueDate         | Data de vencimento (opcional)                                    |
 | status          | Situação do pagamento                                            |
 | paidAt          | Dia que realizou o pagamento (opcional)                          |
-| paymentMethodId | Código do método de pagamento                                    |
+| paymentMethodId | Código do método de pagamento (opcional até o pagamento)         |
 
 ### Relacionamentos
 

@@ -376,14 +376,15 @@ model Payment {
   dueDate         DateTime?     @db.Date
   // Preenchido apenas quando o pagamento está PAID.
   paidAt          DateTime?
-  paymentMethodId String
+  // Opcional enquanto PENDING: o método é informado na baixa para PAID.
+  paymentMethodId String?
   status          PaymentStatus @default(PENDING)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime?
   deletedAt       DateTime?
 
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
-  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
   @@unique([appointmentId], where: raw("\"deletedAt\" IS NULL"))

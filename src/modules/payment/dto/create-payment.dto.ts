@@ -20,8 +20,10 @@ export class CreatePaymentDto {
   @Min(0)
   amount?: number;
 
+  // Opcional enquanto PENDING; obrigatório quando o pagamento está PAID.
+  @IsOptional()
   @IsUUID()
-  paymentMethodId!: string;
+  paymentMethodId?: string;
 
   @IsOptional()
   @IsEnum(PaymentStatus)

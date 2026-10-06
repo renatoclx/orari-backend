@@ -2,7 +2,6 @@ import { Type } from "class-transformer";
 import {
   ArrayMinSize,
   IsArray,
-  IsBoolean,
   IsDate,
   IsNotEmpty,
   IsOptional,
@@ -12,7 +11,7 @@ import {
 } from "class-validator";
 import { RecurringDayDto } from "./recurring-day.dto";
 
-// A empresa vem do usuário autenticado.
+// A empresa vem do usuário autenticado. A recorrência sempre nasce ativa.
 export class CreateRecurringAppointmentDto {
   @IsUUID()
   clientId!: string;
@@ -36,10 +35,6 @@ export class CreateRecurringAppointmentDto {
   @IsString()
   @IsNotEmpty()
   note?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 
   // Sem dias, a recorrência não reserva horário nenhum.
   @IsArray()

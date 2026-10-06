@@ -23,7 +23,7 @@ describe("AppointmentService", () => {
     ),
     appointment: {
       create: vi.fn(),
-      createMany: vi.fn(),
+      createManyAndReturn: vi.fn(),
       updateMany: vi.fn(),
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -220,7 +220,11 @@ describe("AppointmentService", () => {
     };
 
     it("deve validar cada ocorrência e criar todas de uma vez", async () => {
-      prismaMock.appointment.createMany.mockResolvedValue({ count: 2 });
+      const returned = occurrences.map((occurrence, index) => ({
+        id: `appointment-${index + 1}`,
+        startAt: occurrence.startAt,
+      }));
+      prismaMock.appointment.createManyAndReturn.mockResolvedValue(returned);
 
       const created = await appointmentService.createFromRecurrence(
         prismaMock as never,
@@ -229,17 +233,18 @@ describe("AppointmentService", () => {
         "sessão semanal",
       );
 
-      expect(created).toBe(2);
+      expect(created).toEqual(returned);
       expect(
         businessHourServiceMock.ensureWithinBusinessHours,
       ).toHaveBeenCalledTimes(2);
       expect(prismaMock.appointment.findFirst).toHaveBeenCalledTimes(2);
-      expect(prismaMock.appointment.createMany).toHaveBeenCalledWith({
+      expect(prismaMock.appointment.createManyAndReturn).toHaveBeenCalledWith({
         data: occurrences.map((occurrence) => ({
           ...recurrenceData,
           ...occurrence,
           note: "sessão semanal",
         })),
+        select: { id: true, startAt: true },
       });
     });
 
@@ -259,7 +264,7 @@ describe("AppointmentService", () => {
           error instanceof ConflictException &&
           error.message.includes("2026-10-06T14:00:00.000Z"),
       );
-      expect(prismaMock.appointment.createMany).not.toHaveBeenCalled();
+      expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
     });
 
     it("deve cancelar apenas os futuros ainda em SCHEDULED", async () => {

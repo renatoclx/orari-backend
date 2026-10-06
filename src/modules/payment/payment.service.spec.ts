@@ -31,6 +31,8 @@ describe("PaymentService", () => {
       findFirst: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      createMany: vi.fn(),
+      updateMany: vi.fn(),
     },
   };
   const appointmentServiceMock = { findOne: vi.fn() };
@@ -157,6 +159,31 @@ describe("PaymentService", () => {
       ).resolves.toBeDefined();
     });
 
+    it("deve aceitar PENDING sem método de pagamento", async () => {
+      prismaMock.payment.create.mockResolvedValue(payment);
+      const semMetodo = { ...dto, paymentMethodId: undefined };
+
+      await paymentService.create(semMetodo, COMPANY_ID);
+
+      expect(paymentMethodServiceMock.findOne).not.toHaveBeenCalled();
+      expect(prismaMock.payment.create).toHaveBeenCalled();
+    });
+
+    it("deve exigir método de pagamento quando o status é PAID", async () => {
+      await expect(
+        paymentService.create(
+          {
+            ...dto,
+            paymentMethodId: undefined,
+            status: "PAID",
+            paidAt: new Date("2026-10-01"),
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.create).not.toHaveBeenCalled();
+    });
+
     it("deve lançar ConflictException quando o agendamento já tem pagamento", async () => {
       prismaMock.payment.create.mockRejectedValueOnce(
         new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
@@ -281,6 +308,42 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve recusar baixa para PAID quando o pagamento não tem método", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue({
+        ...payment,
+        paymentMethodId: null,
+      });
+
+      await expect(
+        paymentService.update(
+          "payment-1",
+          { status: "PAID", paidAt: new Date("2026-10-02") },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar baixa para PAID informando o método no PATCH", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue({
+        ...payment,
+        paymentMethodId: null,
+      });
+      const paidAt = new Date("2026-10-02");
+
+      await paymentService.update(
+        "payment-1",
+        { status: "PAID", paidAt, paymentMethodId: "method-1" },
+        COMPANY_ID,
+      );
+
+      expect(paymentMethodServiceMock.findOne).toHaveBeenCalledWith(
+        "method-1",
+        COMPANY_ID,
+      );
+      expect(prismaMock.payment.update).toHaveBeenCalled();
+    });
+
     it("deve recusar mudança para PAID sem data", async () => {
       prismaMock.payment.findFirst.mockResolvedValue(payment);
 
@@ -301,6 +364,117 @@ describe("PaymentService", () => {
         where: { id: "payment-1" },
         data: { deletedAt: anyDate, updatedAt: anyDate },
       });
+    });
+  });
+
+  describe("pagamentos de recorrência", () => {
+    it("deve gerar PENDING sem método, com vencimento no dia local do agendamento", async () => {
+      prismaMock.payment.createMany.mockResolvedValue({ count: 2 });
+
+      const created = await paymentService.createPendingForAppointments(
+        prismaMock as never,
+        [
+          // 01:00 UTC de 07/10 ainda é 06/10 às 22h em São Paulo.
+          {
+            id: "appointment-1",
+            startAt: new Date("2026-10-07T01:00:00.000Z"),
+          },
+          {
+            id: "appointment-2",
+            startAt: new Date("2026-10-13T17:00:00.000Z"),
+          },
+        ],
+        100,
+        "America/Sao_Paulo",
+      );
+
+      expect(created).toBe(2);
+      expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            appointmentId: "appointment-1",
+            amount: 100,
+            dueDate: new Date("2026-10-06"),
+          },
+          {
+            appointmentId: "appointment-2",
+            amount: 100,
+            dueDate: new Date("2026-10-13"),
+          },
+        ],
+      });
+    });
+
+    it("deve cancelar só os PENDING dos agendamentos futuros cancelados", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 3 });
+      const from = new Date("2026-10-06T12:00:00.000Z");
+
+      await paymentService.cancelPendingForRecurrence(
+        prismaMock as never,
+        "recurring-1",
+        from,
+      );
+
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: "PENDING",
+          deletedAt: null,
+          appointment: {
+            recurringAppointmentId: "recurring-1",
+            status: "CANCELLED",
+            startAt: { gte: from },
+          },
+        },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
+    it("deve dar baixa em lote nos PENDING da recorrência com o mesmo método", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 8 });
+      const paidAt = new Date("2026-10-06T15:00:00.000Z");
+
+      const settled = await paymentService.settlePendingForRecurrence(
+        "recurring-1",
+        { paymentMethodId: "method-1", paidAt },
+        COMPANY_ID,
+      );
+
+      expect(settled).toBe(8);
+      expect(paymentMethodServiceMock.findOne).toHaveBeenCalledWith(
+        "method-1",
+        COMPANY_ID,
+      );
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: "PENDING",
+          deletedAt: null,
+          appointment: {
+            recurringAppointmentId: "recurring-1",
+            companyId: COMPANY_ID,
+          },
+        },
+        data: {
+          status: "PAID",
+          paymentMethodId: "method-1",
+          paidAt,
+          updatedAt: anyDate,
+        },
+      });
+    });
+
+    it("deve recusar baixa em lote com método de outra empresa", async () => {
+      paymentMethodServiceMock.findOne.mockRejectedValueOnce(
+        new NotFoundException(),
+      );
+
+      await expect(
+        paymentService.settlePendingForRecurrence(
+          "recurring-1",
+          { paymentMethodId: "method-x" },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
     });
   });
 });

@@ -117,9 +117,10 @@
 ### Valor e pagamento
 
 - O valor de cada agendamento é o preço vigente do serviço no momento da criação da recorrência. Não há descontos.
+- Um serviço sem preço não pode ser usado em uma recorrência.
 - A recorrência não é fidelização nem pacote.
 - Cada agendamento gerado tem um pagamento `PENDING`, com vencimento na data do agendamento.
-- O cliente pode optar por pagar integralmente os agendamentos futuros da recorrência, somente na contratação. Esses pagamentos ficam `PAID`, sem desconto.
+- O cliente pode optar por pagar integralmente a recorrência, somente na contratação e sem desconto. Os pagamentos continuam nascendo `PENDING`; a baixa para `PAID` é feita pagamento a pagamento ou de uma vez, em lote, com o mesmo método de pagamento.
 
 ### Remanejamento
 
@@ -198,7 +199,8 @@
 
 - Cada agendamento tem no máximo um pagamento. Excluir o pagamento libera o agendamento para um novo.
 - O agendamento e o método de pagamento precisam ser da empresa do usuário. O agendamento não muda depois da criação.
-- Um pagamento novo nasce como `PENDING`, salvo quando é registrado como pago pela opção de pagamento integral de recorrência (ver Agendamentos recorrentes).
+- Um pagamento gerado pelo sistema nasce como `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
+- O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
 - `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
 - O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa.

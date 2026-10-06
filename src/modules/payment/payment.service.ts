@@ -6,8 +6,12 @@ import {
 } from "@nestjs/common";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { Payment, Prisma } from "../../../generated/prisma/client";
-import { PaymentStatus } from "../../../generated/prisma/enums";
+import {
+  AppointmentStatus,
+  PaymentStatus,
+} from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { toZonedParts } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
@@ -15,6 +19,7 @@ import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { FindPaymentsQueryDto } from "./dto/find-payments-query.dto";
+import { SettlePaymentsDto } from "./dto/settle-payments.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
 
 /**
@@ -25,6 +30,16 @@ import { UpdatePaymentDto } from "./dto/update-payment.dto";
 const ownedByCompany = (companyId: string) => ({
   appointment: { companyId },
 });
+
+// Aceita o PrismaService ou o cliente de uma transação aberta por outro módulo,
+// para que os pagamentos sejam gravados junto com os agendamentos (tudo ou nada).
+type PrismaClientLike = Pick<PrismaService, "payment">;
+
+// Agendamento recém-criado que precisa de um pagamento.
+export interface AppointmentToCharge {
+  id: string;
+  startAt: Date;
+}
 
 @Injectable()
 export class PaymentService {
@@ -41,10 +56,13 @@ export class PaymentService {
       dto.appointmentId,
       companyId,
     );
-    await this.paymentMethodService.findOne(dto.paymentMethodId, companyId);
+    if (dto.paymentMethodId) {
+      await this.paymentMethodService.findOne(dto.paymentMethodId, companyId);
+    }
 
     const status = dto.status ?? PaymentStatus.PENDING;
     this.ensurePaidAtMatchesStatus(status, dto.paidAt);
+    this.ensurePaymentMethodWhenPaid(status, dto.paymentMethodId);
     const amount = await this.resolveAmount(
       dto.amount,
       appointment.serviceId,
@@ -124,6 +142,10 @@ export class PaymentService {
       ? (dto.paidAt ?? null)
       : (dto.paidAt ?? payment.paidAt);
     this.ensurePaidAtMatchesStatus(status, paidAt);
+    this.ensurePaymentMethodWhenPaid(
+      status,
+      dto.paymentMethodId ?? payment.paymentMethodId,
+    );
 
     return this.prisma.payment.update({
       where: { id },
@@ -139,6 +161,92 @@ export class PaymentService {
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  /**
+   * Gera um pagamento PENDING para cada agendamento de uma recorrência, dentro
+   * da transação de quem chama. Sem método: ele é informado na baixa.
+   *
+   * O vencimento é o dia do agendamento no relógio da empresa: um atendimento
+   * às 22h em UTC-3 já é o dia seguinte em UTC, mas vence no dia local.
+   */
+  async createPendingForAppointments(
+    db: PrismaClientLike,
+    appointments: AppointmentToCharge[],
+    amount: number | Decimal,
+    timeZone: string,
+  ): Promise<number> {
+    const { count } = await db.payment.createMany({
+      data: appointments.map((appointment) => ({
+        appointmentId: appointment.id,
+        amount,
+        dueDate: this.toLocalDate(appointment.startAt, timeZone),
+      })),
+    });
+
+    return count;
+  }
+
+  /**
+   * Cancela os pagamentos ainda PENDING dos agendamentos futuros cancelados de
+   * uma recorrência. Os já pagos não mudam: cancelar não gera reembolso. Deve
+   * rodar depois do cancelamento dos agendamentos, na mesma transação.
+   */
+  async cancelPendingForRecurrence(
+    db: PrismaClientLike,
+    recurringAppointmentId: string,
+    from: Date,
+  ): Promise<number> {
+    const { count } = await db.payment.updateMany({
+      where: {
+        status: PaymentStatus.PENDING,
+        deletedAt: null,
+        appointment: {
+          recurringAppointmentId,
+          status: AppointmentStatus.CANCELLED,
+          startAt: { gte: from },
+        },
+      },
+      data: { status: PaymentStatus.CANCELLED, updatedAt: new Date() },
+    });
+
+    return count;
+  }
+
+  /**
+   * Baixa em lote: marca como PAID todos os pagamentos PENDING de uma
+   * recorrência, com o mesmo método. Atende o cliente que paga tudo de uma vez.
+   */
+  async settlePendingForRecurrence(
+    recurringAppointmentId: string,
+    { paymentMethodId, paidAt }: SettlePaymentsDto,
+    companyId: string,
+  ): Promise<number> {
+    await this.paymentMethodService.findOne(paymentMethodId, companyId);
+
+    const now = new Date();
+    const { count } = await this.prisma.payment.updateMany({
+      where: {
+        status: PaymentStatus.PENDING,
+        deletedAt: null,
+        appointment: { recurringAppointmentId, companyId },
+      },
+      data: {
+        status: PaymentStatus.PAID,
+        paymentMethodId,
+        paidAt: paidAt ?? now,
+        updatedAt: now,
+      },
+    });
+
+    return count;
+  }
+
+  // Data pura (coluna `date`) do dia em que o instante cai no fuso da empresa.
+  private toLocalDate(instant: Date, timeZone: string): Date {
+    const { year, month, day } = toZonedParts(instant, timeZone);
+
+    return new Date(Date.UTC(year, month - 1, day));
   }
 
   /**
@@ -178,6 +286,18 @@ export class PaymentService {
     if (status !== PaymentStatus.PAID && paidAt) {
       throw new BadRequestException(
         "paidAt só pode ser informado quando o pagamento está PAID",
+      );
+    }
+  }
+
+  // Um pagamento só é baixado quando se sabe como foi pago.
+  private ensurePaymentMethodWhenPaid(
+    status: PaymentStatus,
+    paymentMethodId?: string | null,
+  ) {
+    if (status === PaymentStatus.PAID && !paymentMethodId) {
+      throw new BadRequestException(
+        "paymentMethodId é obrigatório quando o pagamento está PAID",
       );
     }
   }

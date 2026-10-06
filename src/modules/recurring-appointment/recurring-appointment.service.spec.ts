@@ -5,6 +5,7 @@ import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
 import { CompanyService } from "../company/company.service";
+import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
@@ -34,6 +35,11 @@ describe("RecurringAppointmentService", () => {
   const appointmentServiceMock = {
     createFromRecurrence: vi.fn(),
     cancelFutureFromRecurrence: vi.fn(),
+  };
+  const paymentServiceMock = {
+    createPendingForAppointments: vi.fn(),
+    cancelPendingForRecurrence: vi.fn(),
+    settlePendingForRecurrence: vi.fn(),
   };
   // Os testes de geração usam UTC para facilitar a leitura das datas.
   const companyServiceMock = { getTimeZone: vi.fn().mockResolvedValue("UTC") };
@@ -83,12 +89,23 @@ describe("RecurringAppointmentService", () => {
     ],
   };
 
+  // Como o AppointmentService devolve os agendamentos criados.
+  const createdAppointments = [
+    { id: "appointment-1", startAt: new Date("2026-10-06T14:00:00.000Z") },
+  ];
+
   beforeEach(async () => {
     vi.clearAllMocks();
     peopleServiceMock.findOne.mockImplementation((id: string) =>
       id === "client-1" ? { id, type: "CLIENT" } : { id, type: "PROFESSIONAL" },
     );
-    serviceServiceMock.findActive.mockResolvedValue({ duration: 60 });
+    serviceServiceMock.findActive.mockResolvedValue({
+      duration: 60,
+      price: 100,
+    });
+    appointmentServiceMock.createFromRecurrence.mockResolvedValue(
+      createdAppointments,
+    );
     // Relógio fixo: as ocorrências geradas dependem de "hoje".
     vi.setSystemTime(new Date("2026-09-30T12:00:00.000Z"));
     prismaMock.recurringAppointment.create.mockResolvedValue(stored);
@@ -104,6 +121,7 @@ describe("RecurringAppointmentService", () => {
         { provide: ServiceService, useValue: serviceServiceMock },
         { provide: AppointmentService, useValue: appointmentServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
+        { provide: PaymentService, useValue: paymentServiceMock },
       ],
     }).compile();
 
@@ -163,19 +181,6 @@ describe("RecurringAppointmentService", () => {
       expect(endAt.getTime() - startAt.getTime()).toBe(60 * 60_000);
     });
 
-    it("não deve gerar agendamentos para recorrência criada inativa", async () => {
-      prismaMock.recurringAppointment.create.mockResolvedValueOnce({
-        ...stored,
-        isActive: false,
-      });
-
-      await recurringService.create({ ...dto, isActive: false }, COMPANY_ID);
-
-      expect(
-        appointmentServiceMock.createFromRecurrence,
-      ).not.toHaveBeenCalled();
-    });
-
     it("deve recusar dia que reserva menos tempo que a duração do serviço", async () => {
       await expect(
         recurringService.create(
@@ -217,22 +222,88 @@ describe("RecurringAppointmentService", () => {
     });
   });
 
-  describe("regeração ao editar", () => {
-    it("deve cancelar os futuros e regerar quando os dias mudam", async () => {
-      await recurringService.update(
+  describe("pagamentos", () => {
+    it("deve gerar um pagamento PENDING por agendamento, com o preço do serviço", async () => {
+      await recurringService.create(dto, COMPANY_ID);
+
+      expect(
+        paymentServiceMock.createPendingForAppointments,
+      ).toHaveBeenCalledWith(prismaMock, createdAppointments, 100, "UTC");
+    });
+
+    it("deve recusar serviço sem preço sem gravar nada", async () => {
+      serviceServiceMock.findActive.mockResolvedValueOnce({
+        duration: 60,
+        price: null,
+      });
+
+      await expect(
+        recurringService.create(dto, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+
+    it("deve dar baixa em lote nos pendentes da recorrência", async () => {
+      paymentServiceMock.settlePendingForRecurrence.mockResolvedValue(8);
+      const settle = { paymentMethodId: "method-1" };
+
+      const result = await recurringService.settlePayments(
         "recurring-1",
-        { days: [{ weekDay: "MONDAY", startTime: "08:00", endTime: "09:30" }] },
+        settle,
         COMPANY_ID,
       );
 
+      expect(result).toEqual({ settled: 8 });
       expect(
-        appointmentServiceMock.cancelFutureFromRecurrence,
-      ).toHaveBeenCalledWith(prismaMock, "recurring-1", anyDate);
-      expect(appointmentServiceMock.createFromRecurrence).toHaveBeenCalled();
+        paymentServiceMock.settlePendingForRecurrence,
+      ).toHaveBeenCalledWith("recurring-1", settle, COMPANY_ID);
     });
 
-    it("deve apenas cancelar os futuros ao desativar", async () => {
-      prismaMock.recurringAppointment.update.mockResolvedValueOnce({
+    it("deve recusar baixa em lote de recorrência de outra empresa", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        recurringService.settlePayments(
+          "recurring-1",
+          { paymentMethodId: "method-1" },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(
+        paymentServiceMock.settlePendingForRecurrence,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancelamento", () => {
+    it("deve cancelar os agendamentos futuros e depois os pagamentos pendentes", async () => {
+      await recurringService.update(
+        "recurring-1",
+        { isActive: false },
+        COMPANY_ID,
+      );
+
+      const cancelAppointments =
+        appointmentServiceMock.cancelFutureFromRecurrence;
+      const cancelPayments = paymentServiceMock.cancelPendingForRecurrence;
+      expect(cancelAppointments).toHaveBeenCalledWith(
+        prismaMock,
+        "recurring-1",
+        anyDate,
+      );
+      expect(cancelPayments).toHaveBeenCalledWith(
+        prismaMock,
+        "recurring-1",
+        anyDate,
+      );
+      // Os pagamentos procuram os agendamentos já cancelados.
+      expect(cancelAppointments.mock.invocationCallOrder[0]).toBeLessThan(
+        cancelPayments.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("não deve repetir o cancelamento de uma recorrência já cancelada", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
         ...stored,
         isActive: false,
       });
@@ -245,9 +316,9 @@ describe("RecurringAppointmentService", () => {
 
       expect(
         appointmentServiceMock.cancelFutureFromRecurrence,
-      ).toHaveBeenCalled();
+      ).not.toHaveBeenCalled();
       expect(
-        appointmentServiceMock.createFromRecurrence,
+        paymentServiceMock.cancelPendingForRecurrence,
       ).not.toHaveBeenCalled();
     });
 
@@ -258,11 +329,16 @@ describe("RecurringAppointmentService", () => {
         COMPANY_ID,
       );
 
+      expect(prismaMock.recurringAppointment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { note: "cliente pediu para manter", updatedAt: anyDate },
+        }),
+      );
       expect(
         appointmentServiceMock.cancelFutureFromRecurrence,
       ).not.toHaveBeenCalled();
       expect(
-        appointmentServiceMock.createFromRecurrence,
+        paymentServiceMock.cancelPendingForRecurrence,
       ).not.toHaveBeenCalled();
     });
   });
@@ -376,75 +452,6 @@ describe("RecurringAppointmentService", () => {
   });
 
   describe("update", () => {
-    it("deve recusar período que passa de 60 dias", async () => {
-      await expect(
-        recurringService.update(
-          "recurring-1",
-          { endDate: new Date("2026-12-31") },
-          COMPANY_ID,
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it("deve recusar regerar recorrência antiga sem data final", async () => {
-      // Recorrências criadas antes da regra podem não ter data final: ajuste o período antes de regerar.
-      prismaMock.recurringAppointment.update.mockResolvedValueOnce({
-        ...stored,
-        endDate: null,
-      });
-
-      await expect(
-        recurringService.update(
-          "recurring-1",
-          {
-            days: [{ weekDay: "MONDAY", startTime: "08:00", endTime: "09:30" }],
-          },
-          COMPANY_ID,
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it("deve substituir todos os dias quando a lista é informada", async () => {
-      await recurringService.update(
-        "recurring-1",
-        { days: [{ weekDay: "MONDAY", startTime: "08:00", endTime: "09:00" }] },
-        COMPANY_ID,
-      );
-
-      expect(prismaMock.recurringAppointment.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: "recurring-1" },
-          data: {
-            updatedAt: anyDate,
-            days: {
-              deleteMany: {},
-              create: [
-                {
-                  weekDay: "MONDAY",
-                  startTime: new Date("1970-01-01T08:00:00.000Z"),
-                  endTime: new Date("1970-01-01T09:00:00.000Z"),
-                },
-              ],
-            },
-          },
-        }),
-      );
-    });
-
-    it("não deve tocar nos dias quando a lista não é informada", async () => {
-      await recurringService.update(
-        "recurring-1",
-        { isActive: false },
-        COMPANY_ID,
-      );
-
-      expect(prismaMock.recurringAppointment.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { isActive: false, updatedAt: anyDate },
-        }),
-      );
-    });
-
     it("deve lançar NotFoundException para recorrência de outra empresa", async () => {
       prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce(null);
 

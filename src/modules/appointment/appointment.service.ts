@@ -38,6 +38,7 @@ export interface RecurrenceAppointmentData {
 // createFromRecurrence/cancelFutureFromRecurrence rodam dentro da transação
 // aberta pelo RecurringAppointmentService, e precisam gravar com o mesmo `tx`
 // — nunca com o `this.prisma` direto, ou ficariam fora da transação.
+// Pick previne re repetir dados manualmente
 type PrismaClientLike = Pick<PrismaService, "appointment">;
 
 /**
@@ -257,8 +258,8 @@ export class AppointmentService {
       endAt: Date;
     },
     companyId: string,
-    ignoreId?: string,
-    occurrenceLabel?: string,
+    ignoreId?: string, // recebe o id de um agendamento, onde ele ignora o id na consulta
+    occurrenceLabel?: string, // monta a mensagem de erro
   ) {
     const conflict = await db.appointment.findFirst({
       where: {
@@ -298,7 +299,7 @@ export class AppointmentService {
     data: RecurrenceAppointmentData,
     occurrences: AppointmentOccurrence[],
     note?: string | null,
-  ): Promise<number> {
+  ): Promise<Pick<Appointment, "id" | "startAt">[]> {
     for (const { startAt, endAt } of occurrences) {
       await this.businessHourService.ensureWithinBusinessHours(
         data.companyId,
@@ -307,22 +308,23 @@ export class AppointmentService {
       );
       await this.ensureSlotIsFree(
         db,
-        { ...data, startAt, endAt },
+        { ...data, startAt, endAt }, // Pega tudo que existe em data e adiciona startAt e endAt
         data.companyId,
         undefined,
         startAt.toISOString(),
       );
     }
 
-    const created = await db.appointment.createMany({
+    // Devolve id e início de cada agendamento: a recorrência precisa deles
+    // para gerar os pagamentos na mesma transação.
+    return db.appointment.createManyAndReturn({
       data: occurrences.map((occurrence) => ({
-        ...data,
-        ...occurrence,
+        ...data, // companyId e clientId
+        ...occurrence, // startAt e endAt
         note: note ?? null,
       })),
+      select: { id: true, startAt: true },
     });
-
-    return created.count;
   }
 
   /**

@@ -11,6 +11,7 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
+import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
@@ -59,6 +60,20 @@ export class RecurringAppointmentController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.recurringAppointmentService.update(
+      id,
+      dto,
+      currentUser.companyId,
+    );
+  }
+
+  // Pagamento integral: baixa todos os pagamentos pendentes de uma vez.
+  @Post(":id/payments/settle")
+  settlePayments(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SettlePaymentsDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.recurringAppointmentService.settlePayments(
       id,
       dto,
       currentUser.companyId,
