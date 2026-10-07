@@ -13,6 +13,7 @@ import { NotificationModule } from "./modules/notification/notification.module";
 import { PaymentModule } from "./modules/payment/payment.module";
 import { PaymentMethodModule } from "./modules/payment-method/payment-method.module";
 import { PeopleModule } from "./modules/people/people.module";
+import { PlanModule } from "./modules/plan/plan.module";
 import { RecurringAppointmentModule } from "./modules/recurring-appointment/recurring-appointment.module";
 import { ServiceModule } from "./modules/service/service.module";
 import { StateModule } from "./modules/state/state.module";
@@ -42,6 +43,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     NotificationModule,
     PaymentMethodModule,
     PaymentModule,
+    PlanModule,
   ],
   controllers: [AppController],
   providers: [AppService],

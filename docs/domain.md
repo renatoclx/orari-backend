@@ -333,24 +333,26 @@
 
 ### Atributos
 
-| Nome        | Descrição                       |
-| ----------- | ------------------------------- |
-| id          | Identificador único             |
-| name        | Nome do plano                   |
-| description | Descrição do plano (opcional)   |
-| isActive    | Plano ativo ou inativo          |
-| companyId   | Código da empresa               |
+| Nome           | Descrição                                   |
+| -------------- | ------------------------------------------- |
+| id             | Identificador único                         |
+| name           | Nome do plano                               |
+| normalizedName | Nome sem acentos e em minúsculas, para busca |
+| description    | Descrição do plano (opcional)               |
+| monthlyPrice   | Valor mensal do plano                       |
+| isActive       | Plano ativo ou inativo                      |
+| companyId      | Código da empresa                           |
 
 ### Relacionamentos
 
 - Um plano pertence a uma empresa.
-- Um plano é composto por um ou mais serviços (PlanService).
+- Um plano é composto por um ou mais serviços (PlanItem).
 - Um plano possui percentuais de desconto por período (PlanPeriod).
 - Um plano pode ser contratado por vários clientes (ClientPlan).
 
 ---
 
-## PlanService
+## PlanItem
 
 - Representa um serviço incluído em um plano.
 

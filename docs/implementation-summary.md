@@ -30,6 +30,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | RecurringAppointment | **Sem exclusão** (`isActive`) | Período + dias da semana |
 | RecurringDay | Exclusão física (substituída em bloco) | Dia da semana e horários (`time`) |
 | PaymentMethod | Soft delete | Nome único por empresa |
+| Plan | **Sem exclusão** (`isActive`, reativável) | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco |
 | Payment | Soft delete | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
 | BusinessHour | Soft delete | Janelas de atendimento por dia da semana |
 | Notification | **Sem exclusão** (resolvida) | Sem tipos em uso (entidade mantida para o futuro) |
@@ -50,6 +51,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
 | Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
+| Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
 | Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
 | Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
@@ -143,6 +145,14 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Vencimento:** o pagamento `PENDING` passa a vencer no novo dia, na mesma transação.
 - **Cancelamento de um agendamento:** `PATCH /recurring-appointments/:id/appointments/:appointmentId/cancel` cancela o agendamento (`SCHEDULED` ou `CONFIRMED`) e o pagamento `PENDING` dele, na mesma transação.
 - **PATCH comum bloqueado:** `PATCH /appointments/:id` recusa `startAt`, `serviceId`, `clientId`, `professionalId` e `status: CANCELLED` em agendamentos de recorrência.
+
+### 2.12 Catálogo de planos (Etapa 5)
+
+- **Entidades:** `Plan` (valor mensal próprio, `monthlyPrice`), `PlanItem` (serviço do plano; renomeado de `PlanService` para não colidir com a classe do NestJS) e `PlanPeriod` (meses e os dois percentuais de desconto).
+- **Cadastro em um payload:** `POST /plans` recebe `serviceIds` e `periods`; no `PATCH`, cada lista informada substitui a anterior, como os dias da recorrência.
+- **Validações:** ao menos um serviço, sem repetição, todos da empresa e ativos (reaproveita `ServiceService.findActive`); períodos com meses distintos e percentuais de 0 a 100; nome único (409).
+- **Resposta:** os itens saem como `services` (`id`, `name`, `isActive`), sem expor a tabela intermediária.
+- **Para a contratação (Etapa 6):** recusar plano inativo, sem períodos ou com serviço inativo.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

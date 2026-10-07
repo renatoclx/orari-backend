@@ -146,17 +146,24 @@
 ### Catálogo de planos
 
 - Um plano pertence à empresa do usuário que o cadastrou; a empresa não é informada no payload.
-- Um plano é composto por um ou mais serviços da própria empresa, e todos precisam estar ativos e ter preço.
+- O nome do plano é único entre os planos da mesma empresa.
+- Um plano é o pacote de serviços; os períodos (ex.: 3, 6 ou 12 meses) são opções de contratação do mesmo plano.
+- Um plano é composto por um ou mais serviços da própria empresa, ativos no momento do cadastro ou da edição.
 - Um serviço não pode aparecer mais de uma vez no mesmo plano.
+- Os serviços e os períodos de um plano podem ser editados; a lista informada substitui a anterior. Contratações já feitas não mudam.
+- O valor mensal do plano (`monthlyPrice`) é definido pela empresa no cadastro e não depende dos preços dos serviços.
+- Não há exclusão: o plano é desativado por `isActive` e pode ser reativado.
 - Planos inativos não podem ser contratados.
-- O valor mensal do plano é a soma dos preços dos seus serviços.
+- Um plano pode ser cadastrado sem períodos, mas só pode ser contratado se tiver ao menos um.
+- Um plano com algum serviço inativo não pode ser contratado.
 
 ### Descontos por período
 
-- Cada plano define, por período (ex.: 3, 6 ou 12 meses), dois percentuais fixos de desconto:
+- Cada plano define, por período (ex.: 3, 6 ou 12 meses), dois percentuais fixos de desconto, ambos obrigatórios:
   - `discountPercent`: para pagamento integral (uma única cobrança do total do período);
   - `monthlyDiscountPercent`: para pagamento mensal.
-- Um período só pode ser contratado se tiver os dois percentuais cadastrados.
+- O número de meses é inteiro, a partir de 1, e não se repete no mesmo plano.
+- Os percentuais vão de 0 a 100, com até duas casas decimais.
 - No pagamento integral, o total do período é o valor mensal × número de meses, com `discountPercent` aplicado.
 - No pagamento mensal, cada parcela é o valor mensal com `monthlyDiscountPercent` aplicado.
 - Alterar os percentuais de um plano não altera contratações já feitas.
@@ -174,7 +181,7 @@
 
 ### Troca de serviços
 
-- Um serviço do plano só pode ser trocado por outro de preço igual, para que o valor mensal não mude.
+- Um serviço do plano pode ser trocado por outro serviço ativo da empresa. O valor mensal não muda, porque não depende dos preços dos serviços.
 
 ### Pagamento da contratação
 

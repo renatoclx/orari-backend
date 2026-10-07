@@ -136,6 +136,7 @@ model Company {
   notifications         Notification[]
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
+  plans                 Plan[]
 
   @@map("companies")
 }
@@ -263,6 +264,7 @@ model Service {
   company               Company                @relation(fields: [companyId], references: [id])
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
+  planItems             PlanItem[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -329,6 +331,65 @@ model RecurringAppointment {
   @@index([clientId])
   @@index([serviceId])
   @@map("recurring_appointments")
+}
+
+// Pacote de serviços vendido pela empresa. O valor mensal é definido pela empresa;
+// os períodos de contratação (PlanPeriod) aplicam descontos sobre ele. Não há
+// exclusão: o plano é desativado por isActive.
+model Plan {
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  description    String?
+  monthlyPrice   Decimal   @db.Decimal(10, 2)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company Company      @relation(fields: [companyId], references: [id])
+  items   PlanItem[]
+  periods PlanPeriod[]
+
+  @@unique([companyId, name])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("plans")
+}
+
+// Serviço incluído em um plano. Faz parte do plano: é criado e substituído junto
+// com ele, por isso usa exclusão física (ver docs/database.md).
+model PlanItem {
+  id        String   @id @default(uuid())
+  planId    String
+  serviceId String
+  createdAt DateTime @default(now())
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@unique([planId, serviceId])
+  @@index([serviceId])
+  @@map("plan_items")
+}
+
+// Período de contratação de um plano, com os dois percentuais de desconto. Faz
+// parte do plano (exclusão física); as contratações guardam cópia dos valores.
+model PlanPeriod {
+  id                     String    @id @default(uuid())
+  planId                 String
+  months                 Int
+  // Desconto para pagamento integral do período.
+  discountPercent        Decimal   @db.Decimal(5, 2)
+  // Desconto de cada parcela no pagamento mensal.
+  monthlyDiscountPercent Decimal   @db.Decimal(5, 2)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime?
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, months])
+  @@map("plan_periods")
 }
 
 // Faz parte do agendamento recorrente: é criada e substituída junto com ele,
