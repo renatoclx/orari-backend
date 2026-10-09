@@ -581,6 +581,114 @@ describe("RecurringAppointmentService", () => {
     });
   });
 
+  describe("agenda de plano contratado", () => {
+    // Um ano inteiro: bem além do limite de 60 dias da recorrência avulsa.
+    const schedule = {
+      clientPlanId: "client-plan-1",
+      clientId: "client-1",
+      professionalId: "professional-1",
+      serviceId: "service-1",
+      startDate: new Date("2026-10-01"),
+      endDate: new Date("2027-09-30"),
+      days: [
+        { weekDay: "TUESDAY" as const, startTime: "14:00", endTime: "15:00" },
+      ],
+    };
+    // A transação vem da contratação; aqui basta um objeto com as mesmas tabelas.
+    const tx = prismaMock as never;
+
+    it("deve gravar o vínculo com a contratação e gerar o período inteiro", async () => {
+      await recurringService.createForClientPlan(
+        tx,
+        schedule,
+        COMPANY_ID,
+        "UTC",
+      );
+
+      expect(prismaMock.recurringAppointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            clientPlanId: "client-plan-1",
+            companyId: COMPANY_ID,
+            endDate: schedule.endDate,
+          }) as unknown,
+        }),
+      );
+      // Terças de 2026-10-06 a 2027-09-28: 52 semanas.
+      expect(generatedOccurrences()).toHaveLength(52);
+      expect(generatedOccurrences().at(-1)).toBe("2027-09-28T14:00:00.000Z");
+    });
+
+    it("não deve gerar pagamento por agendamento nem abrir transação própria", async () => {
+      await recurringService.createForClientPlan(
+        tx,
+        schedule,
+        COMPANY_ID,
+        "UTC",
+      );
+
+      expect(
+        paymentServiceMock.createPendingForAppointments,
+      ).not.toHaveBeenCalled();
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("não deve exigir preço do serviço", async () => {
+      serviceServiceMock.findActive.mockResolvedValueOnce({
+        duration: 60,
+        price: null,
+      });
+
+      await expect(
+        recurringService.createForClientPlan(tx, schedule, COMPANY_ID, "UTC"),
+      ).resolves.toBeDefined();
+    });
+
+    it("deve manter as regras de agenda: dia menor que a duração do serviço", async () => {
+      await expect(
+        recurringService.createForClientPlan(
+          tx,
+          {
+            ...schedule,
+            days: [
+              { weekDay: "TUESDAY", startTime: "14:00", endTime: "14:30" },
+            ],
+          },
+          COMPANY_ID,
+          "UTC",
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar encerrar isoladamente a recorrência de um plano", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
+        ...stored,
+        clientPlanId: "client-plan-1",
+      });
+
+      await expect(
+        recurringService.update("recurring-1", { isActive: false }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.recurringAppointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve permitir mudar a observação da recorrência de um plano", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce({
+        ...stored,
+        clientPlanId: "client-plan-1",
+      });
+
+      await expect(
+        recurringService.update(
+          "recurring-1",
+          { note: "preferência por manhã" },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
   describe("update", () => {
     it("deve lançar NotFoundException para recorrência de outra empresa", async () => {
       prismaMock.recurringAppointment.findFirst.mockResolvedValueOnce(null);
