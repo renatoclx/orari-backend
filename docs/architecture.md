@@ -61,4 +61,6 @@ Cada módulo deverá possuir:
     - As regras de negócio pertencem estritamente aos Services;
     - Os módulos não acessam diretamente outros módulos pelo prisma;
     - Services não devem acessar diretamente o banco de outros módulos;
+    - Gravação: somente o módulo dono grava as suas tabelas. Quando um fluxo envolve vários módulos (ex.: contratação de plano), o módulo coordenador chama os services dos outros e repassa a transação.
+    - Leitura: filtrar ou incluir dados por relação (ex.: pagamentos da recorrência de um agendamento) é permitido quando evita uma consulta extra, desde que seja somente leitura e restrita à empresa do usuário;
     - Controllers nunca acessam o Prisma;

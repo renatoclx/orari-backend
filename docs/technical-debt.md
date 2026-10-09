@@ -28,4 +28,8 @@ padrão).
 agendamentos do cliente e do profissional no período inteiro, e validar as
 ocorrências em memória.
 
+**Medição:** no banco local, um plano mensal de 12 meses com 2 serviços e 2 dias
+por semana (208 agendamentos) foi contratado em cerca de 0,5 s. Em produção, a
+latência de cada consulta é maior; vale medir de novo no ambiente real.
+
 **Registrado em:** 2026-10-09 (Etapa 6.3).

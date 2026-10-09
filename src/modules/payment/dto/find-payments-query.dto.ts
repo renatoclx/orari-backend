@@ -11,6 +11,11 @@ export class FindPaymentsQueryDto extends PaginationQueryDto {
   @IsUUID()
   appointmentId?: string;
 
+  // Pagamentos de uma contratação de plano (integral ou parcelas mensais).
+  @IsOptional()
+  @IsUUID()
+  clientPlanId?: string;
+
   @IsOptional()
   @IsUUID()
   paymentMethodId?: string;

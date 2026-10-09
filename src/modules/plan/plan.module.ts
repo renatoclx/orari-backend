@@ -7,5 +7,6 @@ import { PlanService } from "./plan.service";
   imports: [ServiceModule],
   controllers: [PlanController],
   providers: [PlanService],
+  exports: [PlanService],
 })
 export class PlanModule {}

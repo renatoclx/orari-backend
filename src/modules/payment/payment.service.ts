@@ -38,6 +38,12 @@ export interface AppointmentToCharge {
   startAt: Date;
 }
 
+// Um pagamento de contratação de plano: valor e vencimento já calculados.
+export interface ClientPlanCharge {
+  amount: Decimal;
+  dueDate: Date | null;
+}
+
 @Injectable()
 export class PaymentService {
   constructor(
@@ -81,6 +87,7 @@ export class PaymentService {
       limit,
       status,
       appointmentId,
+      clientPlanId,
       paymentMethodId,
     }: FindPaymentsQueryDto,
     companyId: string,
@@ -90,6 +97,7 @@ export class PaymentService {
       deletedAt: null,
       status,
       appointmentId,
+      clientPlanId,
       paymentMethodId,
     };
 
@@ -180,6 +188,29 @@ export class PaymentService {
         appointmentId: appointment.id,
         amount,
         dueDate: this.toLocalDate(appointment.startAt, timeZone),
+      })),
+    });
+
+    return count;
+  }
+
+  /**
+   * Gera os pagamentos de uma contratação de plano, dentro da transação da
+   * contratação: um no integral, um por mês no mensal. Nascem PENDING, sem
+   * método (informado na baixa) e sem agendamento: pertencem à contratação.
+   */
+  async createForClientPlan(
+    db: PrismaClientLike,
+    companyId: string,
+    clientPlanId: string,
+    charges: ClientPlanCharge[],
+  ): Promise<number> {
+    const { count } = await db.payment.createMany({
+      data: charges.map(({ amount, dueDate }) => ({
+        companyId,
+        clientPlanId,
+        amount,
+        dueDate,
       })),
     });
 

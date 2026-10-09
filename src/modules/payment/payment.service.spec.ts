@@ -413,6 +413,38 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve gerar os pagamentos da contratação sem agendamento e sem método", async () => {
+      prismaMock.payment.createMany.mockResolvedValue({ count: 2 });
+      const amount = 380 as never;
+
+      await paymentService.createForClientPlan(
+        prismaMock as never,
+        COMPANY_ID,
+        "client-plan-1",
+        [
+          { amount, dueDate: new Date("2026-10-31") },
+          { amount, dueDate: null },
+        ],
+      );
+
+      expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            companyId: COMPANY_ID,
+            clientPlanId: "client-plan-1",
+            amount: 380,
+            dueDate: new Date("2026-10-31"),
+          },
+          {
+            companyId: COMPANY_ID,
+            clientPlanId: "client-plan-1",
+            amount: 380,
+            dueDate: null,
+          },
+        ],
+      });
+    });
+
     it("deve cancelar só os PENDING dos agendamentos futuros cancelados", async () => {
       prismaMock.payment.updateMany.mockResolvedValue({ count: 3 });
       const from = new Date("2026-10-06T12:00:00.000Z");
