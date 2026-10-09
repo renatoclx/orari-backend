@@ -188,7 +188,7 @@
 
 ### Troca de serviços
 
-- Um serviço do plano pode ser trocado por outro serviço ativo da empresa. O valor mensal não muda, porque não depende dos preços dos serviços.
+- O plano fecha o contrato com os serviços contratados: não há troca de serviço durante a contratação.
 
 ### Pagamento da contratação
 
