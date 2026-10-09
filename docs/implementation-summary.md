@@ -157,6 +157,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 ### 2.13 Contratação de plano (Etapa 6)
 
 - **6.1 — Empresa no pagamento:** `Payment.companyId` passou a existir e a ser obrigatório; a migração preenche os pagamentos existentes com a empresa do agendamento antes de tornar a coluna obrigatória. A restrição por empresa usa essa coluna, e não mais o agendamento, porque os pagamentos de plano não terão agendamento.
+- **6.2 — Schema e cálculos:** `ClientPlan` (enum `PlanBillingType`), `Payment.clientPlanId` e `RecurringAppointment.clientPlanId` (ambos opcionais, `RESTRICT`). As contas ficam em `client-plan.calculations.ts`, funções puras com `Decimal`: total e pagamentos por modalidade (parcela arredondada antes do total), data final (véspera do mesmo dia N meses depois, ou último dia do mês quando o dia não existe) e vencimentos mês a mês (último dia do mês quando o dia não existe, sem deslocar os seguintes). O valor da parcela não é gravado: no mensal, é `totalAmount ÷ months`.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

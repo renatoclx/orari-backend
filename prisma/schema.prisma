@@ -138,6 +138,7 @@ model Company {
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
   payments              Payment[]
+  clientPlans           ClientPlan[]
 
   @@map("companies")
 }
@@ -166,6 +167,7 @@ model People {
   appointmentsAsProfessional Appointment[]          @relation("AppointmentProfessional")
   recurringAsClient          RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
+  clientPlans                ClientPlan[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   @@unique([companyId, document], where: raw("\"deletedAt\" IS NULL"))
@@ -228,6 +230,12 @@ enum AppointmentStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+}
+
+// Modalidade de pagamento de uma contratação de plano.
+enum PlanBillingType {
+  INTEGRAL
+  MONTHLY
 }
 
 enum PaymentStatus {
@@ -317,10 +325,13 @@ model RecurringAppointment {
   endDate        DateTime? @db.Date
   note           String?
   isActive       Boolean   @default(true)
+  // Preenchido quando a recorrência é a agenda de um serviço de um plano contratado.
+  clientPlanId   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
   company       Company        @relation(fields: [companyId], references: [id])
+  clientPlan    ClientPlan?    @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
   client        People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
   professional  People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
   service       Service        @relation(fields: [serviceId], references: [id])
@@ -331,6 +342,7 @@ model RecurringAppointment {
   @@index([professionalId])
   @@index([clientId])
   @@index([serviceId])
+  @@index([clientPlanId])
   @@map("recurring_appointments")
 }
 
@@ -350,8 +362,9 @@ model Plan {
   updatedAt      DateTime?
 
   company Company      @relation(fields: [companyId], references: [id])
-  items   PlanItem[]
-  periods PlanPeriod[]
+  items       PlanItem[]
+  periods     PlanPeriod[]
+  clientPlans ClientPlan[]
 
   @@unique([companyId, name])
   @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
@@ -391,6 +404,41 @@ model PlanPeriod {
 
   @@unique([planId, months])
   @@map("plan_periods")
+}
+
+// Contratação de um plano por um cliente. Os valores são congelados na
+// contratação: mudar o plano ou os serviços depois não os altera. Cada serviço do
+// plano vira uma recorrência própria (RecurringAppointment.clientPlanId).
+model ClientPlan {
+  id              String          @id @default(uuid())
+  companyId       String
+  clientId        String
+  planId          String
+  billingType     PlanBillingType
+  months          Int
+  // Período pelo calendário (datas puras, sem fuso).
+  startDate       DateTime        @db.Date
+  endDate         DateTime        @db.Date
+  // Valor mensal do plano no momento da contratação.
+  monthlyAmount   Decimal         @db.Decimal(10, 2)
+  // Percentual aplicado conforme a modalidade (integral ou mensal).
+  discountPercent Decimal         @db.Decimal(5, 2)
+  totalAmount     Decimal         @db.Decimal(10, 2)
+  // Vencimento do primeiro pagamento; os seguintes vencem mês a mês.
+  firstDueDate    DateTime?       @db.Date
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?
+
+  company               Company                @relation(fields: [companyId], references: [id])
+  client                People                 @relation(fields: [clientId], references: [id])
+  plan                  Plan                   @relation(fields: [planId], references: [id])
+  payments              Payment[]
+  recurringAppointments RecurringAppointment[]
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([planId])
+  @@map("client_plans")
 }
 
 // Faz parte do agendamento recorrente: é criada e substituída junto com ele,
@@ -433,8 +481,9 @@ model Payment {
   id              String        @id @default(uuid())
   // A empresa fica no próprio pagamento: os de plano não têm agendamento.
   companyId       String
-  // Nulo nos pagamentos de contratação de plano (a partir da Etapa 6 do roadmap).
+  // Um pagamento é de um agendamento ou de uma contratação de plano, nunca dos dois.
   appointmentId   String?
+  clientPlanId    String?
   amount          Decimal       @db.Decimal(10, 2)
   // Vencimento pelo calendário, opcional. Em agendamentos de recorrência, acompanha a data do agendamento.
   dueDate         DateTime?     @db.Date
@@ -449,11 +498,13 @@ model Payment {
 
   company       Company       @relation(fields: [companyId], references: [id])
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  clientPlan    ClientPlan?   @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
   @@unique([appointmentId], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
+  @@index([clientPlanId])
   @@index([paymentMethodId])
   @@map("payments")
 }
