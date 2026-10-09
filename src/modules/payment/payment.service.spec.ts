@@ -16,8 +16,8 @@ import { PaymentService } from "./payment.service";
 
 const anyDate: unknown = expect.any(Date);
 
-// Filtro esperado de "pagamento da empresa": a empresa vem do agendamento.
-const ownedByCompany = { appointment: { companyId: COMPANY_ID } };
+// Filtro esperado de "pagamento da empresa": a empresa fica no próprio pagamento.
+const ownedByCompany = { companyId: COMPANY_ID };
 
 describe("PaymentService", () => {
   let paymentService: PaymentService;
@@ -87,7 +87,7 @@ describe("PaymentService", () => {
         COMPANY_ID,
       );
       expect(prismaMock.payment.create).toHaveBeenCalledWith({
-        data: { ...dto, status: "PENDING" },
+        data: { ...dto, status: "PENDING", companyId: COMPANY_ID },
       });
     });
 
@@ -103,7 +103,12 @@ describe("PaymentService", () => {
         COMPANY_ID,
       );
       expect(prismaMock.payment.create).toHaveBeenCalledWith({
-        data: { ...semValor, amount: 80, status: "PENDING" },
+        data: {
+          ...semValor,
+          amount: 80,
+          status: "PENDING",
+          companyId: COMPANY_ID,
+        },
       });
     });
 
@@ -199,7 +204,7 @@ describe("PaymentService", () => {
   });
 
   describe("findAll", () => {
-    it("deve restringir à empresa do agendamento e aplicar os filtros", async () => {
+    it("deve restringir à empresa do pagamento e aplicar os filtros", async () => {
       prismaMock.payment.findMany.mockResolvedValue([payment]);
       prismaMock.payment.count.mockResolvedValue(1);
 
@@ -373,6 +378,7 @@ describe("PaymentService", () => {
 
       const created = await paymentService.createPendingForAppointments(
         prismaMock as never,
+        COMPANY_ID,
         [
           // 01:00 UTC de 07/10 ainda é 06/10 às 22h em São Paulo.
           {
@@ -392,11 +398,13 @@ describe("PaymentService", () => {
       expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
         data: [
           {
+            companyId: COMPANY_ID,
             appointmentId: "appointment-1",
             amount: 100,
             dueDate: new Date("2026-10-06"),
           },
           {
+            companyId: COMPANY_ID,
             appointmentId: "appointment-2",
             amount: 100,
             dueDate: new Date("2026-10-13"),
@@ -487,10 +495,8 @@ describe("PaymentService", () => {
         where: {
           status: "PENDING",
           deletedAt: null,
-          appointment: {
-            recurringAppointmentId: "recurring-1",
-            companyId: COMPANY_ID,
-          },
+          companyId: COMPANY_ID,
+          appointment: { recurringAppointmentId: "recurring-1" },
         },
         data: {
           status: "PAID",

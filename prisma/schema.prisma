@@ -137,6 +137,7 @@ model Company {
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
+  payments              Payment[]
 
   @@map("companies")
 }
@@ -430,6 +431,8 @@ model PaymentMethod {
 
 model Payment {
   id              String        @id @default(uuid())
+  // A empresa fica no próprio pagamento: os de plano não têm agendamento.
+  companyId       String
   // Nulo nos pagamentos de contratação de plano (a partir da Etapa 6 do roadmap).
   appointmentId   String?
   amount          Decimal       @db.Decimal(10, 2)
@@ -444,11 +447,13 @@ model Payment {
   updatedAt       DateTime?
   deletedAt       DateTime?
 
+  company       Company       @relation(fields: [companyId], references: [id])
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
   @@unique([appointmentId], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
   @@index([paymentMethodId])
   @@map("payments")
 }

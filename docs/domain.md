@@ -54,17 +54,17 @@
 
 ### Atributos
 
-| Nome            | Descrição                                  |
-| --------------- | ------------------------------------------ |
-| id              | Identificador único                        |
-| corporateReason | Razão Social da empresa                    |
-| fantasyName     | Nome Fantasia (opcional)                   |
-| cnpj            | Documento da empresa                       |
-| foundationDate  | Data de fundação                           |
-| isActive        | Empresa ativa ou inativa                   |
+| Nome            | Descrição                                    |
+| --------------- | -------------------------------------------- |
+| id              | Identificador único                          |
+| corporateReason | Razão Social da empresa                      |
+| fantasyName     | Nome Fantasia (opcional)                     |
+| cnpj            | Documento da empresa                         |
+| foundationDate  | Data de fundação                             |
+| isActive        | Empresa ativa ou inativa                     |
 | timezone        | Fuso horário da empresa (identificador IANA) |
-| logoUrl         | caminho da logomarca da empresa (opcional) |
-| subdomain       | Subdomínio da empresa                      |
+| logoUrl         | caminho da logomarca da empresa (opcional)   |
+| subdomain       | Subdomínio da empresa                        |
 
 ### Relacionamentos
 
@@ -109,13 +109,13 @@
 
 ### Atributos
 
-| Nome      | Descrição                                          |
-| --------- | --------------------------------------------------- |
-| id        | Identificador único                                 |
-| userId    | Código do usuário                                   |
-| tokenHash | Hash do token (o valor bruto nunca é persistido)     |
-| expiresAt | Data de expiração                                    |
-| revokedAt | Data em que o token foi revogado (opcional)          |
+| Nome      | Descrição                                        |
+| --------- | ------------------------------------------------ |
+| id        | Identificador único                              |
+| userId    | Código do usuário                                |
+| tokenHash | Hash do token (o valor bruto nunca é persistido) |
+| expiresAt | Data de expiração                                |
+| revokedAt | Data em que o token foi revogado (opcional)      |
 
 ### Relacionamentos
 
@@ -136,16 +136,16 @@
 
 ### Atributos
 
-| Nome       | Descrição            |
-| ---------- | -------------------- |
-| id         | Identificador único  |
-| name       | Nome da pessoa       |
-| document   | CPF da pessoa        |
-| birthDate  | Data de nascimento   |
-| profession | Profissão (opcional) |
-| type       | Tipo de pessoa       |
+| Nome       | Descrição              |
+| ---------- | ---------------------- |
+| id         | Identificador único    |
+| name       | Nome da pessoa         |
+| document   | CPF da pessoa          |
+| birthDate  | Data de nascimento     |
+| profession | Profissão (opcional)   |
+| type       | Tipo de pessoa         |
 | note       | Observações (opcional) |
-| companyId  | Código da empresa    |
+| companyId  | Código da empresa      |
 
 ### Relacionamentos
 
@@ -196,17 +196,17 @@
 ### Atributos
 
 | Nome         | Descrição                    |
-| ------------ | ----------------------------- |
-| id           | Identificador único           |
-| type         | Tipo de endereço              |
-| cep          | Código postal                 |
-| street       | Logradouro                    |
-| neighborhood | Bairro (opcional)              |
-| number       | Número                        |
-| complement   | Complemento (opcional)        |
-| peopleId     | Código da Pessoa (opcional)   |
-| companyId    | Código da empresa (opcional)  |
-| cityId       | Código da cidade              |
+| ------------ | ---------------------------- |
+| id           | Identificador único          |
+| type         | Tipo de endereço             |
+| cep          | Código postal                |
+| street       | Logradouro                   |
+| neighborhood | Bairro (opcional)            |
+| number       | Número                       |
+| complement   | Complemento (opcional)       |
+| peopleId     | Código da Pessoa (opcional)  |
+| companyId    | Código da empresa (opcional) |
+| cityId       | Código da cidade             |
 
 ### Relacionamentos
 
@@ -245,13 +245,13 @@
 
 ### Atributos
 
-| Nome      | Descrição                     |
-| --------- | ----------------------------- |
-| id        | Identificador único           |
-| companyId | Código da empresa             |
-| weekDay   | Dia da semana (WeekDays)      |
-| openAt    | Horário de abertura           |
-| closeAt   | Horário de fechamento         |
+| Nome      | Descrição                |
+| --------- | ------------------------ |
+| id        | Identificador único      |
+| companyId | Código da empresa        |
+| weekDay   | Dia da semana (WeekDays) |
+| openAt    | Horário de abertura      |
+| closeAt   | Horário de fechamento    |
 
 ### Relacionamentos
 
@@ -274,18 +274,18 @@
 
 ### Atributos
 
-| Nome                   | Descrição                                             |
-| ---------------------- | ----------------------------------------------------- |
-| id                     | Identificador único                                   |
-| companyId              | Código da empresa                                     |
-| clientId               | Código do cliente (deriva de pessoa)                  |
-| professionalId         | Código do profissional (deriva de pessoa)             |
-| serviceId              | Código do serviço                                     |
-| startAt                | Data e horário de início do serviço                   |
-| endAt                  | Data e horário final do serviço                       |
-| status                 | Situação do agendamento                               |
-| note                   | Observação (opcional)                                 |
-| recurringAppointmentId | Agendamento recorrente que o originou (opcional)      |
+| Nome                   | Descrição                                        |
+| ---------------------- | ------------------------------------------------ |
+| id                     | Identificador único                              |
+| companyId              | Código da empresa                                |
+| clientId               | Código do cliente (deriva de pessoa)             |
+| professionalId         | Código do profissional (deriva de pessoa)        |
+| serviceId              | Código do serviço                                |
+| startAt                | Data e horário de início do serviço              |
+| endAt                  | Data e horário final do serviço                  |
+| status                 | Situação do agendamento                          |
+| note                   | Observação (opcional)                            |
+| recurringAppointmentId | Agendamento recorrente que o originou (opcional) |
 
 ### Relacionamentos
 
@@ -303,18 +303,18 @@
 
 ### Atributos
 
-| Nome           | Descrição                                       |
-| -------------- | ----------------------------------------------- |
-| id             | Identificador único                             |
-| companyId      | Código da empresa                               |
-| clientId       | Código do cliente (deriva de pessoa)            |
-| professionalId | Código do profissional (deriva de pessoa)       |
-| serviceId      | Código do serviço                               |
-| startDate      | Data de início do agendamento recorrente        |
-| endDate        | Data final do agendamento recorrente (obrigatória) |
+| Nome           | Descrição                                                  |
+| -------------- | ---------------------------------------------------------- |
+| id             | Identificador único                                        |
+| companyId      | Código da empresa                                          |
+| clientId       | Código do cliente (deriva de pessoa)                       |
+| professionalId | Código do profissional (deriva de pessoa)                  |
+| serviceId      | Código do serviço                                          |
+| startDate      | Data de início do agendamento recorrente                   |
+| endDate        | Data final do agendamento recorrente (obrigatória)         |
 | clientPlanId   | Contratação de plano que originou a recorrência (opcional) |
-| note           | Observação (opcional)                           |
-| isActive       | Ativa ou inativa o agendamento recorrente       |
+| note           | Observação (opcional)                                      |
+| isActive       | Ativa ou inativa o agendamento recorrente                  |
 
 ### Relacionamentos
 
@@ -333,15 +333,15 @@
 
 ### Atributos
 
-| Nome           | Descrição                                   |
-| -------------- | ------------------------------------------- |
-| id             | Identificador único                         |
-| name           | Nome do plano                               |
+| Nome           | Descrição                                    |
+| -------------- | -------------------------------------------- |
+| id             | Identificador único                          |
+| name           | Nome do plano                                |
 | normalizedName | Nome sem acentos e em minúsculas, para busca |
-| description    | Descrição do plano (opcional)               |
-| monthlyPrice   | Valor mensal do plano                       |
-| isActive       | Plano ativo ou inativo                      |
-| companyId      | Código da empresa                           |
+| description    | Descrição do plano (opcional)                |
+| monthlyPrice   | Valor mensal do plano                        |
+| isActive       | Plano ativo ou inativo                       |
+| companyId      | Código da empresa                            |
 
 ### Relacionamentos
 
@@ -358,11 +358,11 @@
 
 ### Atributos
 
-| Nome      | Descrição               |
-| --------- | ----------------------- |
-| id        | Identificador único     |
-| planId    | Código do plano         |
-| serviceId | Código do serviço       |
+| Nome      | Descrição           |
+| --------- | ------------------- |
+| id        | Identificador único |
+| planId    | Código do plano     |
+| serviceId | Código do serviço   |
 
 ### Relacionamentos
 
@@ -376,13 +376,13 @@
 
 ### Atributos
 
-| Nome                   | Descrição                                           |
-| ---------------------- | --------------------------------------------------- |
-| id                     | Identificador único                                 |
-| planId                 | Código do plano                                     |
-| months                 | Número de meses do período                          |
-| discountPercent        | Percentual de desconto para pagamento integral      |
-| monthlyDiscountPercent | Percentual de desconto para pagamento mensal        |
+| Nome                   | Descrição                                      |
+| ---------------------- | ---------------------------------------------- |
+| id                     | Identificador único                            |
+| planId                 | Código do plano                                |
+| months                 | Número de meses do período                     |
+| discountPercent        | Percentual de desconto para pagamento integral |
+| monthlyDiscountPercent | Percentual de desconto para pagamento mensal   |
 
 ### Relacionamentos
 
@@ -413,6 +413,8 @@
 | monthlyAmount   | Valor mensal congelado na contratação                            |
 | discountPercent | Percentual de desconto aplicado conforme a modalidade, congelado |
 | totalAmount     | Valor total do período congelado na contratação                  |
+| endDate         | Data final da contratação                                        |
+| firstDueDate    | Vencimento do primeiro pagamento (opcional)                      |
 
 ### Relacionamentos
 
@@ -484,19 +486,21 @@
 
 ### Atributos
 
-| Nome            | Descrição                                                        |
-| --------------- | ---------------------------------------------------------------- |
-| id              | Identificador único                                              |
-| appointmentId   | Código do agendamento (opcional, quando não é de plano)          |
-| clientPlanId    | Código da contratação de plano (opcional, quando é de plano)     |
-| amount          | Valor final a pagar                                              |
-| dueDate         | Data de vencimento (opcional)                                    |
-| status          | Situação do pagamento                                            |
-| paidAt          | Dia que realizou o pagamento (opcional)                          |
-| paymentMethodId | Código do método de pagamento (opcional até o pagamento)         |
+| Nome            | Descrição                                                    |
+| --------------- | ------------------------------------------------------------ |
+| id              | Identificador único                                          |
+| companyId       | Código da empresa                                            |
+| appointmentId   | Código do agendamento (opcional, quando não é de plano)      |
+| clientPlanId    | Código da contratação de plano (opcional, quando é de plano) |
+| amount          | Valor final a pagar                                          |
+| dueDate         | Data de vencimento (opcional)                                |
+| status          | Situação do pagamento                                        |
+| paidAt          | Dia que realizou o pagamento (opcional)                      |
+| paymentMethodId | Código do método de pagamento (opcional até o pagamento)     |
 
 ### Relacionamentos
 
+- O pagamento pertence a uma empresa.
 - O pagamento corresponde a um agendamento ou a uma contratação de plano.
 - O pagamento de um agendamento de recorrência tem vencimento na data do agendamento, que acompanha a remarcação do agendamento.
 - Um pagamento pendente com vencimento anterior à data atual consta como atrasado (ver `business-rules.md`).

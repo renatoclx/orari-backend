@@ -153,6 +153,10 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Validações:** ao menos um serviço, sem repetição, todos da empresa e ativos (reaproveita `ServiceService.findActive`); períodos com meses distintos e percentuais de 0 a 100; nome único (409).
 - **Resposta:** os itens saem como `services` (`id`, `name`, `isActive`), sem expor a tabela intermediária.
 - **Para a contratação (Etapa 6):** recusar plano inativo, sem períodos ou com serviço inativo.
+
+### 2.13 Contratação de plano (Etapa 6)
+
+- **6.1 — Empresa no pagamento:** `Payment.companyId` passou a existir e a ser obrigatório; a migração preenche os pagamentos existentes com a empresa do agendamento antes de tornar a coluna obrigatória. A restrição por empresa usa essa coluna, e não mais o agendamento, porque os pagamentos de plano não terão agendamento.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

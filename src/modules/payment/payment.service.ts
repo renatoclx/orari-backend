@@ -23,13 +23,10 @@ import { SettlePaymentsDto } from "./dto/settle-payments.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
 
 /**
- * O pagamento não guarda a empresa: ela vem do agendamento. O filtro pela relação
- * `appointment` é um JOIN de leitura que restringe o pagamento à empresa do
- * usuário autenticado; pagamentos de outras empresas respondem 404.
+ * O pagamento guarda a própria empresa, porque os de contratação de plano não têm
+ * agendamento. Pagamentos de outras empresas respondem 404.
  */
-const ownedByCompany = (companyId: string) => ({
-  appointment: { companyId },
-});
+const ownedByCompany = (companyId: string) => ({ companyId });
 
 // Aceita o PrismaService ou o cliente de uma transação aberta por outro módulo,
 // para que os pagamentos sejam gravados junto com os agendamentos (tudo ou nada).
@@ -71,7 +68,7 @@ export class PaymentService {
 
     try {
       return await this.prisma.payment.create({
-        data: { ...dto, amount, status },
+        data: { ...dto, amount, status, companyId },
       });
     } catch (error) {
       throw this.mapUniqueViolation(error);
@@ -172,12 +169,14 @@ export class PaymentService {
    */
   async createPendingForAppointments(
     db: PrismaClientLike,
+    companyId: string,
     appointments: AppointmentToCharge[],
     amount: number | Decimal,
     timeZone: string,
   ): Promise<number> {
     const { count } = await db.payment.createMany({
       data: appointments.map((appointment) => ({
+        companyId,
         appointmentId: appointment.id,
         amount,
         dueDate: this.toLocalDate(appointment.startAt, timeZone),
@@ -259,7 +258,8 @@ export class PaymentService {
       where: {
         status: PaymentStatus.PENDING,
         deletedAt: null,
-        appointment: { recurringAppointmentId, companyId },
+        companyId,
+        appointment: { recurringAppointmentId },
       },
       data: {
         status: PaymentStatus.PAID,

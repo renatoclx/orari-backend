@@ -165,17 +165,24 @@
 - O número de meses é inteiro, a partir de 1, e não se repete no mesmo plano.
 - Os percentuais vão de 0 a 100, com até duas casas decimais.
 - No pagamento integral, o total do período é o valor mensal × número de meses, com `discountPercent` aplicado.
-- No pagamento mensal, cada parcela é o valor mensal com `monthlyDiscountPercent` aplicado.
+- No pagamento mensal, cada parcela é o valor mensal com `monthlyDiscountPercent` aplicado, e o total é a parcela × número de meses.
+- Os valores são arredondados para duas casas decimais, com a metade arredondada para cima. No mensal, a parcela é arredondada antes de calcular o total, para que a soma das parcelas feche com o total.
 - Alterar os percentuais de um plano não altera contratações já feitas.
 
 ### Serviços e horários
 
-- Cada serviço do plano tem seus próprios dias e horários, informados na contratação.
-- Os agendamentos gerados por cada serviço seguem todas as regras de agendamentos recorrentes, exceto o limite de 60 dias.
+- Cada serviço do plano tem seus próprios dias, horários e profissional, informados na contratação. A contratação informa exatamente os serviços do plano, nem mais nem menos.
+- Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes, exceto o limite de 60 dias.
+- Os agendamentos de um plano podem ser remanejados dentro do período da contratação, e um agendamento pode ser cancelado individualmente; a sessão cancelada não é reposta.
+- A recorrência de um serviço do plano não é encerrada isoladamente: o encerramento acontece pelo cancelamento da contratação.
 
 ### Contratação
 
-- Ao contratar um plano, são definidos a modalidade de pagamento (integral ou mensal) e o número de meses. São congelados o valor mensal, o percentual de desconto aplicado conforme a modalidade e o total do período.
+- Só podem ser contratados planos ativos, com o período escolhido cadastrado e com todos os serviços ativos. O cliente precisa ser do tipo `CLIENT`.
+- Ao contratar um plano, são definidos a modalidade de pagamento (integral ou mensal) e o número de meses, que precisa corresponder a um período do plano. São congelados o valor mensal, o percentual de desconto aplicado conforme a modalidade e o total do período.
+- A data de início é, por padrão, a data atual no fuso da empresa. Pode ser futura, mas não passada.
+- A data final é a data de início somada ao número de meses, menos um dia (ex.: 3 meses a partir de 15/10 terminam em 14/01).
+- A contratação, as recorrências dos serviços e os pagamentos são criados juntos: se qualquer horário conflitar, nada é gravado.
 - Alterar preços de serviços ou o plano depois da contratação não altera o valor da contratação.
 - Ao fim do período contratado, a continuidade exige uma nova contratação, como nas recorrências.
 
@@ -189,7 +196,8 @@
 - Na modalidade integral, é gerado um único pagamento com o valor total do período. O sistema registra apenas esse valor total, sem o número de parcelas nem os juros do cartão. O meio de pagamento (ex.: cartão) é um método de pagamento da empresa.
 - Na modalidade mensal, é gerado um pagamento por mês contratado, cada um com o valor da parcela.
 - Os pagamentos de uma contratação pertencem à contratação, não a um agendamento.
-- O vencimento de cada pagamento é opcional e pode ser definido conforme a negociação, com qualquer dia do mês.
+- O vencimento é opcional e definido na contratação por uma data de primeiro vencimento. No integral, é o vencimento do pagamento único; no mensal, é o da primeira parcela, e as seguintes vencem no mesmo dia dos meses seguintes. Quando o dia não existe no mês, vale o último dia do mês. Sem essa data, os pagamentos ficam sem vencimento.
+- Os pagamentos da contratação nascem `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
 - Um pagamento pendente cujo vencimento é anterior à data atual, no fuso da empresa, consta como **atrasado**. O status do pagamento continua `PENDING` até ser pago.
 
 ### Cancelamento da contratação
@@ -208,7 +216,8 @@
 ## Pagamentos
 
 - Cada agendamento tem no máximo um pagamento. Excluir o pagamento libera o agendamento para um novo.
-- O agendamento e o método de pagamento precisam ser da empresa do usuário. O agendamento não muda depois da criação.
+- O pagamento pertence à empresa do usuário, assim como o agendamento e o método de pagamento. O agendamento não muda depois da criação.
+- Todo pagamento pertence a um agendamento ou a uma contratação de plano, nunca aos dois.
 - Um pagamento gerado pelo sistema nasce como `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
 - O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.

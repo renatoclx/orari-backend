@@ -144,6 +144,7 @@ export class RecurringAppointmentService {
 
       await this.paymentService.createPendingForAppointments(
         tx,
+        companyId,
         appointments,
         price,
         timeZone,

@@ -233,7 +233,13 @@ describe("RecurringAppointmentService", () => {
 
       expect(
         paymentServiceMock.createPendingForAppointments,
-      ).toHaveBeenCalledWith(prismaMock, createdAppointments, 100, "UTC");
+      ).toHaveBeenCalledWith(
+        prismaMock,
+        COMPANY_ID,
+        createdAppointments,
+        100,
+        "UTC",
+      );
     });
 
     it("deve recusar serviço sem preço sem gravar nada", async () => {
