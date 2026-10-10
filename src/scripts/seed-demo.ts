@@ -14,6 +14,8 @@ import { ContactService } from "../modules/contact/contact.service";
 import { PaymentService } from "../modules/payment/payment.service";
 import { PaymentMethodService } from "../modules/payment-method/payment-method.service";
 import { PeopleService } from "../modules/people/people.service";
+import { PlanService } from "../modules/plan/plan.service";
+import { ClientPlanService } from "../modules/client-plan/client-plan.service";
 import { RecurringAppointmentService } from "../modules/recurring-appointment/recurring-appointment.service";
 import { ServiceService } from "../modules/service/service.service";
 import { UserService } from "../modules/user/user.service";
@@ -22,7 +24,8 @@ import { UserService } from "../modules/user/user.service";
  * Cria um cadastro completo de demonstração, para inspecionar o banco com dados
  * realistas: empresa, usuários, pessoas, contatos, endereços, serviços, horários
  * de funcionamento, um agendamento avulso, um agendamento recorrente (com os
- * agendamentos que ele gera) e pagamentos.
+ * agendamentos que ele gera), um plano com dois períodos, uma contratação mensal
+ * desse plano (com as agendas por serviço) e pagamentos.
  *
  * Os dados são criados pelos próprios services da aplicação — e não por SQL —
  * para respeitarem todas as regras (tipos de pessoa, janela de atendimento,
@@ -89,6 +92,8 @@ async function main() {
   const recurring = app.get(RecurringAppointmentService);
   const paymentMethods = app.get(PaymentMethodService);
   const payments = app.get(PaymentService);
+  const plans = app.get(PlanService);
+  const clientPlans = app.get(ClientPlanService);
 
   const existing = await prisma.company.findUnique({
     where: { cnpj: DEMO.company.cnpj },
@@ -311,6 +316,50 @@ async function main() {
     where: { recurringAppointmentId: recurringAppointment.id },
   });
 
+  // Plano com os dois serviços e dois períodos de contratação.
+  const plan = await plans.create(
+    {
+      name: "Bem-estar",
+      description: "Massagem e fisioterapia semanais",
+      monthlyPrice: 400,
+      serviceIds: [massagem.id, fisioterapia.id],
+      periods: [
+        { months: 3, discountPercent: 10, monthlyDiscountPercent: 5 },
+        { months: 6, discountPercent: 15, monthlyDiscountPercent: 8 },
+      ],
+    },
+    companyId,
+  );
+
+  // Contratação mensal de 3 meses, começando hoje: uma agenda por serviço, em
+  // horários que não conflitam com o avulso nem com a recorrência acima.
+  const firstDueDate = new Date();
+  firstDueDate.setUTCDate(firstDueDate.getUTCDate() + 5);
+  const clientPlan = await clientPlans.create(
+    {
+      clientId: clientOne.id,
+      planId: plan.id,
+      months: 3,
+      billingType: "MONTHLY",
+      firstDueDate: new Date(firstDueDate.toISOString().slice(0, 10)),
+      schedules: [
+        {
+          serviceId: massagem.id,
+          professionalId: professionalOne.id,
+          days: [
+            { weekDay: "WEDNESDAY", startTime: "16:00", endTime: "17:00" },
+          ],
+        },
+        {
+          serviceId: fisioterapia.id,
+          professionalId: professionalTwo.id,
+          days: [{ weekDay: "MONDAY", startTime: "16:00", endTime: "17:00" }],
+        },
+      ],
+    },
+    companyId,
+  );
+
   console.log("Demonstração criada:");
   console.table({
     empresa: `${company.corporateReason} (${company.id})`,
@@ -322,9 +371,10 @@ async function main() {
     agendamentoAvulso: standard.id,
     agendamentoRecorrente: recurringAppointment.id,
     agendamentosGerados: generated,
-    pagamentos: await prisma.payment.count({
-      where: { appointment: { companyId } },
-    }),
+    plano: `${plan.name} (${plan.id})`,
+    contratacao: clientPlan.id,
+    // Inclui os pagamentos da contratação, que não têm agendamento.
+    pagamentos: await prisma.payment.count({ where: { companyId } }),
   });
 
   await app.close();
