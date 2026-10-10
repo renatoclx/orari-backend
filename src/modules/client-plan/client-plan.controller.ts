@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from "@nestjs/common";
@@ -14,7 +15,7 @@ import { ClientPlanService } from "./client-plan.service";
 import { CreateClientPlanDto } from "./dto/create-client-plan.dto";
 import { FindClientPlansQueryDto } from "./dto/find-client-plans-query.dto";
 
-// Sem PATCH nem DELETE: o cancelamento da contratação vem na Etapa 7.
+// Sem DELETE: a contratação é cancelada, e o histórico fica.
 @ApiTags("Contratações de plano")
 @ApiBearerAuth()
 @Controller("client-plans")
@@ -43,5 +44,14 @@ export class ClientPlanController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.clientPlanService.findOne(id, currentUser.companyId);
+  }
+
+  // Cancela sem multa: encerra as agendas e, no mensal, as parcelas a vencer.
+  @Patch(":id/cancel")
+  cancel(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.clientPlanService.cancel(id, currentUser.companyId);
   }
 }

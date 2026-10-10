@@ -198,6 +198,34 @@ export class RecurringAppointmentService {
     return this.toResponse(recurring);
   }
 
+  /**
+   * Cancelamento de uma contratação: encerra as recorrências dos serviços do
+   * plano e cancela os agendamentos futuros ainda em SCHEDULED, dentro da
+   * transação da contratação. O PATCH comum não encerra recorrência de plano;
+   * este é o único caminho.
+   */
+  async endForClientPlan(
+    tx: Prisma.TransactionClient,
+    clientPlanId: string,
+    companyId: string,
+  ): Promise<void> {
+    const recurrences = await tx.recurringAppointment.findMany({
+      where: { clientPlanId, companyId, isActive: true },
+      select: { id: true },
+    });
+    const ids = recurrences.map((recurrence) => recurrence.id);
+    const now = new Date();
+
+    await tx.recurringAppointment.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false, updatedAt: now },
+    });
+
+    for (const id of ids) {
+      await this.appointmentService.cancelFutureFromRecurrence(tx, id, now);
+    }
+  }
+
   async findAll(
     {
       page,

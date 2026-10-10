@@ -15,6 +15,8 @@ import { RecurringAppointmentService } from "../recurring-appointment/recurring-
 import { ClientPlanService } from "./client-plan.service";
 import { CreateClientPlanDto } from "./dto/create-client-plan.dto";
 
+const anyDate: unknown = expect.any(Date);
+
 describe("ClientPlanService", () => {
   let clientPlanService: ClientPlanService;
   const prismaMock = {
@@ -25,6 +27,7 @@ describe("ClientPlanService", () => {
     ),
     clientPlan: {
       create: vi.fn(),
+      update: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
@@ -32,8 +35,14 @@ describe("ClientPlanService", () => {
   };
   const planServiceMock = { findOne: vi.fn() };
   const companyServiceMock = { getTimeZone: vi.fn() };
-  const recurringServiceMock = { createForClientPlan: vi.fn() };
-  const paymentServiceMock = { createForClientPlan: vi.fn() };
+  const recurringServiceMock = {
+    createForClientPlan: vi.fn(),
+    endForClientPlan: vi.fn(),
+  };
+  const paymentServiceMock = {
+    createForClientPlan: vi.fn(),
+    cancelUpcomingForClientPlan: vi.fn(),
+  };
 
   // Como o PlanService devolve: valores Decimal e serviços com isActive.
   const plan = {
@@ -310,6 +319,99 @@ describe("ClientPlanService", () => {
 
       await expect(
         clientPlanService.create(dto, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("cancel", () => {
+    // Contrato mensal ativo de 09/10/2026 a 08/01/2027; "hoje" é 09/10/2026.
+    const active = {
+      id: "client-plan-1",
+      billingType: "MONTHLY",
+      endDate: new Date("2027-01-08"),
+      cancelledAt: null,
+    };
+
+    beforeEach(() => {
+      prismaMock.clientPlan.findFirst.mockResolvedValue(active);
+    });
+
+    it("mensal: registra o cancelamento, encerra as agendas e cancela as parcelas a vencer", async () => {
+      await clientPlanService.cancel("client-plan-1", COMPANY_ID);
+
+      expect(prismaMock.clientPlan.update).toHaveBeenCalledWith({
+        where: { id: "client-plan-1" },
+        data: { cancelledAt: anyDate, updatedAt: anyDate },
+      });
+      expect(recurringServiceMock.endForClientPlan).toHaveBeenCalledWith(
+        prismaMock,
+        "client-plan-1",
+        COMPANY_ID,
+      );
+      // A partir de hoje no fuso da empresa: as atrasadas ficam PENDING.
+      expect(
+        paymentServiceMock.cancelUpcomingForClientPlan,
+      ).toHaveBeenCalledWith(
+        prismaMock,
+        "client-plan-1",
+        new Date("2026-10-09"),
+      );
+    });
+
+    it("integral: encerra as agendas sem mexer no pagamento", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValue({
+        ...active,
+        billingType: "INTEGRAL",
+      });
+
+      await clientPlanService.cancel("client-plan-1", COMPANY_ID);
+
+      expect(recurringServiceMock.endForClientPlan).toHaveBeenCalled();
+      expect(
+        paymentServiceMock.cancelUpcomingForClientPlan,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar cancelar de novo", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValue({
+        ...active,
+        cancelledAt: new Date("2026-10-08T15:00:00.000Z"),
+      });
+
+      await expect(
+        clientPlanService.cancel("client-plan-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar contratação cujo período já terminou", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValue({
+        ...active,
+        endDate: new Date("2026-10-08"),
+      });
+
+      await expect(
+        clientPlanService.cancel("client-plan-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar cancelar no último dia do período", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValue({
+        ...active,
+        endDate: new Date("2026-10-09"),
+      });
+
+      await expect(
+        clientPlanService.cancel("client-plan-1", COMPANY_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it("deve lançar NotFoundException para contratação de outra empresa", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        clientPlanService.cancel("client-plan-1", COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });

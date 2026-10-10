@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsUUID,
   Min,
+  ValidateIf,
   ValidateNested,
 } from "class-validator";
 import { PlanBillingType } from "../../../../generated/prisma/enums";
@@ -36,8 +37,13 @@ export class CreateClientPlanDto {
   @IsDate()
   startDate?: Date;
 
-  // Opcional: vencimento do primeiro pagamento; os seguintes vencem mês a mês.
-  @IsOptional()
+  // Vencimento do primeiro pagamento; os seguintes vencem mês a mês. Obrigatório
+  // no mensal: sem vencimento, o cancelamento não distinguiria parcelas atrasadas.
+  @ValidateIf(
+    (dto: CreateClientPlanDto) =>
+      dto.billingType === PlanBillingType.MONTHLY ||
+      dto.firstDueDate !== undefined,
+  )
   @Type(() => Date)
   @IsDate()
   firstDueDate?: Date;

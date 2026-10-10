@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "../../../generated/prisma/client";
+import { PlanBillingType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { toZonedParts } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -140,6 +141,45 @@ export class ClientPlanService {
     return this.findOne(clientPlanId, companyId);
   }
 
+  /**
+   * Cancela a contratação, sem multa e sem reembolso. Encerra as agendas dos
+   * serviços (agendamentos futuros viram CANCELLED) e, no mensal, cancela as
+   * parcelas a vencer. No integral, o pagamento não muda: é feito no ato.
+   */
+  async cancel(id: string, companyId: string): Promise<ClientPlanResponse> {
+    const clientPlan = await this.findOne(id, companyId);
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const today = this.todayIn(timeZone);
+
+    if (clientPlan.cancelledAt) {
+      throw new BadRequestException("A contratação já está cancelada");
+    }
+    if (clientPlan.endDate < today) {
+      throw new BadRequestException(
+        "A contratação já terminou e não pode ser cancelada",
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.clientPlan.update({
+        where: { id },
+        data: { cancelledAt: new Date(), updatedAt: new Date() },
+      });
+
+      await this.recurringAppointmentService.endForClientPlan(
+        tx,
+        id,
+        companyId,
+      );
+
+      if (clientPlan.billingType === PlanBillingType.MONTHLY) {
+        await this.paymentService.cancelUpcomingForClientPlan(tx, id, today);
+      }
+    });
+
+    return this.findOne(id, companyId);
+  }
+
   async findAll(
     { page, limit, clientId, planId }: FindClientPlansQueryDto,
     companyId: string,
@@ -232,8 +272,7 @@ export class ClientPlanService {
    * futura é aceita; uma passada, não, porque o período pago já estaria correndo.
    */
   private resolveStartDate(startDate: Date | undefined, timeZone: string) {
-    const { year, month, day } = toZonedParts(new Date(), timeZone);
-    const today = new Date(Date.UTC(year, month - 1, day));
+    const today = this.todayIn(timeZone);
 
     if (!startDate) {
       return today;
@@ -244,5 +283,12 @@ export class ClientPlanService {
     }
 
     return startDate;
+  }
+
+  // Data de hoje (pura, sem hora) no calendário da empresa.
+  private todayIn(timeZone: string): Date {
+    const { year, month, day } = toZonedParts(new Date(), timeZone);
+
+    return new Date(Date.UTC(year, month - 1, day));
   }
 }

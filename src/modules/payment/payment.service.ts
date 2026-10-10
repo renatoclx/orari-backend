@@ -218,6 +218,29 @@ export class PaymentService {
   }
 
   /**
+   * Cancelamento de uma contratação mensal: as parcelas PENDING que vencem na
+   * data informada ou depois viram CANCELLED. As atrasadas continuam PENDING (a
+   * dívida permanece) e as pagas não mudam.
+   */
+  async cancelUpcomingForClientPlan(
+    db: PrismaClientLike,
+    clientPlanId: string,
+    fromDueDate: Date,
+  ): Promise<number> {
+    const { count } = await db.payment.updateMany({
+      where: {
+        clientPlanId,
+        status: PaymentStatus.PENDING,
+        deletedAt: null,
+        dueDate: { gte: fromDueDate },
+      },
+      data: { status: PaymentStatus.CANCELLED, updatedAt: new Date() },
+    });
+
+    return count;
+  }
+
+  /**
    * Cancela os pagamentos ainda PENDING dos agendamentos futuros cancelados de
    * uma recorrência. Os já pagos não mudam: cancelar não gera reembolso. Deve
    * rodar depois do cancelamento dos agendamentos, na mesma transação.

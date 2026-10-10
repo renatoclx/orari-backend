@@ -28,6 +28,7 @@ describe("RecurringAppointmentService", () => {
       findFirst: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   };
   const peopleServiceMock = { findOne: vi.fn() };
@@ -659,6 +660,34 @@ describe("RecurringAppointmentService", () => {
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+
+    it("deve encerrar as agendas do plano e cancelar os agendamentos futuros", async () => {
+      prismaMock.recurringAppointment.findMany.mockResolvedValueOnce([
+        { id: "recurring-1" },
+        { id: "recurring-2" },
+      ]);
+
+      await recurringService.endForClientPlan(tx, "client-plan-1", COMPANY_ID);
+
+      expect(prismaMock.recurringAppointment.findMany).toHaveBeenCalledWith({
+        where: {
+          clientPlanId: "client-plan-1",
+          companyId: COMPANY_ID,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      expect(prismaMock.recurringAppointment.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["recurring-1", "recurring-2"] } },
+        data: { isActive: false, updatedAt: anyDate },
+      });
+      expect(
+        appointmentServiceMock.cancelFutureFromRecurrence,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        appointmentServiceMock.cancelFutureFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, "recurring-2", anyDate);
     });
 
     it("deve recusar encerrar isoladamente a recorrência de um plano", async () => {

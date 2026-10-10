@@ -445,6 +445,27 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve cancelar só as parcelas PENDING que vencem a partir da data", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 2 });
+      const today = new Date("2026-10-10");
+
+      await paymentService.cancelUpcomingForClientPlan(
+        prismaMock as never,
+        "client-plan-1",
+        today,
+      );
+
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          clientPlanId: "client-plan-1",
+          status: "PENDING",
+          deletedAt: null,
+          dueDate: { gte: today },
+        },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
     it("deve cancelar só os PENDING dos agendamentos futuros cancelados", async () => {
       prismaMock.payment.updateMany.mockResolvedValue({ count: 3 });
       const from = new Date("2026-10-06T12:00:00.000Z");

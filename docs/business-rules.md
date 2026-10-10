@@ -196,17 +196,17 @@
 - Na modalidade integral, é gerado um único pagamento com o valor total do período. O sistema registra apenas esse valor total, sem o número de parcelas nem os juros do cartão. O meio de pagamento (ex.: cartão) é um método de pagamento da empresa.
 - Na modalidade mensal, é gerado um pagamento por mês contratado, cada um com o valor da parcela.
 - Os pagamentos de uma contratação pertencem à contratação, não a um agendamento.
-- O vencimento é opcional e definido na contratação por uma data de primeiro vencimento. No integral, é o vencimento do pagamento único; no mensal, é o da primeira parcela, e as seguintes vencem no mesmo dia dos meses seguintes. Quando o dia não existe no mês, vale o último dia do mês. Sem essa data, os pagamentos ficam sem vencimento.
+- O vencimento é definido na contratação por uma data de primeiro vencimento, obrigatória no mensal e opcional no integral. No integral, é o vencimento do pagamento único; no mensal, é o da primeira parcela, e as seguintes vencem no mesmo dia dos meses seguintes. Quando o dia não existe no mês, vale o último dia do mês. No integral sem essa data, o pagamento fica sem vencimento.
 - Os pagamentos da contratação nascem `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
 - Um pagamento pendente cujo vencimento é anterior à data atual, no fuso da empresa, consta como **atrasado**. O status do pagamento continua `PENDING` até ser pago.
 
 ### Cancelamento da contratação
 
-- O cancelamento não gera reembolso de valores já pagos, em qualquer modalidade.
-- Na modalidade mensal, o cancelamento gera multa equivalente ao valor de uma parcela, paga pelo cliente.
-- Na modalidade integral, o cancelamento não gera multa.
-- Ao cancelar a contratação, os agendamentos futuros em `SCHEDULED` de todos os serviços do plano passam para `CANCELLED`, e os horários voltam a ficar disponíveis.
-- Na modalidade mensal, a multa é gerada como um pagamento `PENDING` vinculado à contratação, e as parcelas mensais ainda não pagas passam para `CANCELLED`.
+- O cancelamento não gera multa nem reembolso, em qualquer modalidade.
+- A contratação cancelada registra a data do cancelamento e não pode ser cancelada de novo. Uma contratação cujo período já terminou não pode ser cancelada.
+- Ao cancelar a contratação, as recorrências de todos os serviços do plano são encerradas, e os agendamentos futuros em `SCHEDULED` passam para `CANCELLED`; os horários voltam a ficar disponíveis.
+- Na modalidade mensal, as parcelas `PENDING` com vencimento na data do cancelamento ou depois passam para `CANCELLED`. As parcelas atrasadas continuam `PENDING`, e as pagas não mudam.
+- Na modalidade integral, o pagamento não muda: ele é feito no ato da contratação.
 
 ## Notificações
 

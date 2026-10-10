@@ -414,7 +414,8 @@
 | discountPercent | Percentual de desconto aplicado conforme a modalidade, congelado |
 | totalAmount     | Valor total do período congelado na contratação                  |
 | endDate         | Data final da contratação                                        |
-| firstDueDate    | Vencimento do primeiro pagamento (opcional)                      |
+| firstDueDate    | Vencimento do primeiro pagamento (obrigatório no mensal)         |
+| cancelledAt     | Data e hora do cancelamento (vazio enquanto ativa)               |
 
 ### Relacionamentos
 
