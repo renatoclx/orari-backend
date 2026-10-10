@@ -4,11 +4,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
+import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
@@ -38,6 +39,8 @@ describe("PaymentService", () => {
   const appointmentServiceMock = { findOne: vi.fn() };
   const paymentMethodServiceMock = { findOne: vi.fn() };
   const serviceServiceMock = { findOne: vi.fn() };
+  // "Hoje" do atraso: os testes usam UTC e um relógio fixo.
+  const companyServiceMock = { getTimeZone: vi.fn() };
 
   const dto: CreatePaymentDto = {
     appointmentId: "appointment-1",
@@ -54,6 +57,10 @@ describe("PaymentService", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00.000Z"));
+    companyServiceMock.getTimeZone.mockResolvedValue("UTC");
+    // A edição devolve o pagamento gravado, usado para calcular o isOverdue.
+    prismaMock.payment.update.mockResolvedValue(payment);
     appointmentServiceMock.findOne.mockResolvedValue({
       id: "appointment-1",
       serviceId: "service-1",
@@ -66,10 +73,15 @@ describe("PaymentService", () => {
         { provide: AppointmentService, useValue: appointmentServiceMock },
         { provide: PaymentMethodService, useValue: paymentMethodServiceMock },
         { provide: ServiceService, useValue: serviceServiceMock },
+        { provide: CompanyService, useValue: companyServiceMock },
       ],
     }).compile();
 
     paymentService = module.get<PaymentService>(PaymentService);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("create", () => {
@@ -204,10 +216,20 @@ describe("PaymentService", () => {
   });
 
   describe("findAll", () => {
-    it("deve restringir à empresa do pagamento e aplicar os filtros", async () => {
+    const today = new Date("2026-10-10");
+    const whereOf = () =>
+      (
+        prismaMock.payment.findMany.mock.calls[0][0] as {
+          where: Record<string, unknown>;
+        }
+      ).where;
+
+    beforeEach(() => {
       prismaMock.payment.findMany.mockResolvedValue([payment]);
       prismaMock.payment.count.mockResolvedValue(1);
+    });
 
+    it("deve restringir à empresa do pagamento e aplicar os filtros", async () => {
       await paymentService.findAll(
         {
           page: 1,
@@ -226,8 +248,117 @@ describe("PaymentService", () => {
           status: "PENDING",
           appointmentId: "appointment-1",
           paymentMethodId: "method-1",
+          AND: [],
         },
       });
+    });
+
+    it("deve ordenar por vencimento, com os sem vencimento no fim", async () => {
+      await paymentService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
+
+      expect(prismaMock.payment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [
+            { dueDate: { sort: "asc", nulls: "last" } },
+            { createdAt: "desc" },
+          ],
+        }),
+      );
+    });
+
+    it("deve filtrar por cliente vindo do agendamento ou da contratação", async () => {
+      await paymentService.findAll(
+        { page: 1, limit: 10, clientId: "client-1" },
+        COMPANY_ID,
+      );
+
+      expect(whereOf().AND).toEqual([
+        {
+          OR: [
+            { appointment: { clientId: "client-1" } },
+            { clientPlan: { clientId: "client-1" } },
+          ],
+        },
+      ]);
+    });
+
+    it("deve filtrar pela recorrência do agendamento", async () => {
+      await paymentService.findAll(
+        { page: 1, limit: 10, recurringAppointmentId: "recurring-1" },
+        COMPANY_ID,
+      );
+
+      expect(whereOf().AND).toEqual([
+        { appointment: { recurringAppointmentId: "recurring-1" } },
+      ]);
+    });
+
+    it("deve filtrar os atrasados pelo dia de hoje no fuso da empresa", async () => {
+      // 01:00 UTC de 11/10 ainda é 10/10 em São Paulo.
+      vi.setSystemTime(new Date("2026-10-11T01:00:00.000Z"));
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+
+      await paymentService.findAll(
+        { page: 1, limit: 10, overdue: true },
+        COMPANY_ID,
+      );
+
+      expect(whereOf().AND).toEqual([
+        { status: "PENDING", dueDate: { lt: today } },
+      ]);
+    });
+
+    it("deve filtrar os não atrasados sem descartar os sem vencimento", async () => {
+      await paymentService.findAll(
+        { page: 1, limit: 10, overdue: false },
+        COMPANY_ID,
+      );
+
+      expect(whereOf().AND).toEqual([
+        {
+          OR: [
+            { status: { not: "PENDING" } },
+            { dueDate: null },
+            { dueDate: { gte: today } },
+          ],
+        },
+      ]);
+    });
+
+    it("deve filtrar pelo período de vencimento", async () => {
+      const dueFrom = new Date("2026-10-01");
+      const dueTo = new Date("2026-10-31");
+
+      await paymentService.findAll(
+        { page: 1, limit: 10, dueFrom, dueTo },
+        COMPANY_ID,
+      );
+
+      expect(whereOf().AND).toEqual([
+        { dueDate: { gte: dueFrom, lte: dueTo } },
+      ]);
+    });
+
+    it("deve marcar isOverdue em cada pagamento", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        { ...payment, status: "PENDING", dueDate: new Date("2026-10-09") },
+        { ...payment, status: "PENDING", dueDate: new Date("2026-10-10") },
+        { ...payment, status: "PENDING", dueDate: null },
+        { ...payment, status: "PAID", dueDate: new Date("2026-10-01") },
+      ]);
+
+      const result = await paymentService.findAll(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      // Vence hoje não é atraso; sem vencimento e pago também não.
+      expect(result.items.map((item) => item.isOverdue)).toEqual([
+        true,
+        false,
+        false,
+        false,
+      ]);
     });
   });
 

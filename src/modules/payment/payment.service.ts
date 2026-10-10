@@ -18,6 +18,7 @@ import {
   AppointmentService,
   CompletedStandaloneAppointment,
 } from "../appointment/appointment.service";
+import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
@@ -31,6 +32,22 @@ import { UpdatePaymentDto } from "./dto/update-payment.dto";
  */
 const ownedByCompany = (companyId: string) => ({ companyId });
 
+// Atrasado: pendente com vencimento antes de hoje. A mesma regra do isOverdue.
+const isOverdueWhere = (today: Date): Prisma.PaymentWhereInput => ({
+  status: PaymentStatus.PENDING,
+  dueDate: { lt: today },
+});
+
+// O contrário, escrito por extenso: com `NOT`, um vencimento vazio faria o SQL
+// descartar o pagamento em vez de considerá-lo "não atrasado".
+const isNotOverdueWhere = (today: Date): Prisma.PaymentWhereInput => ({
+  OR: [
+    { status: { not: PaymentStatus.PENDING } },
+    { dueDate: null },
+    { dueDate: { gte: today } },
+  ],
+});
+
 // Aceita o PrismaService ou o cliente de uma transação aberta por outro módulo,
 // para que os pagamentos sejam gravados junto com os agendamentos (tudo ou nada).
 type PrismaClientLike = Pick<PrismaService, "payment">;
@@ -40,6 +57,9 @@ export interface AppointmentToCharge {
   id: string;
   startAt: Date;
 }
+
+// Pagamento como a API devolve: com o atraso calculado no fuso da empresa.
+export type PaymentResponse = Payment & { isOverdue: boolean };
 
 // Um pagamento de contratação de plano: valor e vencimento já calculados.
 export interface ClientPlanCharge {
@@ -54,9 +74,13 @@ export class PaymentService {
     private readonly appointmentService: AppointmentService,
     private readonly paymentMethodService: PaymentMethodService,
     private readonly serviceService: ServiceService,
+    private readonly companyService: CompanyService,
   ) {}
 
-  async create(dto: CreatePaymentDto, companyId: string): Promise<Payment> {
+  async create(
+    dto: CreatePaymentDto,
+    companyId: string,
+  ): Promise<PaymentResponse> {
     // Ambos validam empresa e existência, lançando 404 quando não pertencem a ela.
     const appointment = await this.appointmentService.findOne(
       dto.appointmentId,
@@ -76,9 +100,11 @@ export class PaymentService {
     );
 
     try {
-      return await this.prisma.payment.create({
+      const payment = await this.prisma.payment.create({
         data: { ...dto, amount, status, companyId },
       });
+
+      return this.toResponse(payment, await this.todayFor(companyId));
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }
@@ -92,9 +118,34 @@ export class PaymentService {
       appointmentId,
       clientPlanId,
       paymentMethodId,
+      clientId,
+      recurringAppointmentId,
+      overdue,
+      dueFrom,
+      dueTo,
     }: FindPaymentsQueryDto,
     companyId: string,
-  ): Promise<PaginatedResult<Payment>> {
+  ): Promise<PaginatedResult<PaymentResponse>> {
+    const today = await this.todayFor(companyId);
+
+    // Cada filtro opcional entra no AND só quando informado.
+    const filters: Prisma.PaymentWhereInput[] = [];
+    if (clientId) {
+      // O cliente vem do agendamento (avulso ou recorrência) ou da contratação.
+      filters.push({
+        OR: [{ appointment: { clientId } }, { clientPlan: { clientId } }],
+      });
+    }
+    if (recurringAppointmentId) {
+      filters.push({ appointment: { recurringAppointmentId } });
+    }
+    if (overdue !== undefined) {
+      filters.push(overdue ? isOverdueWhere(today) : isNotOverdueWhere(today));
+    }
+    if (dueFrom || dueTo) {
+      filters.push({ dueDate: { gte: dueFrom, lte: dueTo } });
+    }
+
     const where: Prisma.PaymentWhereInput = {
       ...ownedByCompany(companyId),
       deletedAt: null,
@@ -102,22 +153,40 @@ export class PaymentService {
       appointmentId,
       clientPlanId,
       paymentMethodId,
+      AND: filters,
     };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.payment.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        // Visão financeira: o que vence primeiro aparece primeiro; sem
+        // vencimento vai para o fim.
+        orderBy: [
+          { dueDate: { sort: "asc", nulls: "last" } },
+          { createdAt: "desc" },
+        ],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.payment.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: items.map((payment) => this.toResponse(payment, today)),
+      total,
+      page,
+      limit,
+    };
   }
 
-  async findOne(id: string, companyId: string): Promise<Payment> {
+  async findOne(id: string, companyId: string): Promise<PaymentResponse> {
+    const payment = await this.findOwned(id, companyId);
+
+    return this.toResponse(payment, await this.todayFor(companyId));
+  }
+
+  // Busca sem calcular o atraso: usada internamente por update e remove.
+  private async findOwned(id: string, companyId: string): Promise<Payment> {
     const payment = await this.prisma.payment.findFirst({
       where: { id, deletedAt: null, ...ownedByCompany(companyId) },
     });
@@ -133,8 +202,8 @@ export class PaymentService {
     id: string,
     dto: UpdatePaymentDto,
     companyId: string,
-  ): Promise<Payment> {
-    const payment = await this.findOne(id, companyId);
+  ): Promise<PaymentResponse> {
+    const payment = await this.findOwned(id, companyId);
 
     if (dto.paymentMethodId) {
       await this.paymentMethodService.findOne(dto.paymentMethodId, companyId);
@@ -155,14 +224,16 @@ export class PaymentService {
       dto.paymentMethodId ?? payment.paymentMethodId,
     );
 
-    return this.prisma.payment.update({
+    const updated = await this.prisma.payment.update({
       where: { id },
       data: { ...dto, paidAt, updatedAt: new Date() },
     });
+
+    return this.toResponse(updated, await this.todayFor(companyId));
   }
 
   async remove(id: string, companyId: string): Promise<void> {
-    await this.findOne(id, companyId);
+    await this.findOwned(id, companyId);
 
     const now = new Date();
     await this.prisma.payment.update({
@@ -361,6 +432,26 @@ export class PaymentService {
     });
 
     return count;
+  }
+
+  // Hoje no calendário da empresa: é a referência do atraso.
+  private async todayFor(companyId: string): Promise<Date> {
+    const timeZone = await this.companyService.getTimeZone(companyId);
+
+    return this.toLocalDate(new Date(), timeZone);
+  }
+
+  /**
+   * Atraso é derivado, não gravado: pendente com vencimento antes de hoje. O
+   * status continua PENDING até a baixa (ver business-rules.md).
+   */
+  private toResponse(payment: Payment, today: Date): PaymentResponse {
+    const isOverdue =
+      payment.status === PaymentStatus.PENDING &&
+      payment.dueDate !== null &&
+      payment.dueDate < today;
+
+    return { ...payment, isOverdue };
   }
 
   // Data pura (coluna `date`) do dia em que o instante cai no fuso da empresa.

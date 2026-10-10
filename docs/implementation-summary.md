@@ -53,7 +53,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
 | Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
 | Client plans | `POST`, `GET` (`?clientId`, `?planId`), `GET /:id`, `PATCH /:id/cancel` | Qualquer tipo, só na própria empresa |
-| Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
+| Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
 | Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
 
@@ -175,6 +175,13 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Regras:** valor = preço do serviço; vencimento = dia local do agendamento; serviço sem preço não gera pagamento; agendamento que já teve pagamento (inclusive excluído) não gera outro; recorrência e plano ficam de fora.
 - **Idempotente:** quem já tem pagamento não volta na busca, e o `createMany` usa `skipDuplicates` para o caso de duas execuções simultâneas.
 - **Atraso:** continua derivado (pendente com vencimento anterior a hoje); a exposição para o front fica na Etapa 9.
+
+### 2.16 Filtros de pagamento e atraso (Etapa 9)
+
+- **Novos filtros no `GET /payments`:** `clientId` (pagamentos do cliente vindos de agendamento ou de contratação, por relação), `recurringAppointmentId`, `overdue` (`true`/`false`) e `dueFrom`/`dueTo` (período de vencimento, pontas incluídas).
+- **`isOverdue` em toda resposta de pagamento** (listagem, consulta, criação e edição): `PENDING` com vencimento anterior a hoje, no fuso da empresa. Vencer hoje não é atraso; sem vencimento nunca é atraso. Nada é gravado.
+- **Ordem da listagem:** por vencimento (mais próximo primeiro, sem vencimento no fim) e, no empate, pela criação mais recente.
+- O `PaymentModule` passou a importar o `CompanyModule`, para obter o fuso da empresa.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
