@@ -223,7 +223,11 @@
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
 - `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
 - O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa.
-- Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento.
+- Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
+  - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
+  - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.
+  - Serviço sem preço é considerado gratuito e não gera pagamento.
+  - Um agendamento que já teve pagamento, inclusive excluído, não gera outro.
 - Agendamentos gerados por recorrência já nascem com pagamento `PENDING`, com vencimento na data do agendamento, e não geram novo pagamento ao serem concluídos (ver Agendamentos recorrentes).
 - Agendamentos gerados por contratação de plano não geram pagamento por agendamento: os pagamentos pertencem à contratação (ver Planos).
   - Esses pagamentos deverão ser registrados como `PENDING`, onde deverá ser alterado manualmente para `PAID` quando este for pago;

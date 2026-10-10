@@ -372,6 +372,80 @@ describe("PaymentService", () => {
     });
   });
 
+  describe("cobrança dos avulsos concluídos", () => {
+    const completed = (overrides: object = {}) => ({
+      id: "appointment-1",
+      companyId: "company-1",
+      // 01:00 UTC de 10/10 ainda é 09/10 às 22h em São Paulo.
+      startAt: new Date("2026-10-10T01:00:00.000Z"),
+      service: { price: 120 },
+      company: { timezone: "America/Sao_Paulo" },
+      ...overrides,
+    });
+
+    it("deve gerar PENDING sem método, com o preço do serviço e vencimento no dia local", async () => {
+      prismaMock.payment.createMany.mockResolvedValue({ count: 1 });
+
+      const created = await paymentService.createForCompletedAppointments([
+        completed(),
+      ] as never);
+
+      expect(created).toBe(1);
+      expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            companyId: "company-1",
+            appointmentId: "appointment-1",
+            amount: 120,
+            dueDate: new Date("2026-10-09"),
+          },
+        ],
+        skipDuplicates: true,
+      });
+    });
+
+    it("deve usar a empresa e o fuso de cada agendamento", async () => {
+      prismaMock.payment.createMany.mockResolvedValue({ count: 2 });
+
+      await paymentService.createForCompletedAppointments([
+        completed(),
+        completed({
+          id: "appointment-2",
+          companyId: "company-2",
+          company: { timezone: "UTC" },
+        }),
+      ] as never);
+
+      expect(prismaMock.payment.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              companyId: "company-1",
+              dueDate: new Date("2026-10-09"),
+            }),
+            expect.objectContaining({
+              companyId: "company-2",
+              dueDate: new Date("2026-10-10"),
+            }),
+          ],
+        }),
+      );
+    });
+
+    it("não deve cobrar serviço sem preço", async () => {
+      prismaMock.payment.createMany.mockResolvedValue({ count: 0 });
+
+      await paymentService.createForCompletedAppointments([
+        completed({ service: { price: null } }),
+      ] as never);
+
+      expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
+        data: [],
+        skipDuplicates: true,
+      });
+    });
+  });
+
   describe("pagamentos de recorrência", () => {
     it("deve gerar PENDING sem método, com vencimento no dia local do agendamento", async () => {
       prismaMock.payment.createMany.mockResolvedValue({ count: 2 });

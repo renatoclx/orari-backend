@@ -168,6 +168,13 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
 - **Recusas (400):** contratação já cancelada ou com o período terminado.
 - **`firstDueDate` obrigatório no mensal** (validação no DTO): sem vencimento, o cancelamento não teria como separar parcelas atrasadas das futuras. No integral continua opcional.
+
+### 2.15 Cobrança dos avulsos concluídos (Etapa 8, codada em par)
+
+- **Job de cobrança no módulo de pagamento** (`payment/jobs/completed-appointment-charge.job.ts`, a cada 5 minutos): busca os avulsos `COMPLETED` sem pagamento (`AppointmentService.findCompletedStandaloneWithoutPayment`) e cria um `PENDING` para cada um (`PaymentService.createForCompletedAppointments`). Fica no módulo de pagamento para não criar dependência circular, e cobre tanto a conclusão pelo job de status quanto a manual.
+- **Regras:** valor = preço do serviço; vencimento = dia local do agendamento; serviço sem preço não gera pagamento; agendamento que já teve pagamento (inclusive excluído) não gera outro; recorrência e plano ficam de fora.
+- **Idempotente:** quem já tem pagamento não volta na busca, e o `createMany` usa `skipDuplicates` para o caso de duas execuções simultâneas.
+- **Atraso:** continua derivado (pendente com vencimento anterior a hoje); a exposição para o front fica na Etapa 9.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

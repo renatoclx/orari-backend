@@ -14,7 +14,10 @@ import { PaginatedResult } from "../../common/interfaces/paginated-result.interf
 import { toZonedParts } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
-import { AppointmentService } from "../appointment/appointment.service";
+import {
+  AppointmentService,
+  CompletedStandaloneAppointment,
+} from "../appointment/appointment.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
@@ -189,6 +192,40 @@ export class PaymentService {
         amount,
         dueDate: this.toLocalDate(appointment.startAt, timeZone),
       })),
+    });
+
+    return count;
+  }
+
+  /**
+   * Job de cobrança: um pagamento PENDING para cada avulso concluído sem pagamento,
+   * com o preço do serviço e vencimento no dia local do agendamento
+   * Sem método: ele é informado na baixa
+   */
+  async createForCompletedAppointments(
+    appointments: CompletedStandaloneAppointment[],
+  ): Promise<number> {
+    const data: Prisma.PaymentCreateManyInput[] = [];
+
+    for (const { id, companyId, startAt, service, company } of appointments) {
+      // A consulta já descarta serviço sem preço; a checagem garante o tipo.
+      if (service.price === null) {
+        continue;
+      }
+
+      data.push({
+        companyId,
+        appointmentId: id,
+        amount: service.price,
+        dueDate: this.toLocalDate(startAt, company.timezone),
+      });
+    }
+
+    // Duas execuções ao mesmo tempo não duplicam: o banco só aceita um pagamento
+    // por agendamento, e o skipDuplicates ignora o repetido.
+    const { count } = await this.prisma.payment.createMany({
+      data,
+      skipDuplicates: true,
     });
 
     return count;

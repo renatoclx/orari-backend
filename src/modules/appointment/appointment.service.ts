@@ -56,6 +56,20 @@ export interface RecurrenceAppointmentData {
 // Pick previne re repetir dados manualmente
 type PrismaClientLike = Pick<PrismaService, "appointment">;
 
+// Campos que o job de cobrança precisa para gerar o pagamento de um agendamento
+// avulso concluído.
+const completedStandaloneSelect = {
+  id: true,
+  companyId: true,
+  startAt: true,
+  service: { select: { price: true } },
+  company: { select: { timezone: true } },
+} satisfies Prisma.AppointmentSelect;
+
+export type CompletedStandaloneAppointment = Prisma.AppointmentGetPayload<{
+  select: typeof completedStandaloneSelect;
+}>;
+
 /**
  * Agendamentos pertencem à empresa do usuário autenticado; os de outras empresas
  * se comportam como inexistentes (404).
@@ -452,5 +466,26 @@ export class AppointmentService {
     });
 
     return count;
+  }
+
+  /**
+   * Avulsos concluídos que ainda não tiveram pagamento, de todas as empresas.
+   * Só para o job de cobrança: não usar em rotas, que são restritas a uma empresa.
+   */
+  async findCompletedStandaloneWithoutPayment(): Promise<
+    CompletedStandaloneAppointment[]
+  > {
+    return this.prisma.appointment.findMany({
+      where: {
+        status: AppointmentStatus.COMPLETED,
+        // Recorrência e plano já têm a cobrança deles.
+        recurringAppointmentId: null,
+        // Não existe linha de pagamento ligada ao agendamento
+        payment: { is: null },
+        // Serviço sem preço é gratuito: não gera cobrança.
+        service: { price: { not: null } },
+      },
+      select: completedStandaloneSelect,
+    });
   }
 }

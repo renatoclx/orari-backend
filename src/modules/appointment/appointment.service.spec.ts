@@ -200,6 +200,30 @@ describe("AppointmentService", () => {
     });
   });
 
+  describe("apoio ao job de cobrança", () => {
+    it("deve buscar avulsos concluídos, sem pagamento e com serviço com preço, de todas as empresas", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+
+      await appointmentService.findCompletedStandaloneWithoutPayment();
+
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith({
+        where: {
+          status: "COMPLETED",
+          recurringAppointmentId: null,
+          payment: { is: null },
+          service: { price: { not: null } },
+        },
+        select: {
+          id: true,
+          companyId: true,
+          startAt: true,
+          service: { select: { price: true } },
+          company: { select: { timezone: true } },
+        },
+      });
+    });
+  });
+
   describe("apoio à recorrência", () => {
     const occurrences = [
       {
