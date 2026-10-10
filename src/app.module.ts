@@ -6,6 +6,7 @@ import { AddressModule } from "./modules/address/address.module";
 import { AppointmentModule } from "./modules/appointment/appointment.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BusinessHourModule } from "./modules/business-hour/business-hour.module";
+import { ClientPlanModule } from "./modules/client-plan/client-plan.module";
 import { CityModule } from "./modules/city/city.module";
 import { CompanyModule } from "./modules/company/company.module";
 import { ContactModule } from "./modules/contact/contact.module";
@@ -13,6 +14,7 @@ import { NotificationModule } from "./modules/notification/notification.module";
 import { PaymentModule } from "./modules/payment/payment.module";
 import { PaymentMethodModule } from "./modules/payment-method/payment-method.module";
 import { PeopleModule } from "./modules/people/people.module";
+import { PlanModule } from "./modules/plan/plan.module";
 import { RecurringAppointmentModule } from "./modules/recurring-appointment/recurring-appointment.module";
 import { ServiceModule } from "./modules/service/service.module";
 import { StateModule } from "./modules/state/state.module";
@@ -42,6 +44,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     NotificationModule,
     PaymentMethodModule,
     PaymentModule,
+    PlanModule,
+    ClientPlanModule,
   ],
   controllers: [AppController],
   providers: [AppService],

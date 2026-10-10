@@ -99,41 +99,138 @@
 - Valem as mesmas regras de empresa, tipos de pessoa e serviço ativo dos agendamentos.
 - A recorrência precisa de ao menos um dia; cada dia tem dia da semana, horário inicial e final, e o fim deve ser posterior ao início.
 - Dois dias da mesma recorrência não podem se sobrepor no mesmo dia da semana.
-- Quando informada, a data final não pode ser anterior à inicial.
+- A data final é obrigatória e não pode ser anterior à inicial.
+- O período entre a data inicial e a final não pode ultrapassar 60 dias. Esse limite vale para a criação de recorrências avulsas; contratações de plano seguem as regras de Planos.
 - Informar a lista de dias em uma edição substitui todos os dias anteriores.
 - Não há exclusão: a recorrência é desativada por `isActive`.
 - Cada dia precisa reservar ao menos a duração do serviço, que é o que define o fim dos agendamentos gerados.
 
 ### Geração de agendamentos
 
-- Ao criar uma recorrência ativa, os agendamentos são gerados até a data final ou, quando não houver, até 90 dias à frente. Cada geração cobre no máximo esse horizonte, e ocorrências no passado não são geradas.
+- Ao criar uma recorrência ativa, os agendamentos são gerados até a data final. Ocorrências no passado não são geradas.
 - Os agendamentos gerados seguem todas as regras de um agendamento avulso: janela de atendimento e ausência de conflito para cliente e profissional.
 - A criação é tudo ou nada: se qualquer ocorrência conflitar, a recorrência não é criada.
-- Alterar dias, período, serviço, cliente, profissional ou o `isActive` regera a agenda: os agendamentos futuros ainda em `SCHEDULED` são cancelados e recriados. Passados, confirmados, concluídos, no-show e cancelados à mão são preservados.
+- A agenda de uma recorrência não é regenerada. Para mudar dias, período, serviço, cliente ou profissional, encerra-se a recorrência e cria-se outra.
 - Alterar apenas a observação não mexe na agenda.
-- Desativar a recorrência cancela os futuros em `SCHEDULED`, sem gerar novos.
+- Cancelar a recorrência (`isActive` = falso) cancela os agendamentos futuros em `SCHEDULED`, sem gerar novos, e seus pagamentos `PENDING` passam para `CANCELLED` (ver Cancelamento). Uma recorrência cancelada não é reativada.
 
-### Extensão do horizonte
+### Valor e pagamento
 
-- O horizonte **não avança sozinho**: não há rotina automática.
-- Quando faltam menos de 30 dias de agenda gerada, a empresa recebe uma notificação do tipo `RECURRING_APPOINTMENT_HORIZON`.
-- A ampliação é manual, por `POST /recurring-appointments/:id/extend`, que gera mais um bloco a partir do último agendamento existente.
-- Recorrência inativa não pode ser estendida, e estender sem novos horários a gerar é recusado.
+- O valor de cada agendamento é o preço vigente do serviço no momento da criação da recorrência. Não há descontos.
+- Um serviço sem preço não pode ser usado em uma recorrência.
+- A recorrência não é fidelização nem pacote.
+- Cada agendamento gerado tem um pagamento `PENDING`, com vencimento na data do agendamento.
+- O cliente pode optar por pagar integralmente a recorrência, somente na contratação e sem desconto. Os pagamentos continuam nascendo `PENDING`; a baixa para `PAID` é feita pagamento a pagamento ou de uma vez, em lote, com o mesmo método de pagamento.
+
+### Remanejamento
+
+- O cliente pode remanejar agendamentos da recorrência para outros dias e horários. Remanejar é remarcar o mesmo agendamento, que mantém seu pagamento.
+- Remanejar só é permitido desde que:
+  - a quantidade de serviços contratados seja mantida;
+  - a nova data, no calendário da empresa, fique entre a data inicial e a final da recorrência;
+  - haja dia e horário disponíveis, pelas regras de agendamento.
+- Só agendamentos `SCHEDULED` ou `CONFIRMED` podem ser remanejados, e o status não muda. Uma recorrência cancelada não tem agendamentos remanejados.
+- Data, serviço, cliente e profissional de um agendamento de recorrência não mudam pela edição comum do agendamento; data e horário mudam só pelo remanejamento. Observação e os demais status continuam editáveis.
+- Se o pagamento do agendamento estiver `PENDING`, o vencimento passa para a nova data.
+- Remanejar não gera nova cobrança nem reembolso.
+
+### Cancelamento
+
+- Um único agendamento da recorrência, em `SCHEDULED` ou `CONFIRMED`, pode ser cancelado pela própria recorrência: o horário fica livre e o pagamento `PENDING` dele passa para `CANCELLED`. Pagamento já pago não muda. Esse cancelamento não é feito pela edição comum do agendamento.
+- Cancelar a recorrência não gera reembolso de pagamentos já pagos.
+- Os pagamentos `PENDING` dos agendamentos futuros cancelados passam para `CANCELLED`.
+- Após o cancelamento, as novas datas negociadas diretamente com a empresa passam a ser agendamentos avulsos.
+
+## Planos
+
+### Catálogo de planos
+
+- Um plano pertence à empresa do usuário que o cadastrou; a empresa não é informada no payload.
+- O nome do plano é único entre os planos da mesma empresa.
+- Um plano é o pacote de serviços; os períodos (ex.: 3, 6 ou 12 meses) são opções de contratação do mesmo plano.
+- Um plano é composto por um ou mais serviços da própria empresa, ativos no momento do cadastro ou da edição.
+- Um serviço não pode aparecer mais de uma vez no mesmo plano.
+- Os serviços e os períodos de um plano podem ser editados; a lista informada substitui a anterior. Contratações já feitas não mudam.
+- O valor mensal do plano (`monthlyPrice`) é definido pela empresa no cadastro e não depende dos preços dos serviços.
+- Não há exclusão: o plano é desativado por `isActive` e pode ser reativado.
+- Planos inativos não podem ser contratados.
+- Um plano pode ser cadastrado sem períodos, mas só pode ser contratado se tiver ao menos um.
+- Um plano com algum serviço inativo não pode ser contratado.
+
+### Descontos por período
+
+- Cada plano define, por período (ex.: 3, 6 ou 12 meses), dois percentuais fixos de desconto, ambos obrigatórios:
+  - `discountPercent`: para pagamento integral (uma única cobrança do total do período);
+  - `monthlyDiscountPercent`: para pagamento mensal.
+- O número de meses é inteiro, a partir de 1, e não se repete no mesmo plano.
+- Os percentuais vão de 0 a 100, com até duas casas decimais.
+- No pagamento integral, o total do período é o valor mensal × número de meses, com `discountPercent` aplicado.
+- No pagamento mensal, cada parcela é o valor mensal com `monthlyDiscountPercent` aplicado, e o total é a parcela × número de meses.
+- Os valores são arredondados para duas casas decimais, com a metade arredondada para cima. No mensal, a parcela é arredondada antes de calcular o total, para que a soma das parcelas feche com o total.
+- Alterar os percentuais de um plano não altera contratações já feitas.
+
+### Serviços e horários
+
+- Cada serviço do plano tem seus próprios dias, horários e profissional, informados na contratação. A contratação informa exatamente os serviços do plano, nem mais nem menos.
+- Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes, exceto o limite de 60 dias.
+- Os agendamentos de um plano podem ser remanejados dentro do período da contratação, e um agendamento pode ser cancelado individualmente; a sessão cancelada não é reposta.
+- A recorrência de um serviço do plano não é encerrada isoladamente: o encerramento acontece pelo cancelamento da contratação.
+
+### Contratação
+
+- Só podem ser contratados planos ativos, com o período escolhido cadastrado e com todos os serviços ativos. O cliente precisa ser do tipo `CLIENT`.
+- Ao contratar um plano, são definidos a modalidade de pagamento (integral ou mensal) e o número de meses, que precisa corresponder a um período do plano. São congelados o valor mensal, o percentual de desconto aplicado conforme a modalidade e o total do período.
+- A data de início é, por padrão, a data atual no fuso da empresa. Pode ser futura, mas não passada.
+- A data final é a data de início somada ao número de meses, menos um dia (ex.: 3 meses a partir de 15/10 terminam em 14/01).
+- A contratação, as recorrências dos serviços e os pagamentos são criados juntos: se qualquer horário conflitar, nada é gravado.
+- Alterar preços de serviços ou o plano depois da contratação não altera o valor da contratação.
+- Ao fim do período contratado, a continuidade exige uma nova contratação, como nas recorrências.
+
+### Troca de serviços
+
+- O plano fecha o contrato com os serviços contratados: não há troca de serviço durante a contratação.
+
+### Pagamento da contratação
+
+- A contratação tem uma modalidade: **integral** ou **mensal**.
+- Na modalidade integral, é gerado um único pagamento com o valor total do período. O sistema registra apenas esse valor total, sem o número de parcelas nem os juros do cartão. O meio de pagamento (ex.: cartão) é um método de pagamento da empresa.
+- Na modalidade mensal, é gerado um pagamento por mês contratado, cada um com o valor da parcela.
+- Os pagamentos de uma contratação pertencem à contratação, não a um agendamento.
+- O vencimento é definido na contratação por uma data de primeiro vencimento, obrigatória no mensal e opcional no integral. No integral, é o vencimento do pagamento único; no mensal, é o da primeira parcela, e as seguintes vencem no mesmo dia dos meses seguintes. Quando o dia não existe no mês, vale o último dia do mês. No integral sem essa data, o pagamento fica sem vencimento.
+- Os pagamentos da contratação nascem `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
+- Um pagamento pendente cujo vencimento é anterior à data atual, no fuso da empresa, consta como **atrasado**. O status do pagamento continua `PENDING` até ser pago.
+
+### Cancelamento da contratação
+
+- O cancelamento não gera multa nem reembolso, em qualquer modalidade.
+- A contratação cancelada registra a data do cancelamento e não pode ser cancelada de novo. Uma contratação cujo período já terminou não pode ser cancelada.
+- Ao cancelar a contratação, as recorrências de todos os serviços do plano são encerradas, e os agendamentos futuros em `SCHEDULED` passam para `CANCELLED`; os horários voltam a ficar disponíveis.
+- Na modalidade mensal, as parcelas `PENDING` com vencimento na data do cancelamento ou depois passam para `CANCELLED`. As parcelas atrasadas continuam `PENDING`, e as pagas não mudam.
+- Na modalidade integral, o pagamento não muda: ele é feito no ato da contratação.
 
 ## Notificações
 
 - São avisos por empresa, criados e resolvidos pela própria API; não são criadas nem excluídas pelo cliente.
-- A lista de notificações é sincronizada a cada consulta: cria os avisos que faltam e resolve os que já foram atendidos.
 - Uma notificação pode ser marcada como lida. Ao ser resolvida, sai da lista padrão, mas continua no histórico.
 
 ## Pagamentos
 
 - Cada agendamento tem no máximo um pagamento. Excluir o pagamento libera o agendamento para um novo.
-- O agendamento e o método de pagamento precisam ser da empresa do usuário. O agendamento não muda depois da criação.
-- Um pagamento novo nasce como `PENDING`.
+- O pagamento pertence à empresa do usuário, assim como o agendamento e o método de pagamento. O agendamento não muda depois da criação.
+- Todo pagamento pertence a um agendamento ou a uma contratação de plano, nunca aos dois.
+- Um pagamento gerado pelo sistema nasce como `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
+- O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
 - `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
 - O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa.
+- Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
+  - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
+  - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.
+  - Serviço sem preço é considerado gratuito e não gera pagamento.
+  - Um agendamento que já teve pagamento, inclusive excluído, não gera outro.
+- Agendamentos gerados por recorrência já nascem com pagamento `PENDING`, com vencimento na data do agendamento, e não geram novo pagamento ao serem concluídos (ver Agendamentos recorrentes).
+- Agendamentos gerados por contratação de plano não geram pagamento por agendamento: os pagamentos pertencem à contratação (ver Planos).
+  - Esses pagamentos deverão ser registrados como `PENDING`, onde deverá ser alterado manualmente para `PAID` quando este for pago;
 
 ## Estados e cidades
 

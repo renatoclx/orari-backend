@@ -23,7 +23,7 @@ describe("AppointmentService", () => {
     ),
     appointment: {
       create: vi.fn(),
-      createMany: vi.fn(),
+      createManyAndReturn: vi.fn(),
       updateMany: vi.fn(),
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -200,6 +200,30 @@ describe("AppointmentService", () => {
     });
   });
 
+  describe("apoio ao job de cobrança", () => {
+    it("deve buscar avulsos concluídos, sem pagamento e com serviço com preço, de todas as empresas", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+
+      await appointmentService.findCompletedStandaloneWithoutPayment();
+
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith({
+        where: {
+          status: "COMPLETED",
+          recurringAppointmentId: null,
+          payment: { is: null },
+          service: { price: { not: null } },
+        },
+        select: {
+          id: true,
+          companyId: true,
+          startAt: true,
+          service: { select: { price: true } },
+          company: { select: { timezone: true } },
+        },
+      });
+    });
+  });
+
   describe("apoio à recorrência", () => {
     const occurrences = [
       {
@@ -220,7 +244,11 @@ describe("AppointmentService", () => {
     };
 
     it("deve validar cada ocorrência e criar todas de uma vez", async () => {
-      prismaMock.appointment.createMany.mockResolvedValue({ count: 2 });
+      const returned = occurrences.map((occurrence, index) => ({
+        id: `appointment-${index + 1}`,
+        startAt: occurrence.startAt,
+      }));
+      prismaMock.appointment.createManyAndReturn.mockResolvedValue(returned);
 
       const created = await appointmentService.createFromRecurrence(
         prismaMock as never,
@@ -229,17 +257,18 @@ describe("AppointmentService", () => {
         "sessão semanal",
       );
 
-      expect(created).toBe(2);
+      expect(created).toEqual(returned);
       expect(
         businessHourServiceMock.ensureWithinBusinessHours,
       ).toHaveBeenCalledTimes(2);
       expect(prismaMock.appointment.findFirst).toHaveBeenCalledTimes(2);
-      expect(prismaMock.appointment.createMany).toHaveBeenCalledWith({
+      expect(prismaMock.appointment.createManyAndReturn).toHaveBeenCalledWith({
         data: occurrences.map((occurrence) => ({
           ...recurrenceData,
           ...occurrence,
           note: "sessão semanal",
         })),
+        select: { id: true, startAt: true },
       });
     });
 
@@ -259,7 +288,7 @@ describe("AppointmentService", () => {
           error instanceof ConflictException &&
           error.message.includes("2026-10-06T14:00:00.000Z"),
       );
-      expect(prismaMock.appointment.createMany).not.toHaveBeenCalled();
+      expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
     });
 
     it("deve cancelar apenas os futuros ainda em SCHEDULED", async () => {
@@ -281,6 +310,135 @@ describe("AppointmentService", () => {
         },
         data: { status: "CANCELLED", updatedAt: anyDate },
       });
+    });
+  });
+
+  describe("remanejamento de recorrência", () => {
+    const fromRecurrence = {
+      ...appointment,
+      recurringAppointmentId: "recurring-1",
+    } as never;
+    const newStartAt = new Date(startAt.getTime() + 86_400_000);
+
+    it("deve remarcar o mesmo registro recalculando o fim", async () => {
+      await appointmentService.rescheduleFromRecurrence(
+        prismaMock as never,
+        fromRecurrence,
+        newStartAt,
+      );
+
+      expect(
+        businessHourServiceMock.ensureWithinBusinessHours,
+      ).toHaveBeenCalled();
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1" },
+        data: {
+          startAt: newStartAt,
+          endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+          updatedAt: anyDate,
+        },
+      });
+    });
+
+    it("deve recusar quando o novo horário está ocupado", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        professionalId: "professional-1",
+      });
+
+      await expect(
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          fromRecurrence,
+          newStartAt,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it.each(["COMPLETED", "CANCELLED", "NO_SHOW", "IN_PROGRESS"])(
+      "deve recusar agendamento com status %s",
+      async (status) => {
+        await expect(
+          appointmentService.rescheduleFromRecurrence(
+            prismaMock as never,
+            { ...appointment, status } as never,
+            newStartAt,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    );
+
+    it("deve aceitar agendamento CONFIRMED", async () => {
+      await expect(
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          { ...appointment, status: "CONFIRMED" } as never,
+          newStartAt,
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    it.each([
+      { startAt: newStartAt },
+      { serviceId: "service-2" },
+      { clientId: "client-2" },
+      { professionalId: "professional-2" },
+    ])("deve recusar %o no PATCH comum", async (change) => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(fromRecurrence);
+
+      await expect(
+        appointmentService.update("appointment-1", change, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar cancelamento pelo PATCH comum", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(fromRecurrence);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { status: "CANCELLED" },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve cancelar pelo apoio à recorrência", async () => {
+      await appointmentService.cancelFromRecurrence(
+        prismaMock as never,
+        fromRecurrence,
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1" },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
+    it("não deve cancelar agendamento já concluído", async () => {
+      await expect(
+        appointmentService.cancelFromRecurrence(
+          prismaMock as never,
+          { ...appointment, status: "COMPLETED" } as never,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve permitir status e observação no PATCH comum", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(fromRecurrence)
+        .mockResolvedValue(null);
+
+      await appointmentService.update(
+        "appointment-1",
+        { status: "CONFIRMED", note: "confirmado por telefone" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalled();
     });
   });
 
