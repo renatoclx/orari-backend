@@ -182,6 +182,11 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **`isOverdue` em toda resposta de pagamento** (listagem, consulta, criação e edição): `PENDING` com vencimento anterior a hoje, no fuso da empresa. Vencer hoje não é atraso; sem vencimento nunca é atraso. Nada é gravado.
 - **Ordem da listagem:** por vencimento (mais próximo primeiro, sem vencimento no fim) e, no empate, pela criação mais recente.
 - O `PaymentModule` passou a importar o `CompanyModule`, para obter o fuso da empresa.
+
+### 2.17 Seed e Swagger (Etapa 10)
+
+- **`seed:demo`:** passa a criar o plano "Bem-estar" (Massagem e Fisioterapia, R$ 400, períodos de 3 e 6 meses) e uma contratação mensal de 3 meses, com uma agenda por serviço. O resumo conta os pagamentos pela empresa do próprio pagamento, incluindo os do plano. Validado do zero em um banco temporário (22 migrações, seed base e seed de demonstração).
+- **Swagger com descrições:** o plugin do `@nestjs/swagger` usa `introspectComments`, e os comentários dos campos dos DTOs voltados a quem consome a API passaram para JSDoc (`/** ... */`), virando a descrição do campo em `/docs`. Notas internas (validadores, conversão de query string, normalização) continuam como `//` e não aparecem na documentação.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 

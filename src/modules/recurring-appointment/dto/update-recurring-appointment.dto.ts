@@ -17,7 +17,7 @@ export class UpdateRecurringAppointmentDto {
   @IsNotEmpty()
   note?: string;
 
-  // Só aceita false: uma recorrência cancelada não é reativada.
+  /** Só aceita false: uma recorrência cancelada não é reativada. */
   @IsOptional()
   @IsBoolean()
   @Equals(false)

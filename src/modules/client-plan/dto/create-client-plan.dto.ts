@@ -22,7 +22,7 @@ export class CreateClientPlanDto {
   @IsUUID()
   planId!: string;
 
-  // Precisa corresponder a um período cadastrado no plano.
+  /** Precisa corresponder a um período cadastrado no plano. */
   @Type(() => Number)
   @IsInt()
   @Min(1)
@@ -31,14 +31,17 @@ export class CreateClientPlanDto {
   @IsEnum(PlanBillingType)
   billingType!: PlanBillingType;
 
-  // Opcional: sem ele, a contratação começa hoje (no fuso da empresa).
+  /** Opcional: sem ele, a contratação começa hoje (no fuso da empresa). */
   @IsOptional()
   @Type(() => Date)
   @IsDate()
   startDate?: Date;
 
-  // Vencimento do primeiro pagamento; os seguintes vencem mês a mês. Obrigatório
-  // no mensal: sem vencimento, o cancelamento não distinguiria parcelas atrasadas.
+  /**
+   * Vencimento do primeiro pagamento; os seguintes vencem mês a mês.
+   * Obrigatório no mensal, opcional no integral.
+   */
+  // Sem vencimento, o cancelamento não distinguiria parcelas atrasadas das futuras.
   @ValidateIf(
     (dto: CreateClientPlanDto) =>
       dto.billingType === PlanBillingType.MONTHLY ||
@@ -48,7 +51,7 @@ export class CreateClientPlanDto {
   @IsDate()
   firstDueDate?: Date;
 
-  // Uma agenda para cada serviço do plano.
+  /** Uma agenda para cada serviço do plano. */
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

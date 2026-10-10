@@ -3,7 +3,7 @@ import { IsBoolean, IsNotEmpty, IsOptional, IsString } from "class-validator";
 import { PaginationQueryDto } from "../../../common/dto/pagination-query.dto";
 
 export class FindServicesQueryDto extends PaginationQueryDto {
-  // Busca parcial, sem diferenciar acentos nem maiúsculas.
+  /** Busca parcial, sem diferenciar acentos nem maiúsculas. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()

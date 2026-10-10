@@ -26,7 +26,7 @@ export class CreateRecurringAppointmentDto {
   @IsDate()
   startDate!: Date;
 
-  // Obrigatória: a recorrência tem no máximo 60 dias entre início e fim.
+  /** Obrigatória: a recorrência tem no máximo 60 dias entre início e fim. */
   @Type(() => Date)
   @IsDate()
   endDate!: Date;
@@ -36,7 +36,7 @@ export class CreateRecurringAppointmentDto {
   @IsNotEmpty()
   note?: string;
 
-  // Sem dias, a recorrência não reserva horário nenhum.
+  /** Sem dias, a recorrência não reserva horário nenhum. */
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

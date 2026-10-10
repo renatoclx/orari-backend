@@ -6,7 +6,7 @@ export class SettlePaymentsDto {
   @IsUUID()
   paymentMethodId!: string;
 
-  // Quando não informada, a baixa usa o momento da requisição.
+  /** Quando não informada, a baixa usa o momento da requisição. */
   @IsOptional()
   @Type(() => Date)
   @IsDate()

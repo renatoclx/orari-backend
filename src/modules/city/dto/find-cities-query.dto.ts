@@ -6,7 +6,7 @@ export class FindCitiesQueryDto extends PaginationQueryDto {
   @IsUUID()
   stateId?: string;
 
-  // Busca parcial, sem diferenciar acentos nem maiúsculas.
+  /** Busca parcial, sem diferenciar acentos nem maiúsculas. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()

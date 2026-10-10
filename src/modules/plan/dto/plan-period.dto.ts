@@ -8,14 +8,14 @@ export class PlanPeriodDto {
   @Min(1)
   months!: number;
 
-  // Desconto sobre o total do período no pagamento integral.
+  /** Desconto sobre o total do período no pagamento integral. */
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   discountPercent!: number;
 
-  // Desconto sobre cada parcela no pagamento mensal.
+  /** Desconto sobre cada parcela no pagamento mensal. */
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
