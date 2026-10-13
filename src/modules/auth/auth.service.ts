@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import ms, { type StringValue } from "ms";
+import { UserType } from "../../../generated/prisma/enums";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { UserService } from "../user/user.service";
@@ -14,6 +15,22 @@ import { JwtPayload } from "./jwt-payload.interface";
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+// Resposta do GET /auth/me: quem está logado e em qual empresa.
+export interface MeResponse {
+  id: string;
+  name: string;
+  email: string;
+  type: UserType;
+  company: {
+    id: string;
+    // Nome fantasia; sem ele, a razão social.
+    name: string;
+    // O front exibe os horários da agenda no fuso da empresa.
+    timezone: string;
+    logoUrl: string | null;
+  };
 }
 
 @Injectable()
@@ -46,6 +63,30 @@ export class AuthService {
     }
 
     return this.issueTokens(user.id, user.email);
+  }
+
+  /**
+   * Perfil do usuário autenticado, para o front montar a sessão. O usuário já
+   * foi validado pelo JwtStrategy; se tiver sido excluído nesse meio tempo,
+   * responde 401, como um token inválido.
+   */
+  async me(userId: string): Promise<MeResponse> {
+    const profile = await this.userService.findProfile(userId);
+    if (!profile) {
+      throw new UnauthorizedException();
+    }
+
+    const { company, ...user } = profile;
+
+    return {
+      ...user,
+      company: {
+        id: company.id,
+        name: company.fantasyName ?? company.corporateReason,
+        timezone: company.timezone,
+        logoUrl: company.logoUrl,
+      },
+    };
   }
 
   /**

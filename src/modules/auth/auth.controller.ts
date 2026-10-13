@@ -1,6 +1,8 @@
-import { Body, Controller, HttpCode, Post } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
+import { Body, Controller, Get, HttpCode, Post } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
+import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
@@ -23,6 +25,13 @@ export class AuthController {
   @HttpCode(200)
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto);
+  }
+
+  // Protegida (sem @Public): devolve o usuário do access token enviado.
+  @ApiBearerAuth()
+  @Get("me")
+  me(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.authService.me(currentUser.id);
   }
 
   @Public()

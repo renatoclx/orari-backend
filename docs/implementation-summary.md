@@ -40,6 +40,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Recurso | Rotas | Quem acessa |
 |---|---|---|
 | Auth | `POST /auth/login` | Público |
+| Auth | `GET /auth/me` | Qualquer usuário autenticado (o próprio perfil) |
 | States | `GET /states`, `GET /states/:id` | Autenticado |
 | Cities | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id` | Autenticado |
 | Companies | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id` | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
@@ -197,6 +198,10 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
+
+### 2.18 Perfil do usuário autenticado
+
+- **`GET /auth/me`:** devolve o usuário do access token com a empresa (`id`, `name`, `timezone`, `logoUrl`), para o front montar a sessão. O nome da empresa é o fantasia ou, sem ele, a razão social. A consulta fica no `UserService.findProfile` (leitura da empresa por relação, sem a senha); usuário excluído depois do login responde 401.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
