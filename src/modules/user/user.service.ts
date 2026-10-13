@@ -29,6 +29,27 @@ const PASSWORD_SALT_ROUNDS = 10;
 // O hash da senha nunca deve sair nas respostas da API (ver docs/auth.md).
 const omitPassword = { password: true } as const;
 
+// Perfil do usuário logado: só o necessário ao front, nunca a senha.
+const profileSelect = {
+  id: true,
+  name: true,
+  email: true,
+  type: true,
+  company: {
+    select: {
+      id: true,
+      corporateReason: true,
+      fantasyName: true,
+      timezone: true,
+      logoUrl: true,
+    },
+  },
+} satisfies Prisma.UserSelect;
+
+export type UserProfile = Prisma.UserGetPayload<{
+  select: typeof profileSelect;
+}>;
+
 /**
  * Gerenciamento de usuários (ver docs/business-rules.md):
  * - SUPER_ADMIN gerencia usuários de qualquer empresa ativa;
@@ -46,6 +67,14 @@ export class UserService {
   // Uso exclusivo da autenticação: é a única consulta que retorna o hash da senha.
   findByEmailWithPassword(email: string): Promise<User | null> {
     return this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+  }
+
+  // Uso do GET /auth/me: o usuário logado com os dados da empresa que o front exibe.
+  findProfile(id: string): Promise<UserProfile | null> {
+    return this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: profileSelect,
+    });
   }
 
   // Uso da autenticação: recarrega o usuário do token a cada requisição.

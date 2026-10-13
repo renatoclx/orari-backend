@@ -26,6 +26,7 @@ describe("AuthService", () => {
   const userServiceMock = {
     findByEmailWithPassword: vi.fn(),
     findActiveById: vi.fn(),
+    findProfile: vi.fn(),
   };
   const companyServiceMock = {
     isActive: vi.fn(),
@@ -63,6 +64,59 @@ describe("AuthService", () => {
     }).compile();
 
     authService = module.get<AuthService>(AuthService);
+  });
+
+  describe("me", () => {
+    const profile = {
+      id: "user-1",
+      name: "Ana",
+      email: "ana@orari.local",
+      type: "ADMIN",
+      company: {
+        id: "company-1",
+        corporateReason: "Clínica Bem Estar LTDA",
+        fantasyName: "Bem Estar",
+        timezone: "America/Sao_Paulo",
+        logoUrl: null,
+      },
+    };
+
+    it("deve devolver o usuário com a empresa pelo nome fantasia", async () => {
+      userServiceMock.findProfile.mockResolvedValue(profile);
+
+      await expect(authService.me("user-1")).resolves.toEqual({
+        id: "user-1",
+        name: "Ana",
+        email: "ana@orari.local",
+        type: "ADMIN",
+        company: {
+          id: "company-1",
+          name: "Bem Estar",
+          timezone: "America/Sao_Paulo",
+          logoUrl: null,
+        },
+      });
+      expect(userServiceMock.findProfile).toHaveBeenCalledWith("user-1");
+    });
+
+    it("deve usar a razão social quando não há nome fantasia", async () => {
+      userServiceMock.findProfile.mockResolvedValue({
+        ...profile,
+        company: { ...profile.company, fantasyName: null },
+      });
+
+      const result = await authService.me("user-1");
+
+      expect(result.company.name).toBe("Clínica Bem Estar LTDA");
+    });
+
+    it("deve recusar com 401 quando o usuário não existe mais", async () => {
+      userServiceMock.findProfile.mockResolvedValue(null);
+
+      await expect(authService.me("user-1")).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    });
   });
 
   describe("login", () => {

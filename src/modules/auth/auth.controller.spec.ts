@@ -10,6 +10,7 @@ describe("AuthController", () => {
     login: vi.fn(),
     refresh: vi.fn(),
     logout: vi.fn(),
+    me: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -21,6 +22,23 @@ describe("AuthController", () => {
     }).compile();
 
     authController = module.get<AuthController>(AuthController);
+  });
+
+  describe("me", () => {
+    it("deve buscar o perfil do usuário autenticado", async () => {
+      const profile = { id: "user-1", name: "Ana" };
+      authServiceMock.me.mockResolvedValue(profile);
+
+      const result = await authController.me({
+        id: "user-1",
+        email: "ana@orari.local",
+        type: "ADMIN",
+        companyId: "company-1",
+      });
+
+      expect(authServiceMock.me).toHaveBeenCalledWith("user-1");
+      expect(result).toEqual(profile);
+    });
   });
 
   describe("login", () => {
