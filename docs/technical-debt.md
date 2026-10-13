@@ -33,3 +33,29 @@ por semana (208 agendamentos) foi contratado em cerca de 0,5 s. Em produção, a
 latência de cada consulta é maior; vale medir de novo no ambiente real.
 
 **Registrado em:** 2026-10-09 (Etapa 6.3).
+
+---
+
+## Fotos em pasta local e com acesso público
+
+**Onde:** `src/common/storage/local-file-storage.service.ts` e `main.ts`
+(`useStaticAssets`).
+
+**O que é:** as fotos de pessoas ficam numa pasta do próprio servidor
+(`UPLOADS_DIR`, padrão `uploads/`) e são servidas em `/uploads` **sem
+autenticação**: quem tiver o link abre a imagem. O nome do arquivo é um UUID,
+então o link não é adivinhável, mas não expira.
+
+**Impacto:** foto de pessoa é dado pessoal (LGPD). Em produção, com mais de uma
+instância do servidor ou com deploy que recria o disco, os arquivos locais
+também se perdem ou ficam só em uma das instâncias.
+
+**Mitigação atual:** uso só em ambiente local; formato conferido pelo conteúdo
+(JPEG ou PNG), até 2 MB, nome aleatório.
+
+**Como resolver:** trocar o `LocalFileStorage` por um armazenamento em nuvem
+privado (ex.: S3 ou compatível) e servir as fotos por links temporários
+assinados. Como o resto do código só conhece `save` e `remove`, a troca fica
+concentrada nesse service.
+
+**Registrado em:** 2026-10-13.

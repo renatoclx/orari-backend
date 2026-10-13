@@ -149,6 +149,7 @@ async function main() {
       type: "MAIN",
       phone: "3133334444",
       email: "contato@demo.orari",
+      isPrincipal: true,
       companyId,
     },
     companyId,
@@ -160,6 +161,7 @@ async function main() {
       street: "Avenida Afonso Pena",
       number: "1000",
       complement: "Sala 302",
+      isPrincipal: true,
       cityId: beloHorizonte.id,
       companyId,
     },
@@ -217,7 +219,12 @@ async function main() {
 
   // Contato e endereço de uma pessoa, para exercitar o dono alternativo.
   await contacts.create(
-    { type: "MAIN", phone: "31988887777", peopleId: clientOne.id },
+    {
+      type: "MAIN",
+      phone: "31988887777",
+      isPrincipal: true,
+      peopleId: clientOne.id,
+    },
     companyId,
   );
   await addresses.create(
@@ -226,6 +233,7 @@ async function main() {
       cep: "30140071",
       street: "Rua da Bahia",
       number: "500",
+      isPrincipal: true,
       cityId: beloHorizonte.id,
       peopleId: clientOne.id,
     },

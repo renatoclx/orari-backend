@@ -1,8 +1,13 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { PeopleService } from "./people.service";
@@ -24,6 +29,8 @@ describe("PeopleService", () => {
     },
   };
 
+  const storageMock = { save: vi.fn(), remove: vi.fn() };
+
   const dto: CreatePeopleDto = {
     name: "Maria",
     document: "52998224725",
@@ -31,6 +38,13 @@ describe("PeopleService", () => {
     type: "CLIENT",
   };
   const people = { id: "1", ...dto, companyId: COMPANY_ID, deletedAt: null };
+  const principalContact = {
+    id: "contact-1",
+    type: "MAIN",
+    phone: "31999999999",
+    email: null,
+  };
+  const principalAddress = { id: "address-1", street: "Rua da Bahia" };
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -39,6 +53,7 @@ describe("PeopleService", () => {
       providers: [
         PeopleService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: LocalFileStorage, useValue: storageMock },
       ],
     }).compile();
 
@@ -74,7 +89,9 @@ describe("PeopleService", () => {
 
   describe("findAll", () => {
     it("deve combinar o escopo da empresa com os filtros", async () => {
-      prismaMock.people.findMany.mockResolvedValue([people]);
+      prismaMock.people.findMany.mockResolvedValue([
+        { ...people, contacts: [principalContact] },
+      ]);
       prismaMock.people.count.mockResolvedValue(1);
 
       const result = await peopleService.findAll(
@@ -97,7 +114,36 @@ describe("PeopleService", () => {
           type: "CLIENT",
         },
       });
-      expect(result).toEqual({ items: [people], total: 1, page: 1, limit: 10 });
+      expect(result).toEqual({
+        items: [{ ...people, principalContact }],
+        total: 1,
+        page: 1,
+        limit: 10,
+      });
+    });
+
+    it("deve trazer só o contato principal não excluído de cada pessoa", async () => {
+      prismaMock.people.findMany.mockResolvedValue([
+        { ...people, contacts: [] },
+      ]);
+      prismaMock.people.count.mockResolvedValue(1);
+
+      const result = await peopleService.findAll(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            contacts: expect.objectContaining({
+              where: { isPrincipal: true, deletedAt: null },
+              take: 1,
+            }) as unknown,
+          },
+        }),
+      );
+      expect(result.items).toEqual([{ ...people, principalContact: null }]);
     });
 
     it("não deve filtrar por nome quando ele não é informado", async () => {
@@ -111,6 +157,49 @@ describe("PeopleService", () => {
           normalizedName: undefined,
         }) as unknown,
       });
+    });
+  });
+
+  describe("findDetail", () => {
+    it("deve devolver a pessoa com contato e endereço principais", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        contacts: [principalContact],
+        addresses: [principalAddress],
+      });
+
+      await expect(peopleService.findDetail("1", COMPANY_ID)).resolves.toEqual({
+        ...people,
+        principalContact,
+        principalAddress,
+      });
+      expect(prismaMock.people.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "1", companyId: COMPANY_ID, deletedAt: null },
+        }),
+      );
+    });
+
+    it("deve devolver null quando não há principais marcados", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        contacts: [],
+        addresses: [],
+      });
+
+      await expect(peopleService.findDetail("1", COMPANY_ID)).resolves.toEqual({
+        ...people,
+        principalContact: null,
+        principalAddress: null,
+      });
+    });
+
+    it("deve lançar NotFoundException para pessoa fora da empresa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+
+      await expect(
+        peopleService.findDetail("1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -178,6 +267,102 @@ describe("PeopleService", () => {
         where: { id: "1" },
         data: { deletedAt: anyDate, updatedAt: anyDate },
       });
+    });
+  });
+
+  describe("foto", () => {
+    // Assinaturas mínimas de cada formato (os primeiros bytes do arquivo).
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const gif = Buffer.from("GIF89a");
+
+    beforeEach(() => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        photoUrl: null,
+      });
+      storageMock.save.mockResolvedValue("/uploads/people/new.jpg");
+      prismaMock.people.update.mockResolvedValue({
+        ...people,
+        photoUrl: "/uploads/people/new.jpg",
+      });
+    });
+
+    it("deve gravar a foto JPEG e preencher o photoUrl", async () => {
+      const result = await peopleService.updatePhoto("1", jpeg, COMPANY_ID);
+
+      expect(storageMock.save).toHaveBeenCalledWith("people", jpeg, "jpg");
+      expect(prismaMock.people.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "1" },
+          data: { photoUrl: "/uploads/people/new.jpg", updatedAt: anyDate },
+        }),
+      );
+      expect(result.photoUrl).toBe("/uploads/people/new.jpg");
+      expect(storageMock.remove).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar PNG com a extensão correta", async () => {
+      await peopleService.updatePhoto("1", png, COMPANY_ID);
+
+      expect(storageMock.save).toHaveBeenCalledWith("people", png, "png");
+    });
+
+    it("deve recusar formato que não é JPEG nem PNG, sem gravar nada", async () => {
+      await expect(
+        peopleService.updatePhoto("1", gif, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(storageMock.save).not.toHaveBeenCalled();
+      expect(prismaMock.people.update).not.toHaveBeenCalled();
+    });
+
+    it("deve apagar a foto anterior só depois de gravar a nova", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        photoUrl: "/uploads/people/old.jpg",
+      });
+
+      await peopleService.updatePhoto("1", jpeg, COMPANY_ID);
+
+      expect(storageMock.remove).toHaveBeenCalledWith(
+        "/uploads/people/old.jpg",
+      );
+      expect(prismaMock.people.update.mock.invocationCallOrder[0]).toBeLessThan(
+        storageMock.remove.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("deve recusar foto de pessoa de outra empresa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+
+      await expect(
+        peopleService.updatePhoto("1", jpeg, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(storageMock.save).not.toHaveBeenCalled();
+    });
+
+    it("deve remover a foto: limpa o photoUrl e apaga o arquivo", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        photoUrl: "/uploads/people/old.jpg",
+      });
+
+      await peopleService.removePhoto("1", COMPANY_ID);
+
+      expect(prismaMock.people.update).toHaveBeenCalledWith({
+        where: { id: "1" },
+        data: { photoUrl: null, updatedAt: anyDate },
+      });
+      expect(storageMock.remove).toHaveBeenCalledWith(
+        "/uploads/people/old.jpg",
+      );
+    });
+
+    it("não deve fazer nada ao remover quando a pessoa não tem foto", async () => {
+      await peopleService.removePhoto("1", COMPANY_ID);
+
+      expect(prismaMock.people.update).not.toHaveBeenCalled();
+      expect(storageMock.remove).not.toHaveBeenCalled();
     });
   });
 });

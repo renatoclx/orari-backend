@@ -43,6 +43,10 @@
 - Usuários só acessam pessoas da própria empresa. Pessoas de outra empresa respondem 404.
 - O documento da pessoa é um CPF válido, sem máscara.
 - Pessoas podem ser filtradas por nome (busca parcial que ignora acentos e maiúsculas), por CPF (exato) e por tipo.
+- A foto da pessoa é opcional e enviada por uma rota própria, em JPEG ou PNG, com até 2 MB. O formato é conferido pelo conteúdo do arquivo, e não só pela extensão.
+- O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
+- Enviar uma nova foto substitui a anterior, que é apagada. A foto também pode ser removida.
+- A exclusão (lógica) da pessoa mantém a foto.
 
 ## Contatos e endereços
 
@@ -52,6 +56,10 @@
 - Usuários só acessam contatos e endereços da própria empresa e de suas pessoas.
 - Contatos e endereços de uma pessoa excluída deixam de ser acessíveis junto com ela.
 - Um contato deve ter ao menos um meio de contato: telefone e/ou e-mail. Uma edição não pode remover o último deles.
+- Cada dono tem no máximo um contato principal e um endereço principal (`isPrincipal`), considerando apenas os registros não excluídos.
+- Marcar um contato ou endereço como principal desmarca automaticamente o principal anterior do mesmo dono.
+- Excluir o principal não promove outro: o dono fica sem principal até que um seja marcado.
+- A listagem de pessoas traz o contato principal de cada uma (`principalContact`); o detalhe da pessoa traz também o endereço principal (`principalAddress`). Sem principal marcado, o campo vem `null`.
 
 ## Unicidade
 
