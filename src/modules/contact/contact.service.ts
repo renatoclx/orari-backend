@@ -1,13 +1,18 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { Contact, Prisma } from "../../../generated/prisma/client";
-import { ownedByCompany } from "../../common/authorization/owner-scope";
+import {
+  ownedByCompany,
+  principalOfOwner,
+} from "../../common/authorization/owner-scope";
 import { FindOwnedQueryDto } from "../../common/dto/find-owned-query.dto";
 import { OwnerDto } from "../../common/dto/owner.dto";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { CreateContactDto } from "./dto/create-contact.dto";
@@ -28,7 +33,12 @@ export class ContactService {
   async create(dto: CreateContactDto, companyId: string): Promise<Contact> {
     await this.ensureOwnerInCompany(dto, companyId);
 
-    return this.prisma.contact.create({ data: dto });
+    const create = this.prisma.contact.create({ data: dto });
+    if (!dto.isPrincipal) {
+      return create;
+    }
+
+    return this.withPrincipalReplaced(dto, create);
   }
 
   async findAll(
@@ -77,10 +87,15 @@ export class ContactService {
     const contact = await this.findOne(id, companyId);
     this.ensureKeepsPhoneOrEmail(contact, dto);
 
-    return this.prisma.contact.update({
+    const update = this.prisma.contact.update({
       where: { id },
       data: { ...dto, updatedAt: new Date() },
     });
+    if (!dto.isPrincipal) {
+      return update;
+    }
+
+    return this.withPrincipalReplaced(contact, update, id);
   }
 
   async remove(id: string, companyId: string): Promise<void> {
@@ -91,6 +106,40 @@ export class ContactService {
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  /**
+   * Cada dono tem no máximo um contato principal: o anterior é desmarcado na
+   * mesma transação em que o novo é gravado. Se duas marcações concorrerem, o
+   * índice único parcial recusa a segunda, que vira 409.
+   */
+  private async withPrincipalReplaced(
+    owner: OwnerDto | Contact,
+    write: Prisma.PrismaPromise<Contact>,
+    exceptId?: string,
+  ): Promise<Contact> {
+    const now = new Date();
+
+    try {
+      const [, contact] = await this.prisma.$transaction([
+        this.prisma.contact.updateMany({
+          where: {
+            ...principalOfOwner(owner),
+            ...(exceptId && { id: { not: exceptId } }),
+          },
+          data: { isPrincipal: false, updatedAt: now },
+        }),
+        write,
+      ]);
+      return contact;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new ConflictException(
+          "Outro contato principal foi marcado ao mesmo tempo; tente novamente",
+        );
+      }
+      throw error;
+    }
   }
 
   /**

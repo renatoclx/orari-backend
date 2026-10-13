@@ -35,7 +35,9 @@ export class CreateCompanyDto {
   @IsBoolean()
   isActive?: boolean;
 
-  // Define em que relógio valem as janelas de atendimento e as recorrências.
+  /**
+   * Define em que relógio valem as janelas de atendimento e as recorrências.
+   */
   @IsOptional()
   @IsTimeZone()
   timezone?: string;

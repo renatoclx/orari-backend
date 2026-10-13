@@ -27,7 +27,7 @@ export class CreateServiceDto {
   @Min(0)
   price?: number;
 
-  // Em minutos: define o fim dos agendamentos deste serviço.
+  /** Em minutos: define o fim dos agendamentos deste serviço. */
   @Type(() => Number)
   @IsInt()
   @Min(1)

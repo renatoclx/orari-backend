@@ -5,7 +5,11 @@ export class ResetPasswordDto {
   @IsUserPassword()
   newPassword!: string;
 
-  // Usado apenas na validação; nunca é persistido (ver docs/auth.md).
+  /**
+   * Confirmação: precisa ser igual à senha. Usado apenas na validação; nunca é
+   * persistido.
+   */
+  // Ver docs/auth.md.
   @Match("newPassword")
   newPasswordConfirmation!: string;
 }

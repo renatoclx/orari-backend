@@ -13,21 +13,23 @@ export class CreatePaymentDto {
   @IsUUID()
   appointmentId!: string;
 
-  // Quando não informado, assume o preço do serviço do agendamento.
+  /** Quando não informado, assume o preço do serviço do agendamento. */
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   amount?: number;
 
+  /** Opcional enquanto PENDING; obrigatório quando o pagamento está PAID. */
+  @IsOptional()
   @IsUUID()
-  paymentMethodId!: string;
+  paymentMethodId?: string;
 
   @IsOptional()
   @IsEnum(PaymentStatus)
   status?: PaymentStatus;
 
-  // Obrigatório quando o pagamento está PAID e recusado nos demais status.
+  /** Obrigatório quando o pagamento está PAID e recusado nos demais status. */
   @IsOptional()
   @Type(() => Date)
   @IsDate()

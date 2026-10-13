@@ -21,15 +21,22 @@ export class CreateUserDto {
   @IsUserPassword()
   password!: string;
 
-  // Usado apenas na validação; nunca é persistido (ver docs/auth.md).
+  /**
+   * Confirmação: precisa ser igual à senha. Usado apenas na validação; nunca é
+   * persistido.
+   */
+  // Ver docs/auth.md.
   @Match("password")
   passwordConfirmation!: string;
 
   @IsEnum(UserType)
   type!: UserType;
 
-  // Obrigatório para SUPER_ADMIN. Para ADMIN, se informado, deve ser a própria empresa
-  // (a regra depende de quem está autenticado e por isso fica no UserService).
+  /**
+   * Obrigatório para SUPER_ADMIN. Para ADMIN, se informado, deve ser a própria
+   * empresa.
+   */
+  // A regra depende de quem está autenticado e por isso fica no UserService.
   @IsOptional()
   @IsUUID()
   companyId?: string;

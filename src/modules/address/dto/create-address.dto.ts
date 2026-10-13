@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -38,4 +39,12 @@ export class CreateAddressDto extends OwnerDto {
 
   @IsUUID()
   cityId!: string;
+
+  /**
+   * Endereço exibido para o dono. Marcar um novo principal desmarca o anterior
+   * do mesmo dono.
+   */
+  @IsOptional()
+  @IsBoolean()
+  isPrincipal?: boolean;
 }

@@ -30,9 +30,10 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | RecurringAppointment | **Sem exclusão** (`isActive`) | Período + dias da semana |
 | RecurringDay | Exclusão física (substituída em bloco) | Dia da semana e horários (`time`) |
 | PaymentMethod | Soft delete | Nome único por empresa |
-| Payment | Soft delete | Um por agendamento; `paidAt` apenas quando `PAID`; valor herda o preço do serviço |
+| Plan | **Sem exclusão** (`isActive`, reativável) | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco |
+| Payment | Soft delete | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
 | BusinessHour | Soft delete | Janelas de atendimento por dia da semana |
-| Notification | **Sem exclusão** (resolvida) | Aviso de horizonte da recorrência |
+| Notification | **Sem exclusão** (resolvida) | Sem tipos em uso (entidade mantida para o futuro) |
 
 ### Rotas
 
@@ -48,12 +49,13 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
 | Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
+| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
-| Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?paymentMethodId`) | Qualquer tipo, só na própria empresa |
+| Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
+| Client plans | `POST`, `GET` (`?clientId`, `?planId`), `GET /:id`, `PATCH /:id/cancel` | Qualquer tipo, só na própria empresa |
+| Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
 | Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
-| Recurring (extensão) | `POST /recurring-appointments/:id/extend` | Qualquer tipo, só na própria empresa |
 
 Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status HTTP seguem o `coding-standards.md` (201/200/204).
 
@@ -127,7 +129,64 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 - **Fuso por empresa:** `Company.timezone` (padrão `America/Sao_Paulo`). Janelas de atendimento e horários de recorrência passam a valer no relógio da empresa; os instantes seguem gravados em UTC. Conversões em `common/time/time-zone.ts`, com `Intl` e sem dependência nova.
 - **Datas puras pelo calendário:** o período da recorrência (`date`) não sofre conversão de fuso. Antes, em UTC-3, uma data final "2026-12-15" perdia o próprio dia 15.
-- **Horizonte só cresce por ação manual:** quando faltam menos de 30 dias de agenda, a API cria uma notificação (`RECURRING_APPOINTMENT_HORIZON`), e a ampliação é feita por `POST /recurring-appointments/:id/extend`. A lista de notificações se sincroniza a cada consulta, sem rotina agendada.
+- **Recorrência com data final obrigatória (até 60 dias):** o horizonte de 90 dias, a extensão manual e o aviso de horizonte foram removidos. Recorrências criadas antes dessa regra podem não ter data final; elas continuam existindo e podem ser canceladas.
+
+### 2.10 Pagamento da recorrência (Etapa 3)
+
+- **Sem regeneração:** a edição aceita só `note` e `isActive: false`. Mudar o padrão é encerrar e criar outra recorrência; uma cancelada não é reativada.
+- **Pagamento por agendamento:** a criação gera um pagamento `PENDING` por agendamento, na mesma transação, com o preço do serviço e vencimento no dia local do agendamento. Serviço sem preço é recusado.
+- **Método na baixa:** `Payment.paymentMethodId` passou a ser opcional; é obrigatório quando o pagamento está `PAID`.
+- **Pagamento integral:** `POST /recurring-appointments/:id/payments/settle` dá baixa em todos os `PENDING` da recorrência com o mesmo método.
+- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
+
+### 2.11 Remanejamento (Etapa 4)
+
+- **Rota dedicada:** `PATCH /recurring-appointments/:id/appointments/:appointmentId/reschedule` com `startAt`. Remarca o mesmo registro, então a quantidade de agendamentos e o pagamento ficam com ele.
+- **Validações:** recorrência ativa; agendamento da própria recorrência; status `SCHEDULED` ou `CONFIRMED`; nova data (dia local) dentro do período; data futura, janela de atendimento e agenda livre, reaproveitadas do `AppointmentService`.
+- **Vencimento:** o pagamento `PENDING` passa a vencer no novo dia, na mesma transação.
+- **Cancelamento de um agendamento:** `PATCH /recurring-appointments/:id/appointments/:appointmentId/cancel` cancela o agendamento (`SCHEDULED` ou `CONFIRMED`) e o pagamento `PENDING` dele, na mesma transação.
+- **PATCH comum bloqueado:** `PATCH /appointments/:id` recusa `startAt`, `serviceId`, `clientId`, `professionalId` e `status: CANCELLED` em agendamentos de recorrência.
+
+### 2.12 Catálogo de planos (Etapa 5)
+
+- **Entidades:** `Plan` (valor mensal próprio, `monthlyPrice`), `PlanItem` (serviço do plano; renomeado de `PlanService` para não colidir com a classe do NestJS) e `PlanPeriod` (meses e os dois percentuais de desconto).
+- **Cadastro em um payload:** `POST /plans` recebe `serviceIds` e `periods`; no `PATCH`, cada lista informada substitui a anterior, como os dias da recorrência.
+- **Validações:** ao menos um serviço, sem repetição, todos da empresa e ativos (reaproveita `ServiceService.findActive`); períodos com meses distintos e percentuais de 0 a 100; nome único (409).
+- **Resposta:** os itens saem como `services` (`id`, `name`, `isActive`), sem expor a tabela intermediária.
+- **Para a contratação (Etapa 6):** recusar plano inativo, sem períodos ou com serviço inativo.
+
+### 2.13 Contratação de plano (Etapa 6)
+
+- **6.1 — Empresa no pagamento:** `Payment.companyId` passou a existir e a ser obrigatório; a migração preenche os pagamentos existentes com a empresa do agendamento antes de tornar a coluna obrigatória. A restrição por empresa usa essa coluna, e não mais o agendamento, porque os pagamentos de plano não terão agendamento.
+- **6.2 — Schema e cálculos:** `ClientPlan` (enum `PlanBillingType`), `Payment.clientPlanId` e `RecurringAppointment.clientPlanId` (ambos opcionais, `RESTRICT`). As contas ficam em `client-plan.calculations.ts`, funções puras com `Decimal`: total e pagamentos por modalidade (parcela arredondada antes do total), data final (véspera do mesmo dia N meses depois, ou último dia do mês quando o dia não existe) e vencimentos mês a mês (último dia do mês quando o dia não existe, sem deslocar os seguintes). O valor da parcela não é gravado: no mensal, é `totalAmount ÷ months`.
+- **6.3 — Agenda do plano na recorrência:** a criação foi dividida em uma parte comum (`createSchedule`: grava a recorrência e os dias e gera os agendamentos na transação recebida) e dois caminhos. `create` (avulsa) mantém o preço obrigatório, o limite de 60 dias, a transação própria e o pagamento por agendamento. `createForClientPlan` usa a transação da contratação, grava o `clientPlanId` e não tem limite de 60 dias nem pagamento por agendamento. A recorrência de plano não pode ser encerrada pelo `PATCH` (só pelo cancelamento da contratação), e a resposta passou a incluir `clientPlanId`. Ver `technical-debt.md` sobre o tempo da transação em planos longos.
+- **6.4 — Contratação:** `POST /client-plans` valida o plano (ativo, com o período escolhido e com todos os serviços ativos; inativo responde 409) e as agendas (exatamente os serviços do plano), resolve a data de início (hoje no fuso da empresa por padrão; futura aceita, passada recusada) e calcula valores, data final e vencimentos com `client-plan.calculations.ts`. Em uma transação de até 30 s grava a `ClientPlan`, cria uma recorrência por serviço (`createForClientPlan`, que também valida cliente e profissional) e gera os pagamentos (`PaymentService.createForClientPlan`: `PENDING`, sem método, sem agendamento). A resposta traz um resumo das agendas; os pagamentos ficam em `GET /payments?clientPlanId=`. Medido localmente: plano mensal de 12 meses com 2 serviços e 2 dias por semana (208 agendamentos) em cerca de 0,5 s.
+
+### 2.14 Cancelamento da contratação (Etapa 7)
+
+- **Sem multa e sem reembolso**, em qualquer modalidade (decisão de 2026-10-10; o efeito sobre o desconto do mensal ficou como pendência pós-MVP no roadmap).
+- **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
+- **Recusas (400):** contratação já cancelada ou com o período terminado.
+- **`firstDueDate` obrigatório no mensal** (validação no DTO): sem vencimento, o cancelamento não teria como separar parcelas atrasadas das futuras. No integral continua opcional.
+
+### 2.15 Cobrança dos avulsos concluídos (Etapa 8, codada em par)
+
+- **Job de cobrança no módulo de pagamento** (`payment/jobs/completed-appointment-charge.job.ts`, a cada 5 minutos): busca os avulsos `COMPLETED` sem pagamento (`AppointmentService.findCompletedStandaloneWithoutPayment`) e cria um `PENDING` para cada um (`PaymentService.createForCompletedAppointments`). Fica no módulo de pagamento para não criar dependência circular, e cobre tanto a conclusão pelo job de status quanto a manual.
+- **Regras:** valor = preço do serviço; vencimento = dia local do agendamento; serviço sem preço não gera pagamento; agendamento que já teve pagamento (inclusive excluído) não gera outro; recorrência e plano ficam de fora.
+- **Idempotente:** quem já tem pagamento não volta na busca, e o `createMany` usa `skipDuplicates` para o caso de duas execuções simultâneas.
+- **Atraso:** continua derivado (pendente com vencimento anterior a hoje); a exposição para o front fica na Etapa 9.
+
+### 2.16 Filtros de pagamento e atraso (Etapa 9)
+
+- **Novos filtros no `GET /payments`:** `clientId` (pagamentos do cliente vindos de agendamento ou de contratação, por relação), `recurringAppointmentId`, `overdue` (`true`/`false`) e `dueFrom`/`dueTo` (período de vencimento, pontas incluídas).
+- **`isOverdue` em toda resposta de pagamento** (listagem, consulta, criação e edição): `PENDING` com vencimento anterior a hoje, no fuso da empresa. Vencer hoje não é atraso; sem vencimento nunca é atraso. Nada é gravado.
+- **Ordem da listagem:** por vencimento (mais próximo primeiro, sem vencimento no fim) e, no empate, pela criação mais recente.
+- O `PaymentModule` passou a importar o `CompanyModule`, para obter o fuso da empresa.
+
+### 2.17 Seed e Swagger (Etapa 10)
+
+- **`seed:demo`:** passa a criar o plano "Bem-estar" (Massagem e Fisioterapia, R$ 400, períodos de 3 e 6 meses) e uma contratação mensal de 3 meses, com uma agenda por serviço. O resumo conta os pagamentos pela empresa do próprio pagamento, incluindo os do plano. Validado do zero em um banco temporário (22 migrações, seed base e seed de demonstração).
+- **Swagger com descrições:** o plugin do `@nestjs/swagger` usa `introspectComments`, e os comentários dos campos dos DTOs voltados a quem consome a API passaram para JSDoc (`/** ... */`), virando a descrição do campo em `/docs`. Notas internas (validadores, conversão de query string, normalização) continuam como `//` e não aparecem na documentação.
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
@@ -223,7 +282,6 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 7. Pendências e pontos de atenção
 
 **Pendente**
-- **Extensão do horizonte depende de alguém abrir as notificações:** a sincronização acontece na consulta a `/notifications`. Sem ninguém consultando, o aviso não é criado — foi a opção escolhida para não depender de rotina agendada.
 - **Dados provisórios do seed:** empresa "Orari", CNPJ `11111111000191`, `admin@orari.local`. É preciso trocar pelos dados reais antes de usar em outro ambiente e, como o seed não altera registros, atualizar também os registros já existentes.
 - **Commit:** todo o trabalho desde a criação das entidades ainda não foi commitado.
 

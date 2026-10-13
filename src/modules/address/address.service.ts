@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { Address, Prisma } from "../../../generated/prisma/client";
-import { ownedByCompany } from "../../common/authorization/owner-scope";
+import {
+  ownedByCompany,
+  principalOfOwner,
+} from "../../common/authorization/owner-scope";
 import { FindOwnedQueryDto } from "../../common/dto/find-owned-query.dto";
 import { OwnerDto } from "../../common/dto/owner.dto";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CityService } from "../city/city.service";
 import { PeopleService } from "../people/people.service";
@@ -27,7 +35,12 @@ export class AddressService {
     await this.cityService.findOne(dto.cityId);
     await this.ensureOwnerInCompany(dto, companyId);
 
-    return this.prisma.address.create({ data: dto });
+    const create = this.prisma.address.create({ data: dto });
+    if (!dto.isPrincipal) {
+      return create;
+    }
+
+    return this.withPrincipalReplaced(dto, create);
   }
 
   async findAll(
@@ -73,16 +86,21 @@ export class AddressService {
     dto: UpdateAddressDto,
     companyId: string,
   ): Promise<Address> {
-    await this.findOne(id, companyId);
+    const address = await this.findOne(id, companyId);
 
     if (dto.cityId) {
       await this.cityService.findOne(dto.cityId);
     }
 
-    return this.prisma.address.update({
+    const update = this.prisma.address.update({
       where: { id },
       data: { ...dto, updatedAt: new Date() },
     });
+    if (!dto.isPrincipal) {
+      return update;
+    }
+
+    return this.withPrincipalReplaced(address, update, id);
   }
 
   async remove(id: string, companyId: string): Promise<void> {
@@ -93,6 +111,40 @@ export class AddressService {
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  /**
+   * Cada dono tem no máximo um endereço principal: o anterior é desmarcado na
+   * mesma transação em que o novo é gravado. Se duas marcações concorrerem, o
+   * índice único parcial recusa a segunda, que vira 409.
+   */
+  private async withPrincipalReplaced(
+    owner: OwnerDto | Address,
+    write: Prisma.PrismaPromise<Address>,
+    exceptId?: string,
+  ): Promise<Address> {
+    const now = new Date();
+
+    try {
+      const [, address] = await this.prisma.$transaction([
+        this.prisma.address.updateMany({
+          where: {
+            ...principalOfOwner(owner),
+            ...(exceptId && { id: { not: exceptId } }),
+          },
+          data: { isPrincipal: false, updatedAt: now },
+        }),
+        write,
+      ]);
+      return address;
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new ConflictException(
+          "Outro endereço principal foi marcado ao mesmo tempo; tente novamente",
+        );
+      }
+      throw error;
+    }
   }
 
   /**

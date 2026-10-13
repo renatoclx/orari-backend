@@ -16,7 +16,7 @@ export class FindAppointmentsQueryDto extends PaginationQueryDto {
   @IsUUID()
   clientId?: string;
 
-  // Período pelo início do agendamento: from <= startAt < to.
+  /** Período pelo início do agendamento: from <= startAt < to. */
   @IsOptional()
   @Type(() => Date)
   @IsDate()

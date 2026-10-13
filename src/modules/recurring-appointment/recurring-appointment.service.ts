@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "../../../generated/prisma/client";
+import { Appointment, Prisma } from "../../../generated/prisma/client";
+import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { PeopleType, WeekDay } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import {
@@ -18,11 +19,14 @@ import {
   AppointmentService,
 } from "../appointment/appointment.service";
 import { CompanyService } from "../company/company.service";
+import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
+import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
 import { RecurringDayDto } from "./dto/recurring-day.dto";
+import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 
 // Os dias são devolvidos com horários em "HH:MM", como entraram.
@@ -36,20 +40,47 @@ export interface RecurringAppointmentResponse {
   endDate: Date | null;
   note: string | null;
   isActive: boolean;
+  // Preenchido quando a recorrência é a agenda de um serviço de um plano contratado.
+  clientPlanId: string | null;
   createdAt: Date;
   updatedAt: Date | null;
   days: RecurringDayDto[];
 }
 
-/**
- * Até onde gerar agendamentos de uma vez. Recorrências sem data final são
- * "abertas": o horizonte não avança sozinho — quando ele está acabando, uma
- * notificação avisa a empresa, que estende manualmente (ver NotificationService).
- */
-export const GENERATION_HORIZON_DAYS = 90;
+// Agenda de um serviço de um plano contratado. O período vem da contratação.
+export interface ClientPlanSchedule {
+  clientPlanId: string;
+  clientId: string;
+  professionalId: string;
+  serviceId: string;
+  startDate: Date;
+  endDate: Date;
+  days: RecurringDayDto[];
+}
 
-// Com menos dias gerados do que isto, a recorrência precisa ser estendida.
-export const HORIZON_WARNING_DAYS = 30;
+// O que toda recorrência grava, seja avulsa ou de plano.
+interface ScheduleData {
+  companyId: string;
+  clientId: string;
+  professionalId: string;
+  serviceId: string;
+  startDate: Date;
+  endDate: Date;
+  note?: string;
+  clientPlanId?: string;
+  days: RecurringDayDto[];
+}
+
+// Período máximo de uma recorrência avulsa (ver docs/business-rules.md).
+export const MAX_RECURRENCE_DAYS = 60;
+
+// Resultado da baixa em lote dos pagamentos de uma recorrência.
+export interface SettlePaymentsResponse {
+  settled: number;
+}
+
+// Um dia em milissegundos: usado para medir a distância entre duas datas puras.
+const DAY_IN_MS = 86_400_000;
 
 const withDays = {
   include: { days: { orderBy: { startTime: "asc" } } },
@@ -71,6 +102,11 @@ type RecurringAppointmentWithDays = Prisma.RecurringAppointmentGetPayload<
  * cancelamento ao AppointmentService (createFromRecurrence,
  * cancelFutureFromRecurrence), que é quem valida janela de atendimento e
  * conflito de horário. Por isso as regras de agenda em si ficam lá, não aqui.
+ * Do mesmo modo, os pagamentos de cada agendamento são gravados pelo
+ * PaymentService, na mesma transação.
+ *
+ * A agenda não é regenerada: depois de criada, a recorrência só muda a
+ * observação ou é cancelada. Mudar o padrão é encerrar e criar outra.
  */
 @Injectable()
 export class RecurringAppointmentService {
@@ -80,14 +116,13 @@ export class RecurringAppointmentService {
     private readonly serviceService: ServiceService,
     private readonly appointmentService: AppointmentService,
     private readonly companyService: CompanyService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   async create(
     dto: CreateRecurringAppointmentDto,
     companyId: string,
   ): Promise<RecurringAppointmentResponse> {
-    const { days, ...data } = dto;
-
     await this.ensureParticipants(dto.clientId, dto.professionalId, companyId);
     // O serviço precisa ser buscado antes de validar os dias: a duração dele
     // é o que define quantos minutos cada dia precisa reservar.
@@ -95,45 +130,100 @@ export class RecurringAppointmentService {
       dto.serviceId,
       companyId,
     );
+    // O valor de cada agendamento é o preço vigente do serviço.
+    const price = this.ensureServiceHasPrice(service.price);
+    // Valida o período antes de gravar: em ordem e com até 60 dias.
     this.ensurePeriodIsValid(dto.startDate, dto.endDate);
-    this.ensureDaysAreValid(days, service.duration);
+    this.ensureDaysAreValid(dto.days, service.duration);
 
     const timeZone = await this.companyService.getTimeZone(companyId);
 
-    // Recorrência e agendamentos nascem juntos: se algum horário conflitar, nada
-    // é gravado.
+    // Recorrência, agendamentos e pagamentos nascem juntos: se algum horário
+    // conflitar, nada é gravado.
     const created = await this.prisma.$transaction(async (tx) => {
-      const recurring = await tx.recurringAppointment.create({
-        data: { ...data, companyId, days: { create: this.toDayRows(days) } },
-        ...withDays,
-      });
+      const { recurring, appointments } = await this.createSchedule(
+        tx,
+        { ...dto, companyId },
+        service.duration,
+        timeZone,
+      );
 
-      if (recurring.isActive) {
-        await this.appointmentService.createFromRecurrence(
-          tx,
-          {
-            companyId,
-            recurringAppointmentId: recurring.id,
-            clientId: recurring.clientId,
-            professionalId: recurring.professionalId,
-            serviceId: recurring.serviceId,
-          },
-          this.buildOccurrences(
-            days,
-            recurring.startDate,
-            recurring.endDate,
-            service.duration,
-            timeZone,
-            new Date(),
-          ),
-          recurring.note,
-        );
-      }
+      // Só a recorrência avulsa cobra por agendamento; a de plano é cobrada pela contratação.
+      await this.paymentService.createPendingForAppointments(
+        tx,
+        companyId,
+        appointments,
+        price,
+        timeZone,
+      );
 
       return recurring;
     });
 
     return this.toResponse(created);
+  }
+
+  /**
+   * Cria a agenda de um serviço de um plano contratado, dentro da transação da
+   * contratação: plano, agendas e pagamentos são gravados juntos ou nada é.
+   *
+   * Diferente da recorrência avulsa: não há limite de 60 dias (o período é o da
+   * contratação) e não há pagamento por agendamento (a contratação é cobrada
+   * como um todo). As regras de agenda continuam as mesmas.
+   */
+  async createForClientPlan(
+    tx: Prisma.TransactionClient,
+    schedule: ClientPlanSchedule,
+    companyId: string,
+    timeZone: string,
+  ): Promise<RecurringAppointmentResponse> {
+    await this.ensureParticipants(
+      schedule.clientId,
+      schedule.professionalId,
+      companyId,
+    );
+    const service = await this.serviceService.findActive(
+      schedule.serviceId,
+      companyId,
+    );
+    this.ensureDaysAreValid(schedule.days, service.duration);
+
+    const { recurring } = await this.createSchedule(
+      tx,
+      { ...schedule, companyId },
+      service.duration,
+      timeZone,
+    );
+
+    return this.toResponse(recurring);
+  }
+
+  /**
+   * Cancelamento de uma contratação: encerra as recorrências dos serviços do
+   * plano e cancela os agendamentos futuros ainda em SCHEDULED, dentro da
+   * transação da contratação. O PATCH comum não encerra recorrência de plano;
+   * este é o único caminho.
+   */
+  async endForClientPlan(
+    tx: Prisma.TransactionClient,
+    clientPlanId: string,
+    companyId: string,
+  ): Promise<void> {
+    const recurrences = await tx.recurringAppointment.findMany({
+      where: { clientPlanId, companyId, isActive: true },
+      select: { id: true },
+    });
+    const ids = recurrences.map((recurrence) => recurrence.id);
+    const now = new Date();
+
+    await tx.recurringAppointment.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive: false, updatedAt: now },
+    });
+
+    for (const id of ids) {
+      await this.appointmentService.cancelFutureFromRecurrence(tx, id, now);
+    }
   }
 
   async findAll(
@@ -188,97 +278,193 @@ export class RecurringAppointmentService {
     return this.toResponse(recurring);
   }
 
+  /**
+   * Só a observação muda, ou a recorrência é cancelada (isActive = false).
+   * Cancelar libera os horários futuros e cancela os pagamentos pendentes deles.
+   */
   async update(
     id: string,
     dto: UpdateRecurringAppointmentDto,
     companyId: string,
   ): Promise<RecurringAppointmentResponse> {
     const current = await this.findOne(id, companyId);
-    const { days, ...data } = dto;
-
-    if (dto.clientId || dto.professionalId) {
-      await this.ensureParticipants(
-        dto.clientId ?? current.clientId,
-        dto.professionalId ?? current.professionalId,
-        companyId,
+    if (dto.isActive === false && current.clientPlanId) {
+      throw new BadRequestException(
+        "A recorrência de um plano é encerrada pelo cancelamento da contratação",
       );
     }
-
-    const service = await this.serviceService.findActive(
-      dto.serviceId ?? current.serviceId,
-      companyId,
-    );
-
-    this.ensurePeriodIsValid(
-      dto.startDate ?? current.startDate,
-      dto.endDate === undefined ? current.endDate : dto.endDate,
-    );
-
-    if (days) {
-      this.ensureDaysAreValid(days, service.duration);
-    }
-
-    const timeZone = await this.companyService.getTimeZone(companyId);
-
-    // Só a observação não afeta a agenda; qualquer outra mudança exige regerar.
-    const affectsSchedule = Object.keys(data).some((field) => field !== "note");
+    // Cancelar de novo uma recorrência já cancelada não tem o que desfazer.
+    const cancels = dto.isActive === false && current.isActive;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Os dias são substituídos em bloco: apagar e recriar na mesma transação
-      // evita que a recorrência fique sem dias caso algo falhe no meio.
       const recurring = await tx.recurringAppointment.update({
         where: { id },
-        data: {
-          ...data,
-          updatedAt: new Date(),
-          ...(days && {
-            days: { deleteMany: {}, create: this.toDayRows(days) },
-          }),
-        },
+        data: { ...dto, updatedAt: new Date() },
         ...withDays,
       });
 
-      if (!days && !affectsSchedule) {
-        return recurring;
-      }
-
-      // Regerar preserva o histórico: só os futuros ainda em SCHEDULED saem.
-      await this.appointmentService.cancelFutureFromRecurrence(
-        tx,
-        id,
-        new Date(),
-      );
-
-      if (recurring.isActive) {
-        await this.appointmentService.createFromRecurrence(
-          tx,
-          {
-            companyId,
-            recurringAppointmentId: recurring.id,
-            clientId: recurring.clientId,
-            professionalId: recurring.professionalId,
-            serviceId: recurring.serviceId,
-          },
-          this.buildOccurrences(
-            recurring.days.map((day) => ({
-              weekDay: day.weekDay,
-              startTime: formatTimeOfDay(day.startTime),
-              endTime: formatTimeOfDay(day.endTime),
-            })),
-            recurring.startDate,
-            recurring.endDate,
-            service.duration,
-            timeZone,
-            new Date(),
-          ),
-          recurring.note,
-        );
+      if (cancels) {
+        // Agendamentos antes dos pagamentos: o cancelamento dos pagamentos
+        // procura os agendamentos que acabaram de ser cancelados.
+        const now = new Date();
+        await this.appointmentService.cancelFutureFromRecurrence(tx, id, now);
+        await this.paymentService.cancelPendingForRecurrence(tx, id, now);
       }
 
       return recurring;
     });
 
     return this.toResponse(updated);
+  }
+
+  // Baixa em lote: o cliente que paga a recorrência inteira de uma vez.
+  async settlePayments(
+    id: string,
+    dto: SettlePaymentsDto,
+    companyId: string,
+  ): Promise<SettlePaymentsResponse> {
+    // Garante que a recorrência existe e é da empresa (404 caso contrário).
+    await this.findOne(id, companyId);
+
+    const settled = await this.paymentService.settlePendingForRecurrence(
+      id,
+      dto,
+      companyId,
+    );
+
+    return { settled };
+  }
+
+  /**
+   * Remanejamento: move um agendamento da recorrência para outro dia e horário
+   * dentro do período dela. Agendamento e vencimento do pagamento mudam juntos,
+   * na mesma transação.
+   */
+  async rescheduleAppointment(
+    id: string,
+    appointmentId: string,
+    { startAt }: RescheduleAppointmentDto,
+    companyId: string,
+  ): Promise<Appointment> {
+    const { recurring, appointment } = await this.findActiveOccurrence(
+      id,
+      appointmentId,
+      companyId,
+    );
+
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    this.ensureWithinPeriod(startAt, recurring, timeZone);
+
+    return this.prisma.$transaction(async (tx) => {
+      const rescheduled =
+        await this.appointmentService.rescheduleFromRecurrence(
+          tx,
+          appointment,
+          startAt,
+        );
+      await this.paymentService.moveDueDate(
+        tx,
+        appointmentId,
+        startAt,
+        timeZone,
+      );
+
+      return rescheduled;
+    });
+  }
+
+  /**
+   * Cancela um único agendamento da recorrência. O horário fica livre e o
+   * pagamento pendente dele é cancelado, na mesma transação.
+   */
+  async cancelAppointment(
+    id: string,
+    appointmentId: string,
+    companyId: string,
+  ): Promise<Appointment> {
+    const { appointment } = await this.findActiveOccurrence(
+      id,
+      appointmentId,
+      companyId,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const cancelled = await this.appointmentService.cancelFromRecurrence(
+        tx,
+        appointment,
+      );
+      await this.paymentService.cancelPendingForAppointment(tx, appointmentId);
+
+      return cancelled;
+    });
+  }
+
+  /**
+   * Busca um agendamento que pertence a uma recorrência ativa da empresa.
+   * Agendamento de outra recorrência se comporta como inexistente (404).
+   */
+  private async findActiveOccurrence(
+    id: string,
+    appointmentId: string,
+    companyId: string,
+  ) {
+    const recurring = await this.findOne(id, companyId);
+    if (!recurring.isActive) {
+      throw new BadRequestException(
+        "Recorrência cancelada não aceita alterações em seus agendamentos",
+      );
+    }
+
+    const appointment = await this.appointmentService.findOne(
+      appointmentId,
+      companyId,
+    );
+    if (appointment.recurringAppointmentId !== id) {
+      throw new NotFoundException(
+        "Agendamento não encontrado nesta recorrência",
+      );
+    }
+
+    return { recurring, appointment };
+  }
+
+  /**
+   * Parte comum a toda recorrência: grava a recorrência com os dias e gera os
+   * agendamentos do período, na transação de quem chama. O AppointmentService
+   * valida janela de atendimento e conflito de horário de cada ocorrência.
+   */
+  private async createSchedule(
+    tx: Prisma.TransactionClient,
+    { days, ...data }: ScheduleData,
+    serviceDuration: number,
+    timeZone: string,
+  ) {
+    const recurring = await tx.recurringAppointment.create({
+      data: { ...data, days: { create: this.toDayRows(days) } },
+      ...withDays,
+    });
+
+    const appointments = await this.appointmentService.createFromRecurrence(
+      tx,
+      {
+        companyId: data.companyId,
+        recurringAppointmentId: recurring.id,
+        clientId: recurring.clientId,
+        professionalId: recurring.professionalId,
+        serviceId: recurring.serviceId,
+      },
+      this.buildOccurrences(
+        days,
+        recurring.startDate,
+        data.endDate,
+        serviceDuration,
+        timeZone,
+        new Date(),
+      ),
+      recurring.note,
+    );
+
+    return { recurring, appointments };
   }
 
   private async ensureParticipants(
@@ -304,9 +490,59 @@ export class RecurringAppointmentService {
     }
   }
 
-  private ensurePeriodIsValid(startDate: Date, endDate?: Date | null) {
-    if (endDate && endDate < startDate) {
+  // Serviço sem preço não tem como definir o valor dos pagamentos.
+  private ensureServiceHasPrice(price: Decimal | null): Decimal {
+    if (price === null) {
+      throw new BadRequestException(
+        "O serviço precisa ter preço para ser usado em uma recorrência",
+      );
+    }
+
+    return price;
+  }
+
+  // O período vai da data inicial à final e não pode passar de MAX_RECURRENCE_DAYS.
+  private ensurePeriodIsValid(startDate: Date, endDate: Date) {
+    if (endDate < startDate) {
       throw new BadRequestException("endDate deve ser posterior a startDate");
+    }
+
+    const days = Math.round(
+      (endDate.getTime() - startDate.getTime()) / DAY_IN_MS,
+    );
+    if (days > MAX_RECURRENCE_DAYS) {
+      throw new BadRequestException(
+        `O período da recorrência não pode passar de ${MAX_RECURRENCE_DAYS} dias`,
+      );
+    }
+  }
+
+  /**
+   * A nova data, no calendário da empresa, precisa cair entre o início e o fim
+   * da recorrência. Recorrências antigas sem data final usam o limite de
+   * MAX_RECURRENCE_DAYS a partir do início.
+   */
+  private ensureWithinPeriod(
+    startAt: Date,
+    {
+      startDate,
+      endDate,
+    }: Pick<RecurringAppointmentResponse, "startDate" | "endDate">,
+    timeZone: string,
+  ) {
+    const day = toZonedParts(startAt, timeZone);
+    const lastDay =
+      endDate ??
+      new Date(startDate.getTime() + MAX_RECURRENCE_DAYS * DAY_IN_MS);
+
+    const withinPeriod =
+      this.isBeforeOrSameDay(this.toDateParts(startDate), day) &&
+      this.isBeforeOrSameDay(day, this.toDateParts(lastDay));
+
+    if (!withinPeriod) {
+      throw new BadRequestException(
+        "A nova data precisa estar dentro do período da recorrência",
+      );
     }
   }
 
@@ -362,14 +598,13 @@ export class RecurringAppointmentService {
    * Monta os horários que a recorrência ocupa.
    *
    * Gera do maior valor entre o início da recorrência e hoje (não se cria
-   * histórico) até a data final ou, quando não houver, o horizonte padrão. Cada
-   * ocorrência começa no horário reservado do dia e termina conforme a duração
-   * do serviço.
+   * histórico) até a data final. Cada ocorrência começa no horário reservado do
+   * dia e termina conforme a duração do serviço.
    */
   private buildOccurrences(
     days: RecurringDayDto[],
     startDate: Date,
-    endDate: Date | null,
+    endDate: Date,
     serviceDuration: number,
     timeZone: string,
     from: Date,
@@ -383,20 +618,15 @@ export class RecurringAppointmentService {
      * startDate e endDate são datas puras (coluna `date`), então entram pelo
      * calendário, sem conversão de fuso — convertê-las deslocaria o dia (em
      * UTC-3, "2026-12-15" viraria 14/12 às 21h e perderia o último dia).
-     * Já `from` e o horizonte são instantes, e por isso são lidos no fuso.
+     * `from` é um instante, e por isso é lido no fuso da empresa.
      */
     const cursor =
       startDate > from
         ? this.toDateParts(startDate)
         : toZonedParts(from, timeZone);
 
-    const horizon = this.addDays(cursor, GENERATION_HORIZON_DAYS);
-    const endDateParts = endDate ? this.toDateParts(endDate) : null;
-    const limit =
-      endDateParts && this.isBeforeOrSameDay(endDateParts, horizon)
-        ? endDateParts
-        : horizon;
-
+    // A geração termina na data final, que é obrigatória (não há mais horizonte).
+    const limit = this.toDateParts(endDate);
     const occurrences: AppointmentOccurrence[] = [];
 
     while (this.isBeforeOrSameDay(cursor, limit)) {
@@ -422,8 +652,8 @@ export class RecurringAppointmentService {
   }
 
   /*
-   * As cinco funções abaixo (toDateParts, addDays, weekDayIndex,
-   * isBeforeOrSameDay, advanceOneDay) formam um pequeno "kit de calendário"
+   * As quatro funções abaixo (toDateParts, weekDayIndex, isBeforeOrSameDay,
+   * advanceOneDay) formam um pequeno "kit de calendário"
    * usado só pelo buildOccurrences, para andar dia a dia entre o início e o
    * fim da recorrência.
    *
@@ -444,21 +674,6 @@ export class RecurringAppointmentService {
       year: value.getUTCFullYear(),
       month: value.getUTCMonth() + 1,
       day: value.getUTCDate(),
-      hours: 0,
-      minutes: 0,
-    };
-  }
-
-  private addDays(
-    { year, month, day }: { year: number; month: number; day: number },
-    days: number,
-  ) {
-    const shifted = new Date(Date.UTC(year, month - 1, day + days));
-
-    return {
-      year: shifted.getUTCFullYear(),
-      month: shifted.getUTCMonth() + 1,
-      day: shifted.getUTCDate(),
       hours: 0,
       minutes: 0,
     };
@@ -497,117 +712,6 @@ export class RecurringAppointmentService {
     cursor.year = next.getUTCFullYear();
     cursor.month = next.getUTCMonth() + 1;
     cursor.day = next.getUTCDate();
-  }
-
-  /**
-   * Até quando a recorrência já tem agendamentos gerados, e se ela precisa ser
-   * estendida: continua ativa, ainda tem período pela frente e o que foi gerado
-   * termina dentro da janela de aviso.
-   */
-  async findNeedingExtension(companyId: string): Promise<
-    {
-      id: string;
-      generatedUntil: Date | null;
-    }[]
-  > {
-    const recurrences = await this.prisma.recurringAppointment.findMany({
-      where: {
-        companyId,
-        isActive: true,
-        OR: [{ endDate: null }, { endDate: { gt: new Date() } }],
-      },
-      select: {
-        id: true,
-        endDate: true,
-        appointments: {
-          where: { status: { not: "CANCELLED" } },
-          orderBy: { startAt: "desc" },
-          take: 1,
-          select: { startAt: true },
-        },
-      },
-    });
-
-    const warningLimit = new Date();
-    warningLimit.setUTCDate(warningLimit.getUTCDate() + HORIZON_WARNING_DAYS);
-
-    return recurrences
-      .map((recurrence) => ({
-        id: recurrence.id,
-        endDate: recurrence.endDate,
-        generatedUntil: recurrence.appointments[0]?.startAt ?? null,
-      }))
-      .filter(({ endDate, generatedUntil }) => {
-        // Já gerou tudo até o fim previsto: não há o que estender.
-        if (endDate && generatedUntil && generatedUntil >= endDate) {
-          return false;
-        }
-
-        return !generatedUntil || generatedUntil < warningLimit;
-      })
-      .map(({ id, generatedUntil }) => ({ id, generatedUntil }));
-  }
-
-  /**
-   * Estende manualmente o horizonte: gera mais um bloco de agendamentos a partir
-   * do último já gerado. É a ação que resolve a notificação de horizonte.
-   */
-  async extend(id: string, companyId: string): Promise<{ created: number }> {
-    const current = await this.findOne(id, companyId);
-
-    if (!current.isActive) {
-      throw new BadRequestException(
-        "Não é possível estender uma recorrência inativa",
-      );
-    }
-
-    const service = await this.serviceService.findActive(
-      current.serviceId,
-      companyId,
-    );
-    const timeZone = await this.companyService.getTimeZone(companyId);
-
-    const last = await this.prisma.appointment.aggregate({
-      where: { recurringAppointmentId: id, status: { not: "CANCELLED" } },
-      _max: { startAt: true },
-    });
-
-    // Continua do dia seguinte ao último gerado; sem nada gerado, começa de hoje.
-    const from = last._max.startAt
-      ? new Date(last._max.startAt.getTime() + 86_400_000)
-      : new Date();
-
-    const occurrences = this.buildOccurrences(
-      current.days,
-      current.startDate,
-      current.endDate,
-      service.duration,
-      timeZone,
-      from,
-    );
-
-    if (occurrences.length === 0) {
-      throw new BadRequestException(
-        "Não há novos horários a gerar para esta recorrência",
-      );
-    }
-
-    const created = await this.prisma.$transaction((tx) =>
-      this.appointmentService.createFromRecurrence(
-        tx,
-        {
-          companyId,
-          recurringAppointmentId: id,
-          clientId: current.clientId,
-          professionalId: current.professionalId,
-          serviceId: current.serviceId,
-        },
-        occurrences,
-        current.note,
-      ),
-    );
-
-    return { created };
   }
 
   private minutesBetween(startTime: string, endTime: string): number {
