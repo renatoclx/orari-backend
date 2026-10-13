@@ -97,6 +97,29 @@ describe("UserService", () => {
       });
     });
 
+    it("findProfile busca o usuário não excluído com a empresa, sem a senha", async () => {
+      await userService.findProfile("user-2");
+
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: { id: "user-2", deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          type: true,
+          company: {
+            select: {
+              id: true,
+              corporateReason: true,
+              fantasyName: true,
+              timezone: true,
+              logoUrl: true,
+            },
+          },
+        },
+      });
+    });
+
     it("findActiveById busca o usuário não excluído sem a senha", async () => {
       await userService.findActiveById("user-2");
 
