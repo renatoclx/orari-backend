@@ -157,6 +157,8 @@ model People {
   updatedAt      DateTime?
   deletedAt      DateTime?
   note           String?
+  // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
+  photoUrl       String?
 
   company   Company   @relation(fields: [companyId], references: [id])
   contacts  Contact[]

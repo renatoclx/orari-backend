@@ -43,6 +43,10 @@
 - Usuários só acessam pessoas da própria empresa. Pessoas de outra empresa respondem 404.
 - O documento da pessoa é um CPF válido, sem máscara.
 - Pessoas podem ser filtradas por nome (busca parcial que ignora acentos e maiúsculas), por CPF (exato) e por tipo.
+- A foto da pessoa é opcional e enviada por uma rota própria, em JPEG ou PNG, com até 2 MB. O formato é conferido pelo conteúdo do arquivo, e não só pela extensão.
+- O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
+- Enviar uma nova foto substitui a anterior, que é apagada. A foto também pode ser removida.
+- A exclusão (lógica) da pessoa mantém a foto.
 
 ## Contatos e endereços
 

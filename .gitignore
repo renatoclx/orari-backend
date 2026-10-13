@@ -20,6 +20,9 @@ yarn-error.log*
 # coverage
 coverage/
 
+# arquivos enviados (fotos) em ambiente local
+uploads/
+
 # IDE
 .vscode/*
 !.vscode/extensions.json

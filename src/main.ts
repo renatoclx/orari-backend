@@ -1,11 +1,20 @@
 import "dotenv/config";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import {
+  UPLOADS_PUBLIC_PREFIX,
+  uploadsRoot,
+} from "./common/storage/local-file-storage.service";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Arquivos enviados (ex.: fotos de pessoas) servidos a partir da pasta local.
+  // São públicos para quem tem o link; ver docs/technical-debt.md antes de produção.
+  app.useStaticAssets(uploadsRoot(), { prefix: UPLOADS_PUBLIC_PREFIX });
 
   // Documentação gerada a partir dos DTOs e controllers (ver @ApiTags/@ApiBearerAuth).
   // Exposta em /docs; reavaliar acesso público ao publicar em produção.

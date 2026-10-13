@@ -145,6 +145,7 @@
 | profession | Profissão (opcional)   |
 | type       | Tipo de pessoa         |
 | note       | Observações (opcional) |
+| photoUrl   | Caminho da foto (opcional) |
 | companyId  | Código da empresa      |
 
 ### Relacionamentos

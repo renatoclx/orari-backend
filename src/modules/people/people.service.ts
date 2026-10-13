@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,8 @@ import { People, Prisma } from "../../../generated/prisma/client";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
+import { detectImageExtension } from "../../common/storage/image-type";
+import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { FindPeopleQueryDto } from "./dto/find-people-query.dto";
@@ -16,6 +19,9 @@ export type PublicPeople = Omit<People, "normalizedName">;
 
 // A coluna normalizedName existe só para a busca e não faz parte das respostas.
 const omitSearchColumn = { normalizedName: true } as const;
+
+// Pasta das fotos dentro do armazenamento de arquivos.
+const PHOTO_FOLDER = "people";
 
 // Só o contato/endereço marcado como principal acompanha a pessoa.
 const principalOnly = { isPrincipal: true, deletedAt: null } as const;
@@ -61,7 +67,10 @@ export type PeopleDetail = PeopleListItem & {
  */
 @Injectable()
 export class PeopleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: LocalFileStorage,
+  ) {}
 
   async create(dto: CreatePeopleDto, companyId: string): Promise<PublicPeople> {
     try {
@@ -187,6 +196,52 @@ export class PeopleService {
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  /**
+   * Grava a foto da pessoa e substitui a anterior. O formato é conferido pelo
+   * conteúdo (JPEG ou PNG); o tamanho já foi limitado no upload. O arquivo
+   * antigo só é apagado depois que o banco aponta para o novo, para a pessoa
+   * nunca ficar com um caminho que não existe.
+   */
+  async updatePhoto(
+    id: string,
+    content: Buffer,
+    companyId: string,
+  ): Promise<PublicPeople> {
+    const people = await this.findOne(id, companyId);
+
+    const extension = detectImageExtension(content);
+    if (!extension) {
+      throw new BadRequestException("A foto deve ser uma imagem JPEG ou PNG");
+    }
+
+    const photoUrl = await this.storage.save(PHOTO_FOLDER, content, extension);
+    const updated = await this.prisma.people.update({
+      where: { id },
+      data: { photoUrl, updatedAt: new Date() },
+      omit: omitSearchColumn,
+    });
+
+    if (people.photoUrl) {
+      await this.storage.remove(people.photoUrl);
+    }
+
+    return updated;
+  }
+
+  // Remove a foto: limpa o caminho no banco e apaga o arquivo.
+  async removePhoto(id: string, companyId: string): Promise<void> {
+    const people = await this.findOne(id, companyId);
+    if (!people.photoUrl) {
+      return;
+    }
+
+    await this.prisma.people.update({
+      where: { id },
+      data: { photoUrl: null, updatedAt: new Date() },
+    });
+    await this.storage.remove(people.photoUrl);
   }
 
   private mapUniqueViolation(error: unknown): unknown {
