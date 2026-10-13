@@ -25,6 +25,12 @@ describe("CreatePeopleDto", () => {
     await expect(errorsFor(payload)).resolves.toEqual([]);
   });
 
+  it("deve aceitar só nome e tipo: CPF e nascimento são opcionais", async () => {
+    await expect(errorsFor({ name: "Maria", type: "CLIENT" })).resolves.toEqual(
+      [],
+    );
+  });
+
   it("deve recusar CPF inválido", async () => {
     await expect(
       errorsFor({ ...payload, document: "12345678901" }),

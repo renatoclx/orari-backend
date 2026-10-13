@@ -202,6 +202,10 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
+### 2.20 Pessoa com CPF e nascimento opcionais
+
+- **`People.document` e `People.birthDate` opcionais** (migração `people_optional_document_birth_date`), para o futuro cadastro do cliente só com nome e telefone (o telefone é um contato). Vale para todos os tipos de pessoa; endereço já era opcional (entidade separada).
+- O CPF continua validado e único na empresa quando informado; pessoas sem CPF não conflitam entre si.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)

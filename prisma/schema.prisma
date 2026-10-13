@@ -148,8 +148,9 @@ model People {
   name           String
   // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
   normalizedName String
-  document       String     @db.Char(11)
-  birthDate      DateTime   @db.Date
+  // Opcionais: o cliente poderá se cadastrar só com nome e telefone (contato).
+  document       String?    @db.Char(11)
+  birthDate      DateTime?  @db.Date
   profession     String?
   type           PeopleType
   companyId      String
@@ -172,6 +173,7 @@ model People {
   clientPlans                ClientPlan[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
+  // Pessoas sem documento não entram em conflito entre si.
   @@unique([companyId, document], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
   // GIN trigram: acelera a busca parcial (LIKE '%termo%') pelo nome normalizado.

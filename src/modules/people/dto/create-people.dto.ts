@@ -15,12 +15,16 @@ export class CreatePeopleDto {
   @IsNotEmpty()
   name!: string;
 
+  /** CPF sem máscara. Opcional; quando informado, precisa ser válido e único na empresa. */
+  @IsOptional()
   @IsCpf()
-  document!: string;
+  document?: string;
 
+  /** Opcional. */
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
-  birthDate!: Date;
+  birthDate?: Date;
 
   @IsOptional()
   @IsString()

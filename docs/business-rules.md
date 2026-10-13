@@ -41,7 +41,8 @@
 
 - Uma pessoa pertence à empresa do usuário que a cadastrou; a empresa não é informada no payload.
 - Usuários só acessam pessoas da própria empresa. Pessoas de outra empresa respondem 404.
-- O documento da pessoa é um CPF válido, sem máscara.
+- Só o nome e o tipo da pessoa são obrigatórios; CPF e data de nascimento são opcionais, para qualquer tipo de pessoa. Assim um cliente pode ser cadastrado só com o nome e um telefone (contato).
+- O documento da pessoa, quando informado, é um CPF válido, sem máscara.
 - Pessoas podem ser filtradas por nome (busca parcial que ignora acentos e maiúsculas), por CPF (exato) e por tipo.
 - A foto da pessoa é opcional e enviada por uma rota própria, em JPEG ou PNG, com até 2 MB. O formato é conferido pelo conteúdo do arquivo, e não só pela extensão.
 - O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
@@ -66,7 +67,7 @@
 - São únicos:
   - o CNPJ e o subdomínio da empresa;
   - entre os registros não excluídos, o e-mail do usuário;
-  - entre os registros não excluídos, o documento da pessoa dentro da mesma empresa.
+  - entre os registros não excluídos, o documento da pessoa dentro da mesma empresa, quando informado.
 - E-mails e documentos de registros excluídos podem ser reutilizados.
 
 ## Serviços

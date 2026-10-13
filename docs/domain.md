@@ -140,13 +140,15 @@
 | ---------- | ---------------------- |
 | id         | Identificador único    |
 | name       | Nome da pessoa         |
-| document   | CPF da pessoa          |
-| birthDate  | Data de nascimento     |
+| document   | CPF da pessoa (opcional) |
+| birthDate  | Data de nascimento (opcional) |
 | profession | Profissão (opcional)   |
 | type       | Tipo de pessoa         |
 | note       | Observações (opcional) |
 | photoUrl   | Caminho da foto (opcional) |
 | companyId  | Código da empresa      |
+
+- Telefone e e-mail da pessoa ficam nos contatos (`Contact`).
 
 ### Relacionamentos
 
