@@ -189,7 +189,11 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **`seed:demo`:** passa a criar o plano "Bem-estar" (Massagem e Fisioterapia, R$ 400, períodos de 3 e 6 meses) e uma contratação mensal de 3 meses, com uma agenda por serviço. O resumo conta os pagamentos pela empresa do próprio pagamento, incluindo os do plano. Validado do zero em um banco temporário (22 migrações, seed base e seed de demonstração).
 - **Swagger com descrições:** o plugin do `@nestjs/swagger` usa `introspectComments`, e os comentários dos campos dos DTOs voltados a quem consome a API passaram para JSDoc (`/** ... */`), virando a descrição do campo em `/docs`. Notas internas (validadores, conversão de query string, normalização) continuam como `//` e não aparecem na documentação.
 
-### 2.18 Foto de pessoa
+### 2.18 Perfil do usuário autenticado
+
+- **`GET /auth/me`:** devolve o usuário do access token com a empresa (`id`, `name`, `timezone`, `logoUrl`), para o front montar a sessão. O nome da empresa é o fantasia ou, sem ele, a razão social. A consulta fica no `UserService.findProfile` (leitura da empresa por relação, sem a senha); usuário excluído depois do login responde 401.
+
+### 2.19 Foto de pessoa
 
 - **`People.photoUrl`** (opcional, migração `people_photo_url`): caminho público da foto, preenchido só pelo upload; não entra nos DTOs de criação e edição.
 - **`POST /people/:id/photo`** (`multipart/form-data`, campo `photo`): JPEG ou PNG, até 2 MB (acima disso, 413). O formato é conferido pela assinatura do arquivo (`common/storage/image-type.ts`), não pela extensão. Uma nova foto substitui a anterior, que é apagada depois que o banco já aponta para a nova.
@@ -198,10 +202,6 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Agendamento no passado bloqueado**, inclusive em remarcação. Editar status de um atendimento já realizado continua permitido.
 - **Cadastro de demonstração:** `npm run seed:demo` cria uma empresa completa (usuários, pessoas, contatos, endereços, serviços, janelas, métodos de pagamento, um agendamento avulso, uma recorrência com os agendamentos gerados e pagamentos), usando os próprios services.
 
-
-### 2.18 Perfil do usuário autenticado
-
-- **`GET /auth/me`:** devolve o usuário do access token com a empresa (`id`, `name`, `timezone`, `logoUrl`), para o front montar a sessão. O nome da empresa é o fantasia ou, sem ele, a razão social. A consulta fica no `UserService.findProfile` (leitura da empresa por relação, sem a senha); usuário excluído depois do login responde 401.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
