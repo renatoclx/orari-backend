@@ -52,6 +52,10 @@
 - Usuários só acessam contatos e endereços da própria empresa e de suas pessoas.
 - Contatos e endereços de uma pessoa excluída deixam de ser acessíveis junto com ela.
 - Um contato deve ter ao menos um meio de contato: telefone e/ou e-mail. Uma edição não pode remover o último deles.
+- Cada dono tem no máximo um contato principal e um endereço principal (`isPrincipal`), considerando apenas os registros não excluídos.
+- Marcar um contato ou endereço como principal desmarca automaticamente o principal anterior do mesmo dono.
+- Excluir o principal não promove outro: o dono fica sem principal até que um seja marcado.
+- A listagem de pessoas traz o contato principal de cada uma (`principalContact`); o detalhe da pessoa traz também o endereço principal (`principalAddress`). Sem principal marcado, o campo vem `null`.
 
 ## Unicidade
 

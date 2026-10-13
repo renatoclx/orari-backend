@@ -162,20 +162,23 @@
 
 ### Tipos de Contato (ContactType)
 
-- MAIN - Principal
+O tipo indica a finalidade do contato; qual deles é exibido é definido por `isPrincipal`.
+
+- MAIN - Pessoal
 - MESSAGE - Recados
 - BRANCH - Filial
 
 ### Atributos
 
-| Nome      | Descrição                    |
-| --------- | ---------------------------- |
-| id        | Identificador único          |
-| type      | Tipo de contato              |
-| phone     | Telefone (opcional)          |
-| email     | E-mail (opcional)            |
-| companyId | Código da empresa (opcional) |
-| peopleId  | Código da Pessoa (opcional)  |
+| Nome        | Descrição                                 |
+| ----------- | ----------------------------------------- |
+| id          | Identificador único                       |
+| type        | Tipo de contato                           |
+| phone       | Telefone (opcional)                       |
+| email       | E-mail (opcional)                         |
+| isPrincipal | Contato exibido para o dono (padrão: não) |
+| companyId   | Código da empresa (opcional)              |
+| peopleId    | Código da Pessoa (opcional)               |
 
 ### Relacionamentos
 
@@ -189,24 +192,27 @@
 
 ### Tipos de Endereço (AddressType)
 
-- MAIN - Principal
+O tipo indica a finalidade do endereço; qual deles é exibido é definido por `isPrincipal`.
+
+- MAIN - Pessoal
 - MESSAGE - Recados
 - BRANCH - Filial
 
 ### Atributos
 
-| Nome         | Descrição                    |
-| ------------ | ---------------------------- |
-| id           | Identificador único          |
-| type         | Tipo de endereço             |
-| cep          | Código postal                |
-| street       | Logradouro                   |
-| neighborhood | Bairro (opcional)            |
-| number       | Número                       |
-| complement   | Complemento (opcional)       |
-| peopleId     | Código da Pessoa (opcional)  |
-| companyId    | Código da empresa (opcional) |
-| cityId       | Código da cidade             |
+| Nome         | Descrição                                  |
+| ------------ | ------------------------------------------ |
+| id           | Identificador único                        |
+| type         | Tipo de endereço                           |
+| cep          | Código postal                              |
+| street       | Logradouro                                 |
+| neighborhood | Bairro (opcional)                          |
+| number       | Número                                     |
+| complement   | Complemento (opcional)                     |
+| isPrincipal  | Endereço exibido para o dono (padrão: não) |
+| peopleId     | Código da Pessoa (opcional)                |
+| companyId    | Código da empresa (opcional)               |
+| cityId       | Código da cidade                           |
 
 ### Relacionamentos
 
