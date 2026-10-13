@@ -179,19 +179,23 @@ model People {
 
 // Pertence a exatamente um dono (empresa ou pessoa) e tem telefone e/ou e-mail; ambos garantidos por CHECK na migration
 model Contact {
-  id        String      @id @default(uuid())
-  type      ContactType
-  phone     String?
-  email     String?
-  companyId String?
-  peopleId  String?
-  createdAt DateTime    @default(now())
-  updatedAt DateTime?
-  deletedAt DateTime?
+  id          String      @id @default(uuid())
+  type        ContactType
+  phone       String?
+  email       String?
+  // Contato exibido para o dono; no máximo um por dono (índices parciais abaixo).
+  isPrincipal Boolean     @default(false)
+  companyId   String?
+  peopleId    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime?
+  deletedAt   DateTime?
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
   people  People?  @relation(fields: [peopleId], references: [id], onDelete: Restrict)
 
+  @@unique([companyId], where: raw("\"isPrincipal\" AND \"deletedAt\" IS NULL"), map: "contacts_principal_company_key")
+  @@unique([peopleId], where: raw("\"isPrincipal\" AND \"deletedAt\" IS NULL"), map: "contacts_principal_people_key")
   @@index([companyId])
   @@index([peopleId])
   @@map("contacts")
@@ -206,6 +210,8 @@ model Address {
   neighborhood String?
   number       String
   complement   String?
+  // Endereço exibido para o dono; no máximo um por dono (índices parciais abaixo).
+  isPrincipal  Boolean     @default(false)
   cityId       String
   companyId    String?
   peopleId     String?
@@ -217,6 +223,8 @@ model Address {
   company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
   people  People?  @relation(fields: [peopleId], references: [id], onDelete: Restrict)
 
+  @@unique([companyId], where: raw("\"isPrincipal\" AND \"deletedAt\" IS NULL"), map: "addresses_principal_company_key")
+  @@unique([peopleId], where: raw("\"isPrincipal\" AND \"deletedAt\" IS NULL"), map: "addresses_principal_people_key")
   @@index([cityId])
   @@index([companyId])
   @@index([peopleId])
@@ -330,13 +338,13 @@ model RecurringAppointment {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
-  company       Company        @relation(fields: [companyId], references: [id])
-  clientPlan    ClientPlan?    @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
-  client        People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
-  professional  People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
-  service       Service        @relation(fields: [serviceId], references: [id])
-  days          RecurringDay[]
-  appointments  Appointment[]
+  company      Company        @relation(fields: [companyId], references: [id])
+  clientPlan   ClientPlan?    @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
+  client       People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
+  professional People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
+  service      Service        @relation(fields: [serviceId], references: [id])
+  days         RecurringDay[]
+  appointments Appointment[]
 
   @@index([companyId, isActive])
   @@index([professionalId])
@@ -361,7 +369,7 @@ model Plan {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
-  company Company      @relation(fields: [companyId], references: [id])
+  company     Company      @relation(fields: [companyId], references: [id])
   items       PlanItem[]
   periods     PlanPeriod[]
   clientPlans ClientPlan[]
@@ -498,9 +506,9 @@ model Payment {
   updatedAt       DateTime?
   deletedAt       DateTime?
 
-  company       Company       @relation(fields: [companyId], references: [id])
-  appointment   Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
-  clientPlan    ClientPlan?   @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
+  company       Company        @relation(fields: [companyId], references: [id])
+  appointment   Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  clientPlan    ClientPlan?    @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.

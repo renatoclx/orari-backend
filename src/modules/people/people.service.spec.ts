@@ -31,6 +31,13 @@ describe("PeopleService", () => {
     type: "CLIENT",
   };
   const people = { id: "1", ...dto, companyId: COMPANY_ID, deletedAt: null };
+  const principalContact = {
+    id: "contact-1",
+    type: "MAIN",
+    phone: "31999999999",
+    email: null,
+  };
+  const principalAddress = { id: "address-1", street: "Rua da Bahia" };
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -74,7 +81,9 @@ describe("PeopleService", () => {
 
   describe("findAll", () => {
     it("deve combinar o escopo da empresa com os filtros", async () => {
-      prismaMock.people.findMany.mockResolvedValue([people]);
+      prismaMock.people.findMany.mockResolvedValue([
+        { ...people, contacts: [principalContact] },
+      ]);
       prismaMock.people.count.mockResolvedValue(1);
 
       const result = await peopleService.findAll(
@@ -97,7 +106,36 @@ describe("PeopleService", () => {
           type: "CLIENT",
         },
       });
-      expect(result).toEqual({ items: [people], total: 1, page: 1, limit: 10 });
+      expect(result).toEqual({
+        items: [{ ...people, principalContact }],
+        total: 1,
+        page: 1,
+        limit: 10,
+      });
+    });
+
+    it("deve trazer só o contato principal não excluído de cada pessoa", async () => {
+      prismaMock.people.findMany.mockResolvedValue([
+        { ...people, contacts: [] },
+      ]);
+      prismaMock.people.count.mockResolvedValue(1);
+
+      const result = await peopleService.findAll(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            contacts: expect.objectContaining({
+              where: { isPrincipal: true, deletedAt: null },
+              take: 1,
+            }) as unknown,
+          },
+        }),
+      );
+      expect(result.items).toEqual([{ ...people, principalContact: null }]);
     });
 
     it("não deve filtrar por nome quando ele não é informado", async () => {
@@ -111,6 +149,49 @@ describe("PeopleService", () => {
           normalizedName: undefined,
         }) as unknown,
       });
+    });
+  });
+
+  describe("findDetail", () => {
+    it("deve devolver a pessoa com contato e endereço principais", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        contacts: [principalContact],
+        addresses: [principalAddress],
+      });
+
+      await expect(peopleService.findDetail("1", COMPANY_ID)).resolves.toEqual({
+        ...people,
+        principalContact,
+        principalAddress,
+      });
+      expect(prismaMock.people.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "1", companyId: COMPANY_ID, deletedAt: null },
+        }),
+      );
+    });
+
+    it("deve devolver null quando não há principais marcados", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        contacts: [],
+        addresses: [],
+      });
+
+      await expect(peopleService.findDetail("1", COMPANY_ID)).resolves.toEqual({
+        ...people,
+        principalContact: null,
+        principalAddress: null,
+      });
+    });
+
+    it("deve lançar NotFoundException para pessoa fora da empresa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+
+      await expect(
+        peopleService.findDetail("1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

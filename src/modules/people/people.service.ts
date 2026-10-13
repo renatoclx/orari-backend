@@ -17,6 +17,43 @@ export type PublicPeople = Omit<People, "normalizedName">;
 // A coluna normalizedName existe só para a busca e não faz parte das respostas.
 const omitSearchColumn = { normalizedName: true } as const;
 
+// Só o contato/endereço marcado como principal acompanha a pessoa.
+const principalOnly = { isPrincipal: true, deletedAt: null } as const;
+
+const principalContactQuery = {
+  where: principalOnly,
+  select: { id: true, type: true, phone: true, email: true },
+  take: 1,
+} satisfies Prisma.People$contactsArgs;
+
+const principalAddressQuery = {
+  where: principalOnly,
+  select: {
+    id: true,
+    type: true,
+    cep: true,
+    street: true,
+    neighborhood: true,
+    number: true,
+    complement: true,
+    city: {
+      select: { id: true, name: true, state: { select: { acronym: true } } },
+    },
+  },
+  take: 1,
+} satisfies Prisma.People$addressesArgs;
+
+type PrincipalContact = Prisma.ContactGetPayload<typeof principalContactQuery>;
+type PrincipalAddress = Prisma.AddressGetPayload<typeof principalAddressQuery>;
+
+export type PeopleListItem = PublicPeople & {
+  principalContact: PrincipalContact | null;
+};
+
+export type PeopleDetail = PeopleListItem & {
+  principalAddress: PrincipalAddress | null;
+};
+
 /**
  * Todas as operações recebem o companyId do usuário autenticado e se restringem a
  * ele: pessoas de outra empresa se comportam como inexistentes (404). A empresa
@@ -44,7 +81,7 @@ export class PeopleService {
   async findAll(
     { page, limit, name, document, type }: FindPeopleQueryDto,
     companyId: string,
-  ): Promise<PaginatedResult<PublicPeople>> {
+  ): Promise<PaginatedResult<PeopleListItem>> {
     const where: Prisma.PeopleWhereInput = {
       companyId,
       deletedAt: null,
@@ -59,6 +96,7 @@ export class PeopleService {
       this.prisma.people.findMany({
         where,
         omit: omitSearchColumn,
+        include: { contacts: principalContactQuery },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -66,7 +104,41 @@ export class PeopleService {
       this.prisma.people.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: items.map(({ contacts, ...people }) => ({
+        ...people,
+        principalContact: contacts[0] ?? null,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /**
+   * Detalhe exibido na tela da pessoa, com contato e endereço principais.
+   * As validações internas (ex.: agendamentos) usam o findOne, sem esses JOINs.
+   */
+  async findDetail(id: string, companyId: string): Promise<PeopleDetail> {
+    const people = await this.prisma.people.findFirst({
+      where: { id, companyId, deletedAt: null },
+      omit: omitSearchColumn,
+      include: {
+        contacts: principalContactQuery,
+        addresses: principalAddressQuery,
+      },
+    });
+
+    if (!people) {
+      throw new NotFoundException("Pessoa não encontrada");
+    }
+
+    const { contacts, addresses, ...rest } = people;
+    return {
+      ...rest,
+      principalContact: contacts[0] ?? null,
+      principalAddress: addresses[0] ?? null,
+    };
   }
 
   async findOne(id: string, companyId: string): Promise<PublicPeople> {

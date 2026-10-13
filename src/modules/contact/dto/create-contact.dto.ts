@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsOptional,
@@ -27,4 +28,12 @@ export class CreateContactDto extends OwnerDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  /**
+   * Contato exibido para o dono. Marcar um novo principal desmarca o anterior
+   * do mesmo dono.
+   */
+  @IsOptional()
+  @IsBoolean()
+  isPrincipal?: boolean;
 }

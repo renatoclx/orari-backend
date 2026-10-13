@@ -46,7 +46,7 @@ export class PeopleController {
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.peopleService.findOne(id, currentUser.companyId);
+    return this.peopleService.findDetail(id, currentUser.companyId);
   }
 
   @Patch(":id")

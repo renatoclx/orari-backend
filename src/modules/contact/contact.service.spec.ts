@@ -1,10 +1,15 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPANY_ID,
   OTHER_COMPANY_ID,
 } from "../../../test/fixtures/authenticated-users";
+import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { ContactService } from "./contact.service";
@@ -32,6 +37,7 @@ describe("ContactService", () => {
       findFirst: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
   };
   const peopleServiceMock = { findOne: vi.fn() };
@@ -96,6 +102,74 @@ describe("ContactService", () => {
         contactService.create({ ...baseDto, peopleId: "people-1" }, COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.contact.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("contato principal", () => {
+    const unsetPrincipalOf = (owner: object, exceptId?: string) => ({
+      where: {
+        ...owner,
+        isPrincipal: true,
+        deletedAt: null,
+        ...(exceptId && { id: { not: exceptId } }),
+      },
+      data: { isPrincipal: false, updatedAt: anyDate },
+    });
+
+    it("não deve mexer em outros contatos quando não é principal", async () => {
+      await contactService.create(
+        { ...baseDto, peopleId: "people-1" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.contact.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("deve desmarcar o principal anterior do mesmo dono ao criar", async () => {
+      const dto = { ...baseDto, peopleId: "people-1", isPrincipal: true };
+
+      await contactService.create(dto, COMPANY_ID);
+
+      expect(prismaMock.contact.updateMany).toHaveBeenCalledWith(
+        unsetPrincipalOf({ peopleId: "people-1" }),
+      );
+      expect(prismaMock.contact.create).toHaveBeenCalledWith({ data: dto });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("deve desmarcar os demais do dono, exceto o próprio, ao editar", async () => {
+      prismaMock.contact.findFirst.mockResolvedValue({
+        ...stored,
+        companyId: COMPANY_ID,
+        peopleId: null,
+      });
+
+      await contactService.update("1", { isPrincipal: true }, COMPANY_ID);
+
+      expect(prismaMock.contact.updateMany).toHaveBeenCalledWith(
+        unsetPrincipalOf({ companyId: COMPANY_ID }, "1"),
+      );
+      expect(prismaMock.contact.update).toHaveBeenCalledWith({
+        where: { id: "1" },
+        data: { isPrincipal: true, updatedAt: anyDate },
+      });
+    });
+
+    it("deve responder 409 quando outra marcação concorrente vence", async () => {
+      prismaMock.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        contactService.create(
+          { ...baseDto, peopleId: "people-1", isPrincipal: true },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
