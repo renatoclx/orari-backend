@@ -38,6 +38,15 @@
 - Nunca armazenar informações sensíveis dentro do JWT.
 - O token deve conter apenas informações necessárias para identificação.
 
+## Usuário autenticado
+
+- `GET /auth/me` (protegida) devolve o usuário do access token enviado: `id`,
+  `name`, `email`, `type` e `company` (`id`, `name`, `timezone`, `logoUrl`).
+  O `name` da empresa é o nome fantasia ou, sem ele, a razão social; o
+  `timezone` permite ao front exibir os horários no fuso da empresa.
+- Os dados vêm do banco a cada chamada, não do token: refletem alterações
+  feitas depois do login. A senha nunca é lida nessa consulta.
+
 ## Guards
 
 - Toda rota protegida deve utilizar um Guard apropriado;
