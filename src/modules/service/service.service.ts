@@ -121,14 +121,48 @@ export class ServiceService {
     }
   }
 
+  /**
+   * Só exclui serviço sem nenhum relacionamento. Contam todos os registros, até
+   * os cancelados ou encerrados: o histórico precisa continuar apontando para o
+   * serviço. Com relacionamento, o caminho é inativar (PATCH com isActive false).
+   *
+   * Plano não tem exclusão (só isActive) e seus itens saem da tabela quando o
+   * plano é editado: por isso todo PlanItem existente é um vínculo real.
+   */
   async remove(id: string, companyId: string): Promise<void> {
     await this.findOne(id, companyId);
+    await this.ensureHasNoRelationships(id);
 
     const now = new Date();
     await this.prisma.service.update({
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  // A leitura é por contagem de relações: não depende dos services de outros módulos.
+  private async ensureHasNoRelationships(id: string): Promise<void> {
+    const { _count: related } = await this.prisma.service.findUniqueOrThrow({
+      where: { id },
+      select: {
+        _count: {
+          select: {
+            appointments: true,
+            recurringAppointments: true,
+            planItems: true,
+          },
+        },
+      },
+    });
+
+    if (
+      related.appointments + related.recurringAppointments + related.planItems >
+      0
+    ) {
+      throw new ConflictException(
+        "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+      );
+    }
   }
 
   private mapUniqueViolation(error: unknown): unknown {

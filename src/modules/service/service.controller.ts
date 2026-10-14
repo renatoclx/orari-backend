@@ -10,7 +10,14 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateServiceDto } from "./dto/create-service.dto";
@@ -60,6 +67,21 @@ export class ServiceController {
 
   @Delete(":id")
   @HttpCode(204)
+  @ApiOperation({
+    summary: "Exclui o serviço, somente se não tiver relacionamentos",
+    description:
+      "Exclusão lógica. Recusada quando há agendamentos, agendamentos recorrentes " +
+      "ou itens de plano com este serviço (inclusive cancelados ou encerrados): " +
+      "nesse caso, inative-o com PATCH e isActive false.",
+  })
+  @ApiNoContentResponse({ description: "Serviço excluído." })
+  @ApiNotFoundResponse({
+    description: "Serviço inexistente ou de outra empresa.",
+  })
+  @ApiConflictResponse({
+    description:
+      "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+  })
   remove(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,

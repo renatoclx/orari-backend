@@ -20,6 +20,7 @@ describe("ServiceService", () => {
       create: vi.fn(),
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
     },
@@ -146,9 +147,71 @@ describe("ServiceService", () => {
   });
 
   describe("remove", () => {
-    it("deve excluir logicamente o serviço", async () => {
-      prismaMock.service.findFirst.mockResolvedValue(service);
+    const relations = (counts: Partial<Record<string, number>> = {}) => ({
+      _count: {
+        appointments: 0,
+        recurringAppointments: 0,
+        planItems: 0,
+        ...counts,
+      },
+    });
 
+    beforeEach(() => {
+      prismaMock.service.findFirst.mockResolvedValue(service);
+      prismaMock.service.findUniqueOrThrow.mockResolvedValue(relations());
+    });
+
+    it("deve contar agendamentos, recorrências e itens de plano, sem filtrar status", async () => {
+      await serviceService.remove("service-1", COMPANY_ID);
+
+      expect(prismaMock.service.findUniqueOrThrow).toHaveBeenCalledWith({
+        where: { id: "service-1" },
+        select: {
+          _count: {
+            select: {
+              appointments: true,
+              recurringAppointments: true,
+              planItems: true,
+            },
+          },
+        },
+      });
+    });
+
+    it.each([
+      ["agendamentos", { appointments: 1 }],
+      ["recorrências", { recurringAppointments: 2 }],
+      ["itens de plano", { planItems: 1 }],
+    ])(
+      "deve recusar com 409 e não alterar nada quando há %s",
+      async (_name, counts) => {
+        prismaMock.service.findUniqueOrThrow.mockResolvedValue(
+          relations(counts),
+        );
+
+        await expect(
+          serviceService.remove("service-1", COMPANY_ID),
+        ).rejects.toThrow(
+          "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+        );
+        await expect(
+          serviceService.remove("service-1", COMPANY_ID),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.service.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve responder 404 para serviço inexistente ou de outra empresa, sem contar relações", async () => {
+      prismaMock.service.findFirst.mockResolvedValue(null);
+
+      await expect(
+        serviceService.remove("service-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.service.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(prismaMock.service.update).not.toHaveBeenCalled();
+    });
+
+    it("deve excluir logicamente o serviço sem relacionamentos", async () => {
       await serviceService.remove("service-1", COMPANY_ID);
 
       expect(prismaMock.service.update).toHaveBeenCalledWith({

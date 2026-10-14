@@ -216,6 +216,13 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **`PATCH /people/:id`** continua só com os campos da pessoa (`UpdatePeopleDto` omite `phone`, `contacts` e `addresses`) e passa a aceitar `note`.
 - **`GET /people`** deixou de filtrar `deletedAt`: devolve ativas e inativas. Os demais consumidores (agendamentos, recorrências, contatos, endereços) usam `findOne`, que continua recusando inativas. Efeito no frontend: listas de seleção devem ignorar `deletedAt != null`, ou escolher uma inativa dá 404.
 - **`PATCH /people/:id/restore`:** limpa `deletedAt`; 404 se não existe, 409 se já ativa, 409 se o CPF está em uso por outra ativa (índice único parcial do banco).
+
+### 2.22 Exclusão de serviço só sem relacionamentos (pedido do frontend)
+
+- **`DELETE /services/:id`** passa a recusar com 409 quando o serviço tem qualquer `Appointment`, `RecurringAppointment` ou `PlanItem`, sem filtrar status (cancelados e encerrados contam): "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir." Sem relacionamentos, segue 204 com exclusão lógica; inexistente ou de outra empresa, 404. Inativar continua sendo `PATCH` com `isActive: false`.
+- **Leitura por contagem de relações** (`_count`) no próprio `ServiceService`, sem depender dos services de agendamento, recorrência ou plano (que já dependem dele).
+- **Plano excluído:** não existe (só `isActive`), e `PlanItem` é apagado fisicamente quando a composição do plano é editada; portanto todo `PlanItem` existente é vínculo real, de plano ativo ou inativo.
+- **Janela de corrida:** a verificação e a exclusão não são atômicas; um agendamento criado entre as duas deixaria um serviço excluído com relacionamento. Como a exclusão é lógica e a chave estrangeira continua válida, o dado não se perde, e o efeito é só o serviço sumir da listagem.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
