@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
+import { CityService } from "../city/city.service";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { PeopleService } from "./people.service";
@@ -30,6 +31,7 @@ describe("PeopleService", () => {
   };
 
   const storageMock = { save: vi.fn(), remove: vi.fn() };
+  const cityServiceMock = { findOne: vi.fn() };
 
   const dto: CreatePeopleDto = {
     name: "Maria",
@@ -48,12 +50,14 @@ describe("PeopleService", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    cityServiceMock.findOne.mockResolvedValue({ id: "city-1" });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PeopleService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: LocalFileStorage, useValue: storageMock },
+        { provide: CityService, useValue: cityServiceMock },
       ],
     }).compile();
 
@@ -87,6 +91,203 @@ describe("PeopleService", () => {
     });
   });
 
+  describe("cadastro completo", () => {
+    const address = {
+      type: "MAIN" as const,
+      cep: "30130000",
+      street: "Rua da Bahia",
+      number: "100",
+      cityId: "city-1",
+    };
+
+    beforeEach(() => {
+      prismaMock.people.create.mockResolvedValue(people);
+    });
+
+    it("deve gravar o telefone principal à parte e a lista em lote, na mesma escrita", async () => {
+      await peopleService.create(
+        {
+          ...dto,
+          note: "Prefere manhã",
+          phone: "31999999999",
+          contacts: [
+            { type: "MESSAGE", phone: "3133334444" },
+            { type: "BRANCH", email: "filial@orari.local", isPrincipal: false },
+          ],
+          addresses: [{ ...address, isPrincipal: true }],
+        },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.people.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.people.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          note: "Prefere manhã",
+          companyId: COMPANY_ID,
+          contacts: {
+            create: { type: "MAIN", phone: "31999999999", isPrincipal: true },
+            createMany: {
+              data: [
+                {
+                  type: "MESSAGE",
+                  phone: "3133334444",
+                  email: undefined,
+                  isPrincipal: false,
+                },
+                {
+                  type: "BRANCH",
+                  phone: undefined,
+                  email: "filial@orari.local",
+                  isPrincipal: false,
+                },
+              ],
+            },
+          },
+          addresses: {
+            createMany: {
+              data: [
+                expect.objectContaining({
+                  cep: "30130000",
+                  cityId: "city-1",
+                  isPrincipal: true,
+                }),
+              ],
+            },
+          },
+        }) as unknown,
+        omit: { normalizedName: true },
+      });
+    });
+
+    it("não deve repassar telefone, contacts nem addresses como colunas da pessoa", async () => {
+      await peopleService.create(
+        { ...dto, phone: "31999999999", contacts: [], addresses: [] },
+        COMPANY_ID,
+      );
+
+      const { data } = prismaMock.people.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data).not.toHaveProperty("phone");
+      expect(data.addresses).toBeUndefined();
+      expect(data.contacts).toEqual({
+        create: { type: "MAIN", phone: "31999999999", isPrincipal: true },
+      });
+    });
+
+    it("sem telefone nem listas, grava só a pessoa, como antes", async () => {
+      await peopleService.create(dto, COMPANY_ID);
+
+      const { data } = prismaMock.people.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.contacts).toBeUndefined();
+      expect(data.addresses).toBeUndefined();
+      expect(cityServiceMock.findOne).not.toHaveBeenCalled();
+    });
+
+    it("deve permitir um contato principal na lista quando não há telefone", async () => {
+      await expect(
+        peopleService.create(
+          {
+            ...dto,
+            contacts: [
+              { type: "MAIN", phone: "31999999999", isPrincipal: true },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it("deve recusar contato principal na lista quando há telefone principal", async () => {
+      await expect(
+        peopleService.create(
+          {
+            ...dto,
+            phone: "31999999999",
+            contacts: [
+              { type: "MAIN", phone: "3133334444", isPrincipal: true },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.people.create).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar mais de um contato principal ou mais de um endereço principal", async () => {
+      await expect(
+        peopleService.create(
+          {
+            ...dto,
+            contacts: [
+              { type: "MAIN", phone: "31999999999", isPrincipal: true },
+              { type: "MESSAGE", phone: "3133334444", isPrincipal: true },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("Informe no máximo um contato principal");
+
+      await expect(
+        peopleService.create(
+          {
+            ...dto,
+            addresses: [
+              { ...address, isPrincipal: true },
+              { ...address, number: "200", isPrincipal: true },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("Informe no máximo um endereço principal");
+      expect(prismaMock.people.create).not.toHaveBeenCalled();
+    });
+
+    it("deve responder 404 para cidade inexistente, sem criar a pessoa", async () => {
+      cityServiceMock.findOne.mockRejectedValueOnce(
+        new NotFoundException("Cidade não encontrada"),
+      );
+
+      await expect(
+        peopleService.create({ ...dto, addresses: [address] }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.people.create).not.toHaveBeenCalled();
+    });
+
+    it("deve validar cada cidade distinta uma única vez", async () => {
+      await peopleService.create(
+        {
+          ...dto,
+          addresses: [
+            address,
+            { ...address, number: "200" },
+            { ...address, number: "300", cityId: "city-2" },
+          ],
+        },
+        COMPANY_ID,
+      );
+
+      expect(cityServiceMock.findOne).toHaveBeenCalledTimes(2);
+      expect(cityServiceMock.findOne).toHaveBeenCalledWith("city-1");
+      expect(cityServiceMock.findOne).toHaveBeenCalledWith("city-2");
+    });
+
+    it("deve manter o 409 de CPF repetido no cadastro completo", async () => {
+      prismaMock.people.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        peopleService.create({ ...dto, phone: "31999999999" }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
   describe("findAll", () => {
     it("deve combinar o escopo da empresa com os filtros", async () => {
       prismaMock.people.findMany.mockResolvedValue([
@@ -108,7 +309,6 @@ describe("PeopleService", () => {
       expect(prismaMock.people.count).toHaveBeenCalledWith({
         where: {
           companyId: COMPANY_ID,
-          deletedAt: null,
           normalizedName: { contains: "mar" },
           document: "52998224725",
           type: "CLIENT",
@@ -144,6 +344,28 @@ describe("PeopleService", () => {
         }),
       );
       expect(result.items).toEqual([{ ...people, principalContact: null }]);
+    });
+
+    it("deve listar ativas e inativas: não filtra por deletedAt", async () => {
+      prismaMock.people.findMany.mockResolvedValue([
+        { ...people, contacts: [] },
+        { ...people, id: "2", deletedAt: new Date("2026-10-01"), contacts: [] },
+      ]);
+      prismaMock.people.count.mockResolvedValue(2);
+
+      const result = await peopleService.findAll(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      const { where } = prismaMock.people.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(where).not.toHaveProperty("deletedAt");
+      expect(result.items.map((item) => item.deletedAt !== null)).toEqual([
+        false,
+        true,
+      ]);
     });
 
     it("não deve filtrar por nome quando ele não é informado", async () => {
@@ -254,6 +476,73 @@ describe("PeopleService", () => {
         peopleService.update("1", { name: "X" }, COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.people.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("restore", () => {
+    const inactive = { deletedAt: new Date("2026-10-01") };
+
+    it("deve reativar a pessoa excluída limpando o deletedAt", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(inactive);
+      prismaMock.people.update.mockResolvedValue({
+        ...people,
+        deletedAt: null,
+      });
+
+      await expect(peopleService.restore("1", COMPANY_ID)).resolves.toEqual({
+        ...people,
+        deletedAt: null,
+      });
+      expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
+        where: { id: "1", companyId: COMPANY_ID },
+        select: { deletedAt: true },
+      });
+      expect(prismaMock.people.update).toHaveBeenCalledWith({
+        where: { id: "1" },
+        data: { deletedAt: null, updatedAt: anyDate },
+        omit: { normalizedName: true },
+      });
+    });
+
+    it("deve responder 404 para pessoa inexistente ou de outra empresa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+
+      await expect(
+        peopleService.restore("1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.people.update).not.toHaveBeenCalled();
+    });
+
+    it("deve responder 409 quando a pessoa já está ativa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({ deletedAt: null });
+
+      await expect(peopleService.restore("1", COMPANY_ID)).rejects.toThrow(
+        "A pessoa já está ativa",
+      );
+      expect(prismaMock.people.update).not.toHaveBeenCalled();
+    });
+
+    it("deve responder 409 quando o CPF já está em uso por outra pessoa ativa", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(inactive);
+      prismaMock.people.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(peopleService.restore("1", COMPANY_ID)).rejects.toThrow(
+        "Não é possível reativar: o CPF já está em uso por outra pessoa ativa",
+      );
+    });
+
+    it("deve propagar outros erros sem mascará-los como conflito", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(inactive);
+      prismaMock.people.update.mockRejectedValueOnce(new Error("conexão"));
+
+      await expect(peopleService.restore("1", COMPANY_ID)).rejects.toThrow(
+        "conexão",
+      );
     });
   });
 

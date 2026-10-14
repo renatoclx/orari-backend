@@ -45,7 +45,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Cities | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id` | Autenticado |
 | Companies | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id` | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
 | Users | `POST`, `GET` (`?companyId`), `GET /:id`, `PATCH /:id`, `PATCH /:id/password`, `DELETE /:id` | SUPER_ADMIN (qualquer empresa ativa) e ADMIN (própria empresa) |
-| People | CRUD + `GET` (`?name`, `?document`, `?type`) | Qualquer tipo, só na própria empresa |
+| People | CRUD + `GET` (`?name`, `?document`, `?type`; inclui inativas), `PATCH /:id/restore`, `POST`/`DELETE /:id/photo` | Qualquer tipo, só na própria empresa |
 | Contacts | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
@@ -206,6 +206,16 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 - **`People.document` e `People.birthDate` opcionais** (migração `people_optional_document_birth_date`), para o futuro cadastro do cliente só com nome e telefone (o telefone é um contato). Vale para todos os tipos de pessoa; endereço já era opcional (entidade separada).
 - O CPF continua validado e único na empresa quando informado; pessoas sem CPF não conflitam entre si.
+
+### 2.21 Cadastro completo, observação e inativos (pedido do frontend)
+
+- **`POST /people`** aceita, além dos campos de antes: `note` (até 1000 caracteres), `phone` (telefone principal), `contacts` e `addresses` (até 10 itens cada). Tudo é gravado por uma escrita aninhada do Prisma em uma transação: o telefone principal com `create` (`MAIN`, `isPrincipal: true`) e a lista de contatos com `createMany`, à parte; endereços com `createMany`. Não usa `ContactService`/`AddressService`, que dependem do `PeopleService`.
+- **Validações dos itens reaproveitadas** com `OmitType` dos DTOs avulsos (sem `companyId`/`peopleId`); o padrão do telefone foi extraído para `PHONE_PATTERN` e é usado também em `phone`.
+- **Principal:** só pela marca `isPrincipal`. Com `phone` informado, nenhum item de `contacts` pode ser principal (400); no máximo um contato e um endereço principais (400). Sem promoção automática.
+- **Cidade inexistente:** 404 antes de gravar (`CityService.findOne`, uma vez por cidade distinta); a pessoa não é criada. O `PeopleModule` passou a importar o `CityModule`.
+- **`PATCH /people/:id`** continua só com os campos da pessoa (`UpdatePeopleDto` omite `phone`, `contacts` e `addresses`) e passa a aceitar `note`.
+- **`GET /people`** deixou de filtrar `deletedAt`: devolve ativas e inativas. Os demais consumidores (agendamentos, recorrências, contatos, endereços) usam `findOne`, que continua recusando inativas. Efeito no frontend: listas de seleção devem ignorar `deletedAt != null`, ou escolher uma inativa dá 404.
+- **`PATCH /people/:id/restore`:** limpa `deletedAt`; 404 se não existe, 409 se já ativa, 409 se o CPF está em uso por outra ativa (índice único parcial do banco).
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
