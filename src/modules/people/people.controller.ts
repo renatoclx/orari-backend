@@ -65,6 +65,15 @@ export class PeopleController {
     return this.peopleService.update(id, dto, currentUser.companyId);
   }
 
+  // Reativa uma pessoa excluída (limpa o deletedAt).
+  @Patch(":id/restore")
+  restore(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.peopleService.restore(id, currentUser.companyId);
+  }
+
   @Delete(":id")
   @HttpCode(204)
   remove(

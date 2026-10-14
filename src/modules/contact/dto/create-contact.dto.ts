@@ -11,6 +11,11 @@ import { OwnerDto } from "../../../common/dto/owner.dto";
 import { AtLeastOneOf } from "../../../common/validators/at-least-one-of.validator";
 import { isFilled } from "../../../common/validators/is-filled";
 
+// Telefone: DDD + número, só dígitos. Também usado no telefone principal da pessoa.
+export const PHONE_PATTERN = /^\d{10,11}$/;
+export const PHONE_MESSAGE =
+  "phone deve conter 10 ou 11 dígitos numéricos (DDD + número)";
+
 export class CreateContactDto extends OwnerDto {
   @IsEnum(ContactType)
   type!: ContactType;
@@ -20,9 +25,7 @@ export class CreateContactDto extends OwnerDto {
     (dto: CreateContactDto) => isFilled(dto.phone) || !isFilled(dto.email),
   )
   @AtLeastOneOf(["phone", "email"])
-  @Matches(/^\d{10,11}$/, {
-    message: "phone deve conter 10 ou 11 dígitos numéricos (DDD + número)",
-  })
+  @Matches(PHONE_PATTERN, { message: PHONE_MESSAGE })
   phone?: string;
 
   @IsOptional()

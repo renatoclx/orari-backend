@@ -5,14 +5,18 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { People, Prisma } from "../../../generated/prisma/client";
+import { ContactType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { detectImageExtension } from "../../common/storage/image-type";
 import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { PrismaService } from "../../prisma/prisma.service";
+import { CityService } from "../city/city.service";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { FindPeopleQueryDto } from "./dto/find-people-query.dto";
+import { PeopleAddressDto } from "./dto/people-address.dto";
+import { PeopleContactDto } from "./dto/people-contact.dto";
 import { UpdatePeopleDto } from "./dto/update-people.dto";
 
 export type PublicPeople = Omit<People, "normalizedName">;
@@ -70,15 +74,30 @@ export class PeopleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: LocalFileStorage,
+    private readonly cityService: CityService,
   ) {}
 
+  /**
+   * Cadastro da pessoa, com telefone principal, contatos e endereços opcionais.
+   * É uma escrita aninhada do Prisma: pessoa, contatos e endereços são gravados
+   * juntos ou nada é gravado. Não usa o ContactService/AddressService, que
+   * dependem do PeopleService (dependência circular).
+   */
   async create(dto: CreatePeopleDto, companyId: string): Promise<PublicPeople> {
+    const { phone, contacts = [], addresses = [], ...person } = dto;
+
+    this.ensureAtMostOnePrincipal(phone, contacts, addresses);
+    // Antes de gravar: cidade inexistente é 404 e a pessoa não chega a ser criada.
+    await this.ensureCitiesExist(addresses);
+
     try {
       return await this.prisma.people.create({
         data: {
-          ...dto,
+          ...person,
           normalizedName: normalizeForSearch(dto.name),
           companyId,
+          contacts: this.toContactsWrite(phone, contacts),
+          addresses: this.toAddressesWrite(addresses),
         },
         omit: omitSearchColumn,
       });
@@ -91,9 +110,9 @@ export class PeopleService {
     { page, limit, name, document, type }: FindPeopleQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<PeopleListItem>> {
+    // Inclui as inativas: o status é derivado do deletedAt, que vai na resposta.
     const where: Prisma.PeopleWhereInput = {
       companyId,
-      deletedAt: null,
       // O termo é normalizado como a coluna: a busca ignora acentos e maiúsculas
       // e pode usar o índice trigram de normalizedName.
       normalizedName: name ? { contains: normalizeForSearch(name) } : undefined,
@@ -188,6 +207,40 @@ export class PeopleService {
     }
   }
 
+  /**
+   * Reativa uma pessoa excluída (limpa o deletedAt). O CPF dela pode ter sido
+   * reaproveitado por outra pessoa ativa nesse meio tempo: nesse caso o índice
+   * único do banco recusa e a resposta é 409. Os contatos e endereços voltam a
+   * ser acessíveis junto com ela.
+   */
+  async restore(id: string, companyId: string): Promise<PublicPeople> {
+    const people = await this.prisma.people.findFirst({
+      where: { id, companyId },
+      select: { deletedAt: true },
+    });
+
+    if (!people) {
+      throw new NotFoundException("Pessoa não encontrada");
+    }
+    if (!people.deletedAt) {
+      throw new ConflictException("A pessoa já está ativa");
+    }
+
+    try {
+      return await this.prisma.people.update({
+        where: { id },
+        data: { deletedAt: null, updatedAt: new Date() },
+        omit: omitSearchColumn,
+      });
+    } catch (error) {
+      throw isUniqueConstraintViolation(error)
+        ? new ConflictException(
+            "Não é possível reativar: o CPF já está em uso por outra pessoa ativa",
+          )
+        : error;
+    }
+  }
+
   async remove(id: string, companyId: string): Promise<void> {
     await this.findOne(id, companyId);
 
@@ -242,6 +295,91 @@ export class PeopleService {
       data: { photoUrl: null, updatedAt: new Date() },
     });
     await this.storage.remove(people.photoUrl);
+  }
+
+  /**
+   * O principal é definido só pela flag isPrincipal, sem relação com o tipo do
+   * contato. O telefone principal conta como o contato principal, então
+   * nenhum item da lista pode ser principal quando ele é informado.
+   */
+  private ensureAtMostOnePrincipal(
+    phone: string | undefined,
+    contacts: PeopleContactDto[],
+    addresses: PeopleAddressDto[],
+  ) {
+    const principalContacts = contacts.filter((contact) => contact.isPrincipal);
+
+    if (phone && principalContacts.length > 0) {
+      throw new BadRequestException(
+        "O telefone informado já é o contato principal: nenhum item de contacts pode ser principal",
+      );
+    }
+    if (principalContacts.length > 1) {
+      throw new BadRequestException("Informe no máximo um contato principal");
+    }
+    if (addresses.filter((address) => address.isPrincipal).length > 1) {
+      throw new BadRequestException("Informe no máximo um endereço principal");
+    }
+  }
+
+  // Valida cada cidade distinta uma vez; o CityService responde 404 se não existir.
+  private async ensureCitiesExist(addresses: PeopleAddressDto[]) {
+    for (const cityId of new Set(addresses.map((address) => address.cityId))) {
+      await this.cityService.findOne(cityId);
+    }
+  }
+
+  /**
+   * O telefone principal é criado à parte (create) e a lista de contatos em
+   * lote (createMany), na mesma escrita aninhada.
+   */
+  private toContactsWrite(
+    phone: string | undefined,
+    contacts: PeopleContactDto[],
+  ): Prisma.ContactCreateNestedManyWithoutPeopleInput | undefined {
+    if (!phone && contacts.length === 0) {
+      return undefined;
+    }
+
+    return {
+      // O tipo do telefone principal é MAIN; o que o torna principal é a flag.
+      ...(phone && {
+        create: { type: ContactType.MAIN, phone, isPrincipal: true },
+      }),
+      ...(contacts.length > 0 && {
+        createMany: {
+          data: contacts.map(({ type, phone: number, email, isPrincipal }) => ({
+            type,
+            phone: number,
+            email,
+            isPrincipal: isPrincipal ?? false,
+          })),
+        },
+      }),
+    };
+  }
+
+  private toAddressesWrite(
+    addresses: PeopleAddressDto[],
+  ): Prisma.AddressCreateNestedManyWithoutPeopleInput | undefined {
+    if (addresses.length === 0) {
+      return undefined;
+    }
+
+    return {
+      createMany: {
+        data: addresses.map((address) => ({
+          type: address.type,
+          cep: address.cep,
+          street: address.street,
+          number: address.number,
+          neighborhood: address.neighborhood,
+          complement: address.complement,
+          cityId: address.cityId,
+          isPrincipal: address.isPrincipal ?? false,
+        })),
+      },
+    };
   }
 
   private mapUniqueViolation(error: unknown): unknown {
