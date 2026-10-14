@@ -16,12 +16,17 @@ export class FindAppointmentsQueryDto extends PaginationQueryDto {
   @IsUUID()
   clientId?: string;
 
-  /** Período pelo início do agendamento: from <= startAt < to. */
+  /**
+   * Início do período, incluído (from <= startAt < to). É um instante ISO 8601
+   * em UTC: para o dia 15/10 em São Paulo, use 2026-10-15T03:00:00.000Z. Uma data
+   * sem hora vale meia-noite UTC, e não a do fuso da empresa.
+   */
   @IsOptional()
   @Type(() => Date)
   @IsDate()
   from?: Date;
 
+  /** Fim do período, excluído. Para um dia inteiro, o início do dia seguinte. */
   @IsOptional()
   @Type(() => Date)
   @IsDate()

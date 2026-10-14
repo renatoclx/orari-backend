@@ -15,6 +15,22 @@ import { CreateAppointmentDto } from "./dto/create-appointment.dto";
 import { FindAppointmentsQueryDto } from "./dto/find-appointments-query.dto";
 import { UpdateAppointmentDto } from "./dto/update-appointment.dto";
 
+/**
+ * Dados relacionados que a agenda desenha sem novas chamadas: só o necessário
+ * (nada de documento nem contatos). A relação é lida pela chave, sem filtrar
+ * exclusão lógica: pessoa ou serviço excluídos continuam com o nome no
+ * histórico dos agendamentos antigos.
+ */
+const withRelations = {
+  client: { select: { id: true, name: true, photoUrl: true } },
+  professional: { select: { id: true, name: true, photoUrl: true } },
+  service: { select: { id: true, name: true, color: true, duration: true } },
+} satisfies Prisma.AppointmentInclude;
+
+export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
+  include: typeof withRelations;
+}>;
+
 // Um agendamento cancelado libera o horário do cliente e do profissional.
 const BLOCKING_STATUSES = { not: AppointmentStatus.CANCELLED } as const;
 
@@ -99,7 +115,7 @@ export class AppointmentService {
   async create(
     dto: CreateAppointmentDto,
     companyId: string,
-  ): Promise<Appointment> {
+  ): Promise<AppointmentWithRelations> {
     this.ensureIsNotInThePast(dto.startAt);
     await this.ensureParticipants(dto.clientId, dto.professionalId, companyId);
 
@@ -117,6 +133,7 @@ export class AppointmentService {
 
     return this.prisma.appointment.create({
       data: { ...dto, endAt, companyId },
+      include: withRelations,
     });
   }
 
@@ -131,7 +148,7 @@ export class AppointmentService {
       to,
     }: FindAppointmentsQueryDto,
     companyId: string,
-  ): Promise<PaginatedResult<Appointment>> {
+  ): Promise<PaginatedResult<AppointmentWithRelations>> {
     const where: Prisma.AppointmentWhereInput = {
       companyId,
       status,
@@ -143,8 +160,11 @@ export class AppointmentService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.appointment.findMany({
         where,
-        // A agenda é lida em ordem cronológica, e não por data de cadastro.
-        orderBy: { startAt: "asc" },
+        include: withRelations,
+        // A agenda é lida em ordem cronológica, e não por data de cadastro. O id
+        // desempata horários iguais: sem ele, a ordem entre eles pode mudar de
+        // uma página para a outra e repetir ou perder agendamentos.
+        orderBy: [{ startAt: "asc" }, { id: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -152,6 +172,26 @@ export class AppointmentService {
     ]);
 
     return { items, total, page, limit };
+  }
+
+  /**
+   * Detalhe devolvido pela API, com cliente, profissional e serviço. As
+   * validações internas de outros módulos usam o findOne, sem esses JOINs.
+   */
+  async findDetail(
+    id: string,
+    companyId: string,
+  ): Promise<AppointmentWithRelations> {
+    const appointment = await this.prisma.appointment.findFirst({
+      where: { id, companyId },
+      include: withRelations,
+    });
+
+    if (!appointment) {
+      throw new NotFoundException("Agendamento não encontrado");
+    }
+
+    return appointment;
   }
 
   async findOne(id: string, companyId: string): Promise<Appointment> {
@@ -170,7 +210,7 @@ export class AppointmentService {
     id: string,
     dto: UpdateAppointmentDto,
     companyId: string,
-  ): Promise<Appointment> {
+  ): Promise<AppointmentWithRelations> {
     const appointment = await this.findOne(id, companyId);
 
     if (appointment.recurringAppointmentId) {
@@ -222,6 +262,7 @@ export class AppointmentService {
     return this.prisma.appointment.update({
       where: { id },
       data: { ...dto, endAt, updatedAt: new Date() },
+      include: withRelations,
     });
   }
 

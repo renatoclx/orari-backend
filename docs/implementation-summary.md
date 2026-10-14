@@ -49,7 +49,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Contacts | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
 | Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
-| Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
+| Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`; com cliente, profissional e serviço), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
 | Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
 | Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
@@ -223,6 +223,15 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Leitura por contagem de relações** (`_count`) no próprio `ServiceService`, sem depender dos services de agendamento, recorrência ou plano (que já dependem dele).
 - **Plano excluído:** não existe (só `isActive`), e `PlanItem` é apagado fisicamente quando a composição do plano é editada; portanto todo `PlanItem` existente é vínculo real, de plano ativo ou inativo.
 - **Janela de corrida:** a verificação e a exclusão não são atômicas; um agendamento criado entre as duas deixaria um serviço excluído com relacionamento. Como a exclusão é lógica e a chave estrangeira continua válida, o dado não se perde, e o efeito é só o serviço sumir da listagem.
+
+### 2.23 Dados relacionados nas respostas de agendamento (pedido do frontend)
+
+- **`GET /appointments`, `GET /appointments/:id`, `POST` e `PATCH`** devolvem o mesmo formato: os campos de antes (incluindo `clientId`, `professionalId` e `serviceId`, sem quebrar quem consome) mais `client` e `professional` (`id`, `name`, `photoUrl`) e `service` (`id`, `name`, `color`, `duration`). Só esses campos, por `include` com `select`.
+- **Pessoa ou serviço excluídos:** a relação é lida pela chave estrangeira, sem filtrar `deletedAt`, e a exclusão é lógica; por isso o nome continua no histórico. Um teste contra o banco confirmou com pessoa e serviço excluídos.
+- **`findDetail` novo** atende `GET /:id`; o `findOne` continua devolvendo o agendamento puro para pagamento e recorrência, que o usam em validações.
+- **Listagem:** ordenada por `startAt` crescente, com `id` como desempate (sem ele, horários iguais podem trocar de lugar entre páginas e repetir ou perder registros). Para a agenda de um dia, `from`/`to` são instantes UTC: início do dia e início do dia seguinte no fuso da empresa (`timezone` vem de `GET /auth/me`); uma data sem hora vale meia-noite UTC.
+- **Limite por página:** 100. Uma agenda de um dia com mais de 100 agendamentos exige paginar com `page` (a resposta traz `total`).
+- **Fora do escopo, não alterado:** as rotas `.../reschedule` e `.../cancel` da recorrência continuam devolvendo o agendamento sem os dados relacionados.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)

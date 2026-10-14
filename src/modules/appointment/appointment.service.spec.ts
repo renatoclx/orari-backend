@@ -15,6 +15,13 @@ import { CreateAppointmentDto } from "./dto/create-appointment.dto";
 
 const anyDate: unknown = expect.any(Date);
 
+// Cliente, profissional e serviço devolvidos junto com cada agendamento.
+const relations = {
+  client: { select: { id: true, name: true, photoUrl: true } },
+  professional: { select: { id: true, name: true, photoUrl: true } },
+  service: { select: { id: true, name: true, color: true, duration: true } },
+};
+
 describe("AppointmentService", () => {
   let appointmentService: AppointmentService;
   const prismaMock = {
@@ -87,6 +94,7 @@ describe("AppointmentService", () => {
       );
       expect(prismaMock.appointment.create).toHaveBeenCalledWith({
         data: { ...dto, endAt, companyId: COMPANY_ID },
+        include: relations,
       });
     });
 
@@ -513,6 +521,75 @@ describe("AppointmentService", () => {
         },
       });
     });
+
+    it("deve incluir cliente, profissional e serviço, ordenando por início e id", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+      prismaMock.appointment.count.mockResolvedValue(0);
+
+      await appointmentService.findAll({ page: 2, limit: 100 }, COMPANY_ID);
+
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ companyId: COMPANY_ID }) as unknown,
+        include: relations,
+        // O id desempata horários iguais e mantém a paginação estável.
+        orderBy: [{ startAt: "asc" }, { id: "asc" }],
+        skip: 100,
+        take: 100,
+      });
+    });
+
+    it("não deve trazer dados além de id, nome, foto, cor e duração", () => {
+      const fields = (select: Record<string, unknown>) => Object.keys(select);
+
+      expect(fields(relations.client.select)).toEqual([
+        "id",
+        "name",
+        "photoUrl",
+      ]);
+      expect(fields(relations.professional.select)).toEqual([
+        "id",
+        "name",
+        "photoUrl",
+      ]);
+      expect(fields(relations.service.select)).toEqual([
+        "id",
+        "name",
+        "color",
+        "duration",
+      ]);
+    });
+  });
+
+  describe("findDetail", () => {
+    it("deve devolver o agendamento com os dados relacionados da própria empresa", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(appointment);
+
+      await expect(
+        appointmentService.findDetail("appointment-1", COMPANY_ID),
+      ).resolves.toEqual(appointment);
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
+        where: { id: "appointment-1", companyId: COMPANY_ID },
+        include: relations,
+      });
+    });
+
+    it("deve lançar NotFoundException para agendamento de outra empresa", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(null);
+
+      await expect(
+        appointmentService.findDetail("appointment-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("não deve alterar o findOne usado pelos outros módulos: sem include", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(appointment);
+
+      await appointmentService.findOne("appointment-1", COMPANY_ID);
+
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
+        where: { id: "appointment-1", companyId: COMPANY_ID },
+      });
+    });
   });
 
   describe("update", () => {
@@ -540,6 +617,7 @@ describe("AppointmentService", () => {
           endAt: new Date(novoInicio.getTime() + 30 * 60_000),
           updatedAt: anyDate,
         },
+        include: relations,
       });
     });
 
@@ -562,6 +640,7 @@ describe("AppointmentService", () => {
           endAt,
           updatedAt: anyDate,
         },
+        include: relations,
       });
     });
 
