@@ -232,6 +232,15 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Listagem:** ordenada por `startAt` crescente, com `id` como desempate (sem ele, horários iguais podem trocar de lugar entre páginas e repetir ou perder registros). Para a agenda de um dia, `from`/`to` são instantes UTC: início do dia e início do dia seguinte no fuso da empresa (`timezone` vem de `GET /auth/me`); uma data sem hora vale meia-noite UTC.
 - **Limite por página:** 100. Uma agenda de um dia com mais de 100 agendamentos exige paginar com `page` (a resposta traz `total`).
 - **Fora do escopo, não alterado:** as rotas `.../reschedule` e `.../cancel` da recorrência continuam devolvendo o agendamento sem os dados relacionados.
+
+### 2.24 Encaixe de agendamentos (overBooking)
+
+- **`Appointment.overBooking`** (booleano, padrão `false`; migração `appointment_over_booking`): marca o agendamento avulso feito fora do horário de funcionamento, inclusive em dia fechado.
+- **Autorização explícita:** `POST`/`PATCH /appointments` aceitam `overBooking`. Fora do funcionamento sem ele: 400 "O horário está fora do funcionamento da empresa. Para agendar mesmo assim, envie overBooking: true (encaixe)". O valor gravado é o real (`false` se o horário estiver dentro), calculado em `AppointmentService.resolveOverBooking`.
+- **`BusinessHourService.isWithinBusinessHours`** responde se cabe na janela, sem recusar; o `ensureWithinBusinessHours` passou a usá-lo e continua recusando onde não há encaixe (geração e remanejamento de recorrência e plano).
+- **PATCH:** o encaixe só é reavaliado quando horário ou serviço mudam; sem isso, o valor gravado se mantém e o `overBooking` enviado sozinho não muda nada.
+- **Sem sobreposição:** a checagem de conflito de cliente e profissional continua valendo no encaixe.
+- **Retrato do momento:** o valor não é recalculado se o horário de funcionamento mudar depois. Os jobs de status e de cobrança tratam o encaixe como qualquer avulso.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)

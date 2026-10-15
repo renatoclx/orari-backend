@@ -32,6 +32,8 @@ export class AppointmentResponseDto {
   note!: string | null;
   @ApiProperty({ enum: AppointmentStatus, enumName: "AppointmentStatus" })
   status!: AppointmentStatus;
+  /** Encaixe: marcado fora do horário de funcionamento da empresa. */
+  overBooking!: boolean;
   /** Preenchido quando o agendamento veio de uma recorrência. */
   recurringAppointmentId!: string | null;
   createdAt!: Date;

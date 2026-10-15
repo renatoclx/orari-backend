@@ -305,6 +305,9 @@ model Appointment {
   endAt                  DateTime
   note                   String?
   status                 AppointmentStatus @default(SCHEDULED)
+  // Encaixe: agendamento avulso marcado fora do horário de funcionamento. Retrato
+  // do momento em que foi marcado; não é recalculado se o horário mudar depois.
+  overBooking            Boolean           @default(false)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
   createdAt              DateTime          @default(now())
