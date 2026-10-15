@@ -40,7 +40,10 @@ describe("AppointmentService", () => {
   };
   const peopleServiceMock = { findOne: vi.fn() };
   const serviceServiceMock = { findActive: vi.fn() };
-  const businessHourServiceMock = { ensureWithinBusinessHours: vi.fn() };
+  const businessHourServiceMock = {
+    ensureWithinBusinessHours: vi.fn(),
+    isWithinBusinessHours: vi.fn(),
+  };
 
   // Sempre no futuro: agendar no passado é recusado.
   const startAt = new Date(Date.now() + 7 * 86_400_000);
@@ -56,6 +59,7 @@ describe("AppointmentService", () => {
     ...dto,
     endAt,
     status: "SCHEDULED",
+    overBooking: false,
     companyId: COMPANY_ID,
   };
 
@@ -69,6 +73,8 @@ describe("AppointmentService", () => {
       id === "client-1" ? asClient : asProfessional,
     );
     serviceServiceMock.findActive.mockResolvedValue({ duration: 30 });
+    // Padrão: horário dentro do funcionamento (sem encaixe).
+    businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(true);
     prismaMock.appointment.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -93,7 +99,7 @@ describe("AppointmentService", () => {
         COMPANY_ID,
       );
       expect(prismaMock.appointment.create).toHaveBeenCalledWith({
-        data: { ...dto, endAt, companyId: COMPANY_ID },
+        data: { ...dto, endAt, companyId: COMPANY_ID, overBooking: false },
         include: relations,
       });
     });
@@ -173,24 +179,136 @@ describe("AppointmentService", () => {
     });
   });
 
-  describe("janela de atendimento", () => {
-    it("deve validar o intervalo calculado contra o horário de funcionamento", async () => {
+  describe("janela de atendimento e encaixe", () => {
+    const outsideMessage =
+      "O horário está fora do funcionamento da empresa. Para agendar mesmo assim, envie overBooking: true (encaixe)";
+    const createdData = () =>
+      (
+        prismaMock.appointment.create.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data;
+    const updatedData = () =>
+      (
+        prismaMock.appointment.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        }
+      ).data;
+
+    it("deve verificar o intervalo calculado contra o horário de funcionamento", async () => {
       await appointmentService.create(dto, COMPANY_ID);
 
       expect(
-        businessHourServiceMock.ensureWithinBusinessHours,
+        businessHourServiceMock.isWithinBusinessHours,
       ).toHaveBeenCalledWith(COMPANY_ID, startAt, endAt);
+      expect(createdData().overBooking).toBe(false);
     });
 
-    it("não deve criar quando o horário está fora do funcionamento", async () => {
-      businessHourServiceMock.ensureWithinBusinessHours.mockRejectedValueOnce(
-        new BadRequestException(),
-      );
+    it("deve recusar horário fora do funcionamento sem a autorização de encaixe", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
 
+      await expect(appointmentService.create(dto, COMPANY_ID)).rejects.toThrow(
+        outsideMessage,
+      );
       await expect(
-        appointmentService.create(dto, COMPANY_ID),
+        appointmentService.create({ ...dto, overBooking: false }, COMPANY_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    });
+
+    it("deve criar como encaixe quando autorizado e fora do funcionamento", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
+
+      await appointmentService.create(
+        { ...dto, overBooking: true },
+        COMPANY_ID,
+      );
+
+      expect(createdData().overBooking).toBe(true);
+    });
+
+    it("deve gravar false quando autorizado mas o horário está dentro", async () => {
+      await appointmentService.create(
+        { ...dto, overBooking: true },
+        COMPANY_ID,
+      );
+
+      expect(createdData().overBooking).toBe(false);
+    });
+
+    it("deve manter a checagem de conflito no encaixe: sem sobreposição", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        professionalId: "professional-1",
+      });
+
+      await expect(
+        appointmentService.create({ ...dto, overBooking: true }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    });
+
+    it("PATCH: mover para fora do funcionamento exige a autorização", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      const novoInicio = new Date(startAt.getTime() + 12 * 3_600_000);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { startAt: novoInicio },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow(outsideMessage);
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("PATCH: mover para fora com autorização vira encaixe", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(appointment)
+        .mockResolvedValueOnce(null);
+      const novoInicio = new Date(startAt.getTime() + 12 * 3_600_000);
+
+      await appointmentService.update(
+        "appointment-1",
+        { startAt: novoInicio, overBooking: true },
+        COMPANY_ID,
+      );
+
+      expect(updatedData().overBooking).toBe(true);
+    });
+
+    it("PATCH: mover um encaixe de volta para dentro grava false", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce({ ...appointment, overBooking: true })
+        .mockResolvedValueOnce(null);
+      const novoInicio = new Date(startAt.getTime() + 3_600_000);
+
+      await appointmentService.update(
+        "appointment-1",
+        { startAt: novoInicio },
+        COMPANY_ID,
+      );
+
+      expect(updatedData().overBooking).toBe(false);
+    });
+
+    it("PATCH: sem mudar horário nem serviço, mantém o valor e ignora o overBooking enviado", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce({ ...appointment, overBooking: true })
+        .mockResolvedValueOnce(null);
+
+      await appointmentService.update(
+        "appointment-1",
+        { note: "confirmado", overBooking: false },
+        COMPANY_ID,
+      );
+
+      expect(
+        businessHourServiceMock.isWithinBusinessHours,
+      ).not.toHaveBeenCalled();
+      expect(updatedData().overBooking).toBe(true);
     });
 
     it("não deve validar a janela ao apenas cancelar", async () => {
@@ -203,7 +321,28 @@ describe("AppointmentService", () => {
       );
 
       expect(
+        businessHourServiceMock.isWithinBusinessHours,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("recorrência continua exigindo a janela: sem encaixe", async () => {
+      await appointmentService.createFromRecurrence(
+        prismaMock as never,
+        {
+          companyId: COMPANY_ID,
+          recurringAppointmentId: "recurring-1",
+          clientId: "client-1",
+          professionalId: "professional-1",
+          serviceId: "service-1",
+        },
+        [{ startAt, endAt }],
+      );
+
+      expect(
         businessHourServiceMock.ensureWithinBusinessHours,
+      ).toHaveBeenCalledWith(COMPANY_ID, startAt, endAt);
+      expect(
+        businessHourServiceMock.isWithinBusinessHours,
       ).not.toHaveBeenCalled();
     });
   });
@@ -615,6 +754,7 @@ describe("AppointmentService", () => {
         data: {
           startAt: novoInicio,
           endAt: new Date(novoInicio.getTime() + 30 * 60_000),
+          overBooking: false,
           updatedAt: anyDate,
         },
         include: relations,
@@ -638,6 +778,7 @@ describe("AppointmentService", () => {
         data: {
           note: "cliente avisou que virá",
           endAt,
+          overBooking: false,
           updatedAt: anyDate,
         },
         include: relations,

@@ -294,6 +294,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | endAt                  | Data e horário final do serviço                  |
 | status                 | Situação do agendamento                          |
 | note                   | Observação (opcional)                            |
+| overBooking            | Encaixe: marcado fora do horário de funcionamento |
 | recurringAppointmentId | Agendamento recorrente que o originou (opcional) |
 
 ### Relacionamentos

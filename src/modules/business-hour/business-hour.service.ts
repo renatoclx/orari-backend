@@ -187,30 +187,27 @@ export class BusinessHourService {
   }
 
   /**
-   * Garante que o intervalo informado cabe inteiro em uma janela de atendimento.
+   * Diz se o intervalo cabe inteiro em uma janela de atendimento, sem recusar.
+   * O agendamento avulso usa a resposta para decidir entre recusar e marcar como
+   * encaixe (overBooking).
    *
    * Empresa sem nenhuma janela cadastrada não restringe horários: a regra passa a
    * valer a partir do primeiro cadastro, para não travar quem ainda não configurou
-   * a agenda.
+   * a agenda. Dia sem janela é dia fechado.
    *
    * O dia da semana e os horários são lidos no fuso da empresa: uma janela
    * "09:00–18:00" vale no relógio dela, não em UTC.
-   *
-   * Chamado pelo AppointmentService — tanto para um agendamento avulso
-   * (create/update) quanto para cada ocorrência gerada por uma recorrência
-   * (createFromRecurrence). É o único ponto de entrada; este service nunca é
-   * acessado diretamente por controllers de outro módulo.
    */
-  async ensureWithinBusinessHours(
+  async isWithinBusinessHours(
     companyId: string,
     startAt: Date,
     endAt: Date,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const total = await this.prisma.businessHour.count({
       where: { companyId, deletedAt: null },
     });
     if (total === 0) {
-      return;
+      return true;
     }
 
     const timeZone = await this.companyService.getTimeZone(companyId);
@@ -226,15 +223,27 @@ export class BusinessHourService {
 
     // O fim precisa cair no mesmo dia: um atendimento que vira o dia não cabe
     // em nenhuma janela.
-    const fits =
+    return (
       end > start &&
       windows.some(
         (window) =>
           start >= minutesOfStoredTime(window.openAt) &&
           end <= minutesOfStoredTime(window.closeAt),
-      );
+      )
+    );
+  }
 
-    if (!fits) {
+  /**
+   * Garante que o intervalo cabe inteiro em uma janela de atendimento. Usado
+   * onde não há encaixe: cada ocorrência gerada por uma recorrência (ou plano) e
+   * o remanejamento delas.
+   */
+  async ensureWithinBusinessHours(
+    companyId: string,
+    startAt: Date,
+    endAt: Date,
+  ): Promise<void> {
+    if (!(await this.isWithinBusinessHours(companyId, startAt, endAt))) {
       throw new BadRequestException(
         "O horário está fora do funcionamento da empresa",
       );

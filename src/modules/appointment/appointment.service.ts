@@ -124,15 +124,17 @@ export class AppointmentService {
       dto.startAt,
       companyId,
     );
-    await this.businessHourService.ensureWithinBusinessHours(
+    const overBooking = await this.resolveOverBooking(
       companyId,
       dto.startAt,
       endAt,
+      dto.overBooking,
     );
     await this.ensureSlotIsFree(this.prisma, { ...dto, endAt }, companyId);
 
     return this.prisma.appointment.create({
-      data: { ...dto, endAt, companyId },
+      // O valor gravado é o calculado, e não o que veio no payload.
+      data: { ...dto, endAt, companyId, overBooking },
       include: withRelations,
     });
   }
@@ -240,14 +242,19 @@ export class AppointmentService {
         ? await this.resolveEndAt(serviceId, startAt, companyId)
         : appointment.endAt;
 
+    // O encaixe só é reavaliado quando o horário ou o serviço mudam; fora disso,
+    // o valor gravado se mantém (o overBooking do payload sozinho não muda nada).
+    let overBooking = appointment.overBooking;
+
     // Um agendamento cancelado não disputa horário nem precisa caber na janela
     // de atendimento; os demais, sim.
     if (status !== AppointmentStatus.CANCELLED) {
       if (dto.serviceId || dto.startAt) {
-        await this.businessHourService.ensureWithinBusinessHours(
+        overBooking = await this.resolveOverBooking(
           companyId,
           startAt,
           endAt,
+          dto.overBooking,
         );
       }
 
@@ -261,7 +268,7 @@ export class AppointmentService {
 
     return this.prisma.appointment.update({
       where: { id },
-      data: { ...dto, endAt, updatedAt: new Date() },
+      data: { ...dto, endAt, overBooking, updatedAt: new Date() },
       include: withRelations,
     });
   }
@@ -350,6 +357,39 @@ export class AppointmentService {
         `Agendamento com status ${status} não pode ser ${action}`,
       );
     }
+  }
+
+  /**
+   * Encaixe: um agendamento avulso pode ficar fora do horário de funcionamento
+   * (inclusive em dia fechado) se o pedido autorizar com overBooking. Sem a
+   * autorização, o horário fora é recusado, para um erro de digitação não virar
+   * encaixe sem ninguém perceber. Devolve o valor real a gravar: false quando o
+   * horário está dentro, mesmo que a autorização tenha vindo.
+   *
+   * Recorrência e plano não passam por aqui: continuam exigindo a janela.
+   */
+  private async resolveOverBooking(
+    companyId: string,
+    startAt: Date,
+    endAt: Date,
+    authorized: boolean | undefined,
+  ): Promise<boolean> {
+    const within = await this.businessHourService.isWithinBusinessHours(
+      companyId,
+      startAt,
+      endAt,
+    );
+    if (within) {
+      return false;
+    }
+
+    if (!authorized) {
+      throw new BadRequestException(
+        "O horário está fora do funcionamento da empresa. Para agendar mesmo assim, envie overBooking: true (encaixe)",
+      );
+    }
+
+    return true;
   }
 
   // Agendar exige horário futuro; a recorrência também nunca gera ocorrências passadas.

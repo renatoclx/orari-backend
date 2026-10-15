@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsBoolean,
   IsDate,
   IsNotEmpty,
   IsOptional,
@@ -27,4 +28,13 @@ export class CreateAppointmentDto {
   @IsString()
   @IsNotEmpty()
   note?: string;
+
+  /**
+   * Autoriza o encaixe: marcar fora do horário de funcionamento (inclusive em
+   * dia fechado). Sem ele, esse horário é recusado. O valor gravado é o real:
+   * fica false se o horário estiver dentro do funcionamento.
+   */
+  @IsOptional()
+  @IsBoolean()
+  overBooking?: boolean;
 }

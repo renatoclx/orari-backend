@@ -177,6 +177,66 @@ describe("BusinessHourService", () => {
     });
   });
 
+  describe("isWithinBusinessHours (encaixe)", () => {
+    // 2026-10-06 é uma terça-feira; os horários estão em UTC (fuso UTC no mock).
+    const terca = (hhmm: string) => new Date(`2026-10-06T${hhmm}:00.000Z`);
+
+    it("deve responder true quando a empresa não cadastrou nenhuma janela", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(0);
+
+      await expect(
+        businessHourService.isWithinBusinessHours(
+          COMPANY_ID,
+          terca("03:00"),
+          terca("03:30"),
+        ),
+      ).resolves.toBe(true);
+    });
+
+    it("deve responder false, sem recusar, quando está fora da janela", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(1);
+      prismaMock.businessHour.findMany.mockResolvedValue([
+        { openAt: time("09:00"), closeAt: time("18:00") },
+      ]);
+
+      await expect(
+        businessHourService.isWithinBusinessHours(
+          COMPANY_ID,
+          terca("19:00"),
+          terca("19:30"),
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it("deve responder false em dia sem janela (dia fechado)", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(5);
+      prismaMock.businessHour.findMany.mockResolvedValue([]);
+
+      await expect(
+        businessHourService.isWithinBusinessHours(
+          COMPANY_ID,
+          terca("10:00"),
+          terca("10:30"),
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it("deve responder true dentro da janela", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(1);
+      prismaMock.businessHour.findMany.mockResolvedValue([
+        { openAt: time("09:00"), closeAt: time("18:00") },
+      ]);
+
+      await expect(
+        businessHourService.isWithinBusinessHours(
+          COMPANY_ID,
+          terca("09:00"),
+          terca("18:00"),
+        ),
+      ).resolves.toBe(true);
+    });
+  });
+
   describe("ensureWithinBusinessHours", () => {
     // 2026-10-06 é uma terça-feira.
     const terca = (time: string) => new Date(`2026-10-06T${time}:00.000Z`);
