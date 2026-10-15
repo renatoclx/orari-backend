@@ -102,6 +102,10 @@
 - Não há exclusão de agendamento: o ciclo de vida é controlado pelo status (`SCHEDULED`, `CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), e um agendamento novo começa como `SCHEDULED`.
 - Não é possível agendar em data e hora que já passaram, nem remarcar um agendamento para o passado. Alterar status ou observação de um agendamento já realizado continua permitido.
 - O agendamento precisa caber inteiro em uma janela de atendimento da empresa (ver "Horário de funcionamento"). Cancelar um agendamento não passa por essa verificação.
+- Toda resposta de agendamento (listagem, consulta, criação e alteração) traz, além dos códigos, o cliente e o profissional (`id`, `name`, `photoUrl`) e o serviço (`id`, `name`, `color`, `duration`), e nenhum outro dado deles.
+- Uma pessoa ou serviço excluídos depois continuam aparecendo com o nome nos agendamentos que já os usavam: o histórico não perde o nome.
+- A listagem é ordenada pelo início do agendamento, do mais antigo para o mais novo; horários iguais seguem uma ordem fixa, para a paginação não repetir nem perder registros.
+- A agenda de um dia usa o período `from` e `to` (início incluído, fim excluído) com instantes em UTC: o início do dia e o início do dia seguinte, no fuso da empresa.
 
 ## Fuso horário
 
