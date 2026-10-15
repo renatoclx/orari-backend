@@ -92,3 +92,27 @@ O domain.md descreve apenas:
 - relacionamentos.
 
 Regras de funcionamento pertencem exclusivamente ao business-rules.md.
+
+## Regras de Testes
+
+- Durante a implementação de uma funcionalidade, execute **apenas os testes relacionados aos arquivos ou módulos alterados**.
+- **Não execute toda a suíte de testes** após cada alteração.
+- Caso não existam testes para a funcionalidade implementada, execute apenas a verificação de compilação (`build` ou `typecheck`), quando aplicável.
+- Execute a suíte completa de testes **somente** quando:
+  - a funcionalidade estiver concluída;
+  - eu solicitar explicitamente;
+  - for preparar um commit ou Pull Request.
+- Ao final de cada execução, informe quais testes foram executados e o resultado obtido.
+
+## Otimização de Recursos
+
+Evite executar comandos demorados ou que consumam muitos recursos sem necessidade.
+
+Siga a seguinte prioridade:
+
+1. Testes relacionados ao módulo alterado.
+2. Verificação de compilação (`build` ou `typecheck`).
+3. Lint (`eslint`).
+4. Suíte completa de testes (apenas quando necessário).
+
+Se houver dúvida sobre qual estratégia de testes utilizar, **pergunte antes de executar**.
