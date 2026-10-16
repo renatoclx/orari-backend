@@ -86,6 +86,13 @@ export class PaymentService {
       dto.appointmentId,
       companyId,
     );
+    // Agendamento cancelado não gera cobrança: o cancelamento já cancela o
+    // pagamento pendente dele, e um novo ficaria sem atendimento a cobrar.
+    if (appointment.status === AppointmentStatus.CANCELLED) {
+      throw new ConflictException(
+        "Agendamento cancelado não pode receber pagamento",
+      );
+    }
     if (dto.paymentMethodId) {
       await this.paymentMethodService.findOne(dto.paymentMethodId, companyId);
     }
@@ -204,6 +211,19 @@ export class PaymentService {
     companyId: string,
   ): Promise<PaymentResponse> {
     const payment = await this.findOwned(id, companyId);
+
+    // Cancelado é estado final: o cancelamento do agendamento, da recorrência ou
+    // do plano não pode ser desfeito por aqui (reabrir a cobrança de algo que
+    // não vai acontecer). Repetir CANCELLED é aceito, sem efeito.
+    if (
+      payment.status === PaymentStatus.CANCELLED &&
+      dto.status !== undefined &&
+      dto.status !== PaymentStatus.CANCELLED
+    ) {
+      throw new ConflictException(
+        "Pagamento cancelado não pode mudar de status",
+      );
+    }
 
     if (dto.paymentMethodId) {
       await this.paymentMethodService.findOne(dto.paymentMethodId, companyId);

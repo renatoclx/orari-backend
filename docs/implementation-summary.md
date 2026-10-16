@@ -138,7 +138,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Pagamento por agendamento:** a criação gera um pagamento `PENDING` por agendamento, na mesma transação, com o preço do serviço e vencimento no dia local do agendamento. Serviço sem preço é recusado.
 - **Método na baixa:** `Payment.paymentMethodId` passou a ser opcional; é obrigatório quando o pagamento está `PAID`.
 - **Pagamento integral:** `POST /recurring-appointments/:id/payments/settle` dá baixa em todos os `PENDING` da recorrência com o mesmo método.
-- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
+- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` (ver 2.26) e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
 
 ### 2.11 Remanejamento (Etapa 4)
 
@@ -166,7 +166,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 ### 2.14 Cancelamento da contratação (Etapa 7)
 
 - **Sem multa e sem reembolso**, em qualquer modalidade (decisão de 2026-10-10; o efeito sobre o desconto do mensal ficou como pendência pós-MVP no roadmap).
-- **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
+- **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
 - **Recusas (400):** contratação já cancelada ou com o período terminado.
 - **`firstDueDate` obrigatório no mensal** (validação no DTO): sem vencimento, o cancelamento não teria como separar parcelas atrasadas das futuras. No integral continua opcional.
 
@@ -241,6 +241,18 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **PATCH:** o encaixe só é reavaliado quando horário ou serviço mudam; sem isso, o valor gravado se mantém e o `overBooking` enviado sozinho não muda nada.
 - **Sem sobreposição:** a checagem de conflito de cliente e profissional continua valendo no encaixe.
 - **Retrato do momento:** o valor não é recalculado se o horário de funcionamento mudar depois. Os jobs de status e de cobrança tratam o encaixe como qualquer avulso.
+
+### 2.26 Cancelamento só antes de iniciar
+
+- **`PATCH /appointments/:id` com `status: CANCELLED`** só passa para agendamento `SCHEDULED` ou `CONFIRMED` com `startAt` futuro (`AppointmentService.ensureCanBeCancelled`). O horário é conferido além do status por causa do intervalo de 5 minutos do job de status. Recusas (400): "Agendamento que já iniciou não pode ser cancelado" (em andamento, ou início agora ou no passado), "Agendamento concluído não pode ser cancelado", "Agendamento em que o cliente não compareceu não pode ser cancelado" e "O agendamento já está cancelado" (400, como o cancelamento de uma sessão pela recorrência e o da contratação).
+- **Estado atual:** a regra olha o agendamento antes das outras mudanças do mesmo `PATCH`; um novo `startAt` não libera o cancelamento de quem já começou. Observação e demais status seguem livres; o agendamento de recorrência continua recusado no `PATCH` comum.
+- **Pagamento junto:** cancelar um avulso cancela o pagamento `PENDING` dele na mesma transação (`PAID` não muda). Cobre os casos em que o avulso podia ficar cancelado com cobrança pendente: pagamento lançado à mão antes do atendimento e a ida e volta de status (`COMPLETED` → `SCHEDULED` → `CANCELLED`). O `AppointmentService` grava o pagamento direto pelo Prisma, como exceção à regra do módulo dono, porque não pode usar o `PaymentService` (dependência circular); é o mesmo recurso do cadastro completo de pessoas.
+- **`POST /payments` recusa agendamento cancelado:** 409 "Agendamento cancelado não pode receber pagamento", antes de validar o método e de gravar. Os demais status seguem aceitos.
+- **Fechado nesta mesma etapa:** o cancelamento de uma sessão pela rota da recorrência (`.../appointments/:id/cancel`) passou a usar a mesma regra do avulso (`ensureCanBeCancelled`), conferindo também o horário e usando as mesmas mensagens; e `CANCELLED` virou estado final do pagamento: `PATCH /payments` não o leva a outro status (409 "Pagamento cancelado não pode mudar de status"), embora repetir `CANCELLED` e editar outros campos continuem aceitos.
+- **Também fechado:** o remanejamento de uma sessão da recorrência confere o horário, além do status (400 "Agendamento que já iniciou não pode ser remanejado"), e `CANCELLED` virou estado final do agendamento: o `PATCH` comum não o leva a outro status (400 "Agendamento cancelado não pode mudar de status", inclusive em agendamento de recorrência). Repetir `CANCELLED` cai na regra do cancelamento e a observação segue editável. Isso fecha o caminho de reabrir um agendamento cujo pagamento já foi cancelado.
+- **Remarcar o avulso já iniciado é permitido de propósito** (decisão do produto: o cliente que atrasa uns 10 minutos precisa conseguir remarcar). Valem as regras atuais de data futura, horário, encaixe e conflito para o novo horário. A restrição de "só antes de iniciar" vale para cancelar e para remanejar sessão de recorrência.
+- **Cancelamento em lote inclui `CONFIRMED`:** cancelar a recorrência (e, por consequência, a contratação do plano) cancela os futuros em `SCHEDULED` **ou** `CONFIRMED` (`cancelFutureFromRecurrence`), e os pagamentos `PENDING` deles. Antes, os confirmados ficavam ativos. Cancelar uma sessão ou a recorrência inteira seguem a mesma regra.
+- **Concluído com pagamento não é mais alterado:** `PATCH /appointments/:id` em agendamento `COMPLETED` com pagamento `PENDING` ou `PAID` não excluído responde 400 "Agendamento concluído com pagamento não pode ser alterado", para qualquer campo (`ensureNotLockedByPayment`, que só consulta o pagamento quando o agendamento está concluído). Pagamento cancelado ou excluído libera a edição. Sessão de plano não tem pagamento próprio e não é travada.
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)

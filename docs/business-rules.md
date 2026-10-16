@@ -100,7 +100,12 @@
 - Não pode haver sobreposição de horário para o mesmo profissional nem para o mesmo cliente. Horários que apenas se encostam (fim de um igual ao início do outro) são permitidos.
 - Agendamentos cancelados não ocupam horário e liberam a agenda.
 - Não há exclusão de agendamento: o ciclo de vida é controlado pelo status (`SCHEDULED`, `CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), e um agendamento novo começa como `SCHEDULED`.
-- Não é possível agendar em data e hora que já passaram, nem remarcar um agendamento para o passado. Alterar status ou observação de um agendamento já realizado continua permitido.
+- Não é possível agendar em data e hora que já passaram, nem remarcar um agendamento para o passado. Alterar status ou observação de um agendamento já realizado continua permitido, exceto cancelá-lo e exceto quando ele está concluído com pagamento.
+- Um agendamento só pode ser cancelado antes de iniciar: em `SCHEDULED` ou `CONFIRMED` e com início ainda no futuro. Vale o horário, e não só o status, porque o status é atualizado periodicamente e um agendamento que já começou pode ainda constar como agendado ou confirmado.
+- Não podem ser cancelados: o que já iniciou ("Agendamento que já iniciou não pode ser cancelado"), o concluído, aquele em que o cliente não compareceu e o já cancelado. Nesses casos nada é alterado. A regra vale também quando o cancelamento vem junto com outras alterações, considerando o estado do agendamento antes delas.
+- Ao cancelar um agendamento avulso, o pagamento dele ainda `PENDING` também é cancelado; o pagamento `PAID` não muda (não há reembolso).
+- Um agendamento concluído que tem pagamento (pendente ou pago) não sofre mais nenhuma alteração: nem observação, nem status, nem serviço, cliente ou horário (400). O pagamento foi gerado a partir dele, e mudar o agendamento o deixaria divergente. Pagamento cancelado ou excluído libera a edição. Agendamento de plano não tem pagamento próprio e não é travado por esta regra.
+- `CANCELLED` é o estado final do agendamento: um agendamento cancelado não volta a nenhum outro status (400). Para marcar de novo, cria-se outro agendamento. A observação de um cancelado continua editável.
 - O agendamento precisa caber inteiro em uma janela de atendimento da empresa (ver "Horário de funcionamento"), exceto quando é um encaixe autorizado. Cancelar um agendamento não passa por essa verificação.
 - Toda resposta de agendamento (listagem, consulta, criação e alteração) traz, além dos códigos, o cliente e o profissional (`id`, `name`, `photoUrl`) e o serviço (`id`, `name`, `color`, `duration`), e nenhum outro dado deles.
 - Uma pessoa ou serviço excluídos depois continuam aparecendo com o nome nos agendamentos que já os usavam: o histórico não perde o nome.
@@ -150,7 +155,7 @@
 - A criação é tudo ou nada: se qualquer ocorrência conflitar, a recorrência não é criada.
 - A agenda de uma recorrência não é regenerada. Para mudar dias, período, serviço, cliente ou profissional, encerra-se a recorrência e cria-se outra.
 - Alterar apenas a observação não mexe na agenda.
-- Cancelar a recorrência (`isActive` = falso) cancela os agendamentos futuros em `SCHEDULED`, sem gerar novos, e seus pagamentos `PENDING` passam para `CANCELLED` (ver Cancelamento). Uma recorrência cancelada não é reativada.
+- Cancelar a recorrência (`isActive` = falso) cancela os agendamentos futuros em `SCHEDULED` ou `CONFIRMED`, sem gerar novos, e seus pagamentos `PENDING` passam para `CANCELLED` (ver Cancelamento). Uma recorrência cancelada não é reativada.
 
 ### Valor e pagamento
 
@@ -167,14 +172,14 @@
   - a quantidade de serviços contratados seja mantida;
   - a nova data, no calendário da empresa, fique entre a data inicial e a final da recorrência;
   - haja dia e horário disponíveis, pelas regras de agendamento.
-- Só agendamentos `SCHEDULED` ou `CONFIRMED` podem ser remanejados, e o status não muda. Uma recorrência cancelada não tem agendamentos remanejados.
+- Só agendamentos `SCHEDULED` ou `CONFIRMED` que ainda não iniciaram (início no futuro) podem ser remanejados, e o status não muda. Vale o horário, e não só o status, porque o status é atualizado periodicamente. Uma recorrência cancelada não tem agendamentos remanejados.
 - Data, serviço, cliente e profissional de um agendamento de recorrência não mudam pela edição comum do agendamento; data e horário mudam só pelo remanejamento. Observação e os demais status continuam editáveis.
 - Se o pagamento do agendamento estiver `PENDING`, o vencimento passa para a nova data.
 - Remanejar não gera nova cobrança nem reembolso.
 
 ### Cancelamento
 
-- Um único agendamento da recorrência, em `SCHEDULED` ou `CONFIRMED`, pode ser cancelado pela própria recorrência: o horário fica livre e o pagamento `PENDING` dele passa para `CANCELLED`. Pagamento já pago não muda. Esse cancelamento não é feito pela edição comum do agendamento.
+- Um único agendamento da recorrência pode ser cancelado pela própria recorrência, com a mesma regra do agendamento avulso: só antes de iniciar (`SCHEDULED` ou `CONFIRMED` com início no futuro). O horário fica livre e o pagamento `PENDING` dele passa para `CANCELLED`. Pagamento já pago não muda. Esse cancelamento não é feito pela edição comum do agendamento.
 - Cancelar a recorrência não gera reembolso de pagamentos já pagos.
 - Os pagamentos `PENDING` dos agendamentos futuros cancelados passam para `CANCELLED`.
 - Após o cancelamento, as novas datas negociadas diretamente com a empresa passam a ser agendamentos avulsos.
@@ -242,7 +247,7 @@
 
 - O cancelamento não gera multa nem reembolso, em qualquer modalidade.
 - A contratação cancelada registra a data do cancelamento e não pode ser cancelada de novo. Uma contratação cujo período já terminou não pode ser cancelada.
-- Ao cancelar a contratação, as recorrências de todos os serviços do plano são encerradas, e os agendamentos futuros em `SCHEDULED` passam para `CANCELLED`; os horários voltam a ficar disponíveis.
+- Ao cancelar a contratação, as recorrências de todos os serviços do plano são encerradas, e os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` passam para `CANCELLED`; os horários voltam a ficar disponíveis.
 - Na modalidade mensal, as parcelas `PENDING` com vencimento na data do cancelamento ou depois passam para `CANCELLED`. As parcelas atrasadas continuam `PENDING`, e as pagas não mudam.
 - Na modalidade integral, o pagamento não muda: ele é feito no ato da contratação.
 
@@ -262,6 +267,9 @@
 - `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
 - O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa.
 - Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
+- Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
+- Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.
+- `CANCELLED` é o estado final do pagamento: um pagamento cancelado não volta a `PENDING` nem vai para `PAID` (409). Repetir `CANCELLED` é aceito, sem efeito, e os demais campos (ex.: valor) continuam editáveis.
   - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
   - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.
   - Serviço sem preço é considerado gratuito e não gera pagamento.

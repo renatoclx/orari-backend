@@ -153,6 +153,36 @@ describe("PaymentService", () => {
       expect(prismaMock.payment.create).not.toHaveBeenCalled();
     });
 
+    it("deve recusar pagamento para agendamento cancelado, sem gravar nada", async () => {
+      appointmentServiceMock.findOne.mockResolvedValueOnce({
+        id: "appointment-1",
+        serviceId: "service-1",
+        status: "CANCELLED",
+      });
+
+      await expect(paymentService.create(dto, COMPANY_ID)).rejects.toThrow(
+        "Agendamento cancelado não pode receber pagamento",
+      );
+      expect(paymentMethodServiceMock.findOne).not.toHaveBeenCalled();
+      expect(prismaMock.payment.create).not.toHaveBeenCalled();
+    });
+
+    it.each(["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "NO_SHOW"])(
+      "deve aceitar pagamento para agendamento %s",
+      async (status) => {
+        appointmentServiceMock.findOne.mockResolvedValueOnce({
+          id: "appointment-1",
+          serviceId: "service-1",
+          status,
+        });
+        prismaMock.payment.create.mockResolvedValue(payment);
+
+        await expect(
+          paymentService.create(dto, COMPANY_ID),
+        ).resolves.toBeDefined();
+      },
+    );
+
     it("deve exigir paidAt quando o status é PAID", async () => {
       await expect(
         paymentService.create({ ...dto, status: "PAID" }, COMPANY_ID),
@@ -478,6 +508,51 @@ describe("PaymentService", () => {
         COMPANY_ID,
       );
       expect(prismaMock.payment.update).toHaveBeenCalled();
+    });
+
+    it.each(["PENDING", "PAID"])(
+      "não deve reabrir um pagamento cancelado (CANCELLED → %s)",
+      async (status) => {
+        prismaMock.payment.findFirst.mockResolvedValue({
+          ...payment,
+          status: "CANCELLED",
+        });
+
+        await expect(
+          paymentService.update(
+            "payment-1",
+            {
+              status,
+              paidAt: new Date("2026-10-02"),
+              paymentMethodId: "m",
+            } as never,
+            COMPANY_ID,
+          ),
+        ).rejects.toThrow("Pagamento cancelado não pode mudar de status");
+        expect(prismaMock.payment.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve aceitar repetir CANCELLED num pagamento cancelado, sem efeito", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue({
+        ...payment,
+        status: "CANCELLED",
+      });
+
+      await expect(
+        paymentService.update("payment-1", { status: "CANCELLED" }, COMPANY_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it("deve continuar permitindo editar outros campos de um pagamento cancelado", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue({
+        ...payment,
+        status: "CANCELLED",
+      });
+
+      await expect(
+        paymentService.update("payment-1", { amount: 99.9 }, COMPANY_ID),
+      ).resolves.toBeDefined();
     });
 
     it("deve recusar mudança para PAID sem data", async () => {

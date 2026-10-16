@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Appointment, Prisma } from "../../../generated/prisma/client";
-import { AppointmentStatus, PeopleType } from "../../../generated/prisma/enums";
+import {
+  AppointmentStatus,
+  PaymentStatus,
+  PeopleType,
+} from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
@@ -215,8 +219,19 @@ export class AppointmentService {
   ): Promise<AppointmentWithRelations> {
     const appointment = await this.findOne(id, companyId);
 
+    await this.ensureNotLockedByPayment(appointment);
+
     if (appointment.recurringAppointmentId) {
       this.ensureRecurrenceTermsUnchanged(dto);
+    }
+
+    this.ensureNotReopened(appointment, dto);
+
+    // A transição para CANCELLED olha o estado atual, antes de qualquer outra
+    // mudança do mesmo PATCH (ex.: um novo startAt não "desfaz" o início).
+    const cancels = dto.status === AppointmentStatus.CANCELLED;
+    if (cancels) {
+      this.ensureCanBeCancelled(appointment);
     }
 
     // Estado final do agendamento, considerando o que veio no PATCH.
@@ -266,10 +281,39 @@ export class AppointmentService {
       );
     }
 
-    return this.prisma.appointment.update({
-      where: { id },
-      data: { ...dto, endAt, overBooking, updatedAt: new Date() },
-      include: withRelations,
+    const data = { ...dto, endAt, overBooking, updatedAt: new Date() };
+
+    if (!cancels) {
+      return this.prisma.appointment.update({
+        where: { id },
+        data,
+        include: withRelations,
+      });
+    }
+
+    /*
+     * Cancelar o avulso cancela junto o pagamento ainda PENDING dele (o PAID não
+     * muda: não há reembolso), na mesma transação. Exceção à regra de que só o
+     * módulo dono grava a tabela: o AppointmentService não pode usar o
+     * PaymentService, que já depende dele (dependência circular). É o mesmo
+     * recurso usado no cadastro completo de pessoas.
+     */
+    return this.prisma.$transaction(async (tx) => {
+      const cancelled = await tx.appointment.update({
+        where: { id },
+        data,
+        include: withRelations,
+      });
+      await tx.payment.updateMany({
+        where: {
+          appointmentId: id,
+          status: PaymentStatus.PENDING,
+          deletedAt: null,
+        },
+        data: { status: PaymentStatus.CANCELLED, updatedAt: new Date() },
+      });
+
+      return cancelled;
     });
   }
 
@@ -284,7 +328,7 @@ export class AppointmentService {
     appointment: Appointment,
     startAt: Date,
   ): Promise<Appointment> {
-    this.ensureIsUpcoming(appointment.status, "remanejado");
+    this.ensureIsUpcoming(appointment, "remanejado");
     this.ensureIsNotInThePast(startAt);
 
     const { companyId, clientId, professionalId } = appointment;
@@ -319,7 +363,8 @@ export class AppointmentService {
     db: PrismaClientLike,
     appointment: Appointment,
   ): Promise<Appointment> {
-    this.ensureIsUpcoming(appointment.status, "cancelado");
+    // A mesma regra do cancelamento do avulso: só antes de iniciar.
+    this.ensureCanBeCancelled(appointment);
 
     return db.appointment.update({
       where: { id: appointment.id },
@@ -351,10 +396,94 @@ export class AppointmentService {
     }
   }
 
-  private ensureIsUpcoming(status: AppointmentStatus, action: string) {
+  /**
+   * Agendamento concluído com pagamento não sofre mais nenhuma alteração: o
+   * pagamento (valor, vencimento, baixa) foi gerado a partir dele, e mudar
+   * serviço, cliente, horário ou status o deixaria divergente. Conta o
+   * pagamento pendente ou pago; cancelado ou excluído libera a edição. Só
+   * consulta quando o agendamento está concluído, para não pesar nos demais.
+   */
+  private async ensureNotLockedByPayment({ id, status }: Appointment) {
+    if (status !== AppointmentStatus.COMPLETED) {
+      return;
+    }
+
+    const charges = await this.prisma.payment.count({
+      where: {
+        appointmentId: id,
+        deletedAt: null,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.PAID] },
+      },
+    });
+    if (charges > 0) {
+      throw new BadRequestException(
+        "Agendamento concluído com pagamento não pode ser alterado",
+      );
+    }
+  }
+
+  /**
+   * Cancelado é estado final: o cancelamento também cancelou o pagamento
+   * pendente, e reabrir o agendamento deixaria a cobrança sem atendimento. Para
+   * marcar de novo, cria-se outro agendamento. Repetir CANCELLED cai na regra
+   * do cancelamento ("já está cancelado").
+   */
+  private ensureNotReopened(
+    { status }: Appointment,
+    dto: UpdateAppointmentDto,
+  ) {
+    if (
+      status === AppointmentStatus.CANCELLED &&
+      dto.status !== undefined &&
+      dto.status !== AppointmentStatus.CANCELLED
+    ) {
+      throw new BadRequestException(
+        "Agendamento cancelado não pode mudar de status",
+      );
+    }
+  }
+
+  /**
+   * Só se cancela o que ainda não começou: status SCHEDULED ou CONFIRMED e
+   * início no futuro. O horário é conferido além do status porque o job de
+   * status roda a cada 5 minutos: um agendamento que já começou pode ainda
+   * estar SCHEDULED ou CONFIRMED. Cancelar de novo também é recusado.
+   */
+  private ensureCanBeCancelled({ status, startAt }: Appointment) {
+    const refusal: Partial<Record<AppointmentStatus, string>> = {
+      [AppointmentStatus.CANCELLED]: "O agendamento já está cancelado",
+      [AppointmentStatus.COMPLETED]:
+        "Agendamento concluído não pode ser cancelado",
+      [AppointmentStatus.NO_SHOW]:
+        "Agendamento em que o cliente não compareceu não pode ser cancelado",
+    };
+    const message = refusal[status];
+    if (message) {
+      throw new BadRequestException(message);
+    }
+
+    if (status === AppointmentStatus.IN_PROGRESS || startAt <= new Date()) {
+      throw new BadRequestException(
+        "Agendamento que já iniciou não pode ser cancelado",
+      );
+    }
+  }
+
+  /**
+   * Só se remaneja o que ainda não começou: status SCHEDULED ou CONFIRMED e
+   * início no futuro. O horário é conferido além do status porque o job de
+   * status roda a cada 5 minutos (mesma razão do cancelamento).
+   */
+  private ensureIsUpcoming({ status, startAt }: Appointment, action: string) {
     if (!UPCOMING_STATUSES.includes(status)) {
       throw new BadRequestException(
         `Agendamento com status ${status} não pode ser ${action}`,
+      );
+    }
+
+    if (startAt <= new Date()) {
+      throw new BadRequestException(
+        `Agendamento que já iniciou não pode ser ${action}`,
       );
     }
   }
@@ -528,9 +657,10 @@ export class AppointmentService {
   }
 
   /**
-   * Cancela os agendamentos futuros ainda em SCHEDULED que vieram de uma
-   * recorrência. Preserva o histórico: passados, confirmados, concluídos,
-   * no-show e cancelados à mão não são tocados.
+   * Cancela os agendamentos futuros ainda em SCHEDULED ou CONFIRMED que vieram
+   * de uma recorrência (a recorrência ou o plano foi cancelado). Preserva o
+   * histórico: passados, em andamento, concluídos, no-show e cancelados à mão
+   * não são tocados.
    */
   async cancelFutureFromRecurrence(
     db: PrismaClientLike,
@@ -540,7 +670,7 @@ export class AppointmentService {
     const { count } = await db.appointment.updateMany({
       where: {
         recurringAppointmentId,
-        status: AppointmentStatus.SCHEDULED,
+        status: { in: UPCOMING_STATUSES },
         startAt: { gte: from },
       },
       data: { status: AppointmentStatus.CANCELLED, updatedAt: new Date() },
