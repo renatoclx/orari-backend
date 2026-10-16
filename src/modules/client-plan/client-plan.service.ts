@@ -9,6 +9,7 @@ import { PlanBillingType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { toZonedParts } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import { CompanyService } from "../company/company.service";
 import { PaymentService } from "../payment/payment.service";
 import { PlanResponse, PlanService } from "../plan/plan.service";
@@ -21,13 +22,6 @@ import {
 import { ClientPlanScheduleDto } from "./dto/client-plan-schedule.dto";
 import { CreateClientPlanDto } from "./dto/create-client-plan.dto";
 import { FindClientPlansQueryDto } from "./dto/find-client-plans-query.dto";
-
-/**
- * Tempo máximo da transação da contratação. Um plano longo gera centenas de
- * agendamentos, cada um validado contra a agenda; o padrão do Prisma (5 s) não
- * basta. Ver docs/technical-debt.md.
- */
-const CONTRACT_TRANSACTION_TIMEOUT_MS = 30_000;
 
 // A contratação é devolvida com um resumo das agendas geradas por serviço.
 const withSchedules = {
@@ -135,7 +129,8 @@ export class ClientPlanService {
 
         return clientPlan.id;
       },
-      { timeout: CONTRACT_TRANSACTION_TIMEOUT_MS },
+      // Um plano longo gera centenas de agendamentos (ver transaction-options).
+      { timeout: LONG_TRANSACTION_TIMEOUT_MS },
     );
 
     return this.findOne(clientPlanId, companyId);

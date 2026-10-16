@@ -57,7 +57,7 @@ describe("RecurringAppointmentService", () => {
         { startAt: Date; endAt: Date }[] | undefined
     )?.map((occurrence) => occurrence.startAt.toISOString()) ?? [];
 
-  // 60 dias após o início: o máximo permitido para uma recorrência avulsa.
+  // Período de dois meses (não há mais limite de duração).
   const endDate = new Date("2026-11-30");
 
   const dto: CreateRecurringAppointmentDto = {
@@ -434,20 +434,33 @@ describe("RecurringAppointmentService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it("deve recusar período maior que 60 dias", async () => {
-      // 2026-10-01 a 2026-12-01 são 61 dias.
+    it("deve aceitar período de um ano: não há mais limite de 60 dias", async () => {
+      // 2026-10-01 a 2027-09-30, toda terça.
       await expect(
         recurringService.create(
-          { ...dto, endDate: new Date("2026-12-01") },
+          { ...dto, endDate: new Date("2027-09-30") },
           COMPANY_ID,
         ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+      ).resolves.toBeDefined();
+      expect(generatedOccurrences()).toHaveLength(52);
+      expect(generatedOccurrences().at(-1)).toBe("2027-09-28T14:00:00.000Z");
     });
 
-    it("deve aceitar período de exatamente 60 dias", async () => {
+    it("deve usar o tempo maior de transação, por gerar muitos agendamentos", async () => {
+      await recurringService.create(dto, COMPANY_ID);
+
+      expect(prismaMock.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        { timeout: 30_000 },
+      );
+    });
+
+    it("deve aceitar início e fim no mesmo dia", async () => {
       await expect(
-        recurringService.create(dto, COMPANY_ID),
+        recurringService.create(
+          { ...dto, startDate: endDate, endDate },
+          COMPANY_ID,
+        ),
       ).resolves.toBeDefined();
     });
 
@@ -523,6 +536,20 @@ describe("RecurringAppointmentService", () => {
       await expect(
         reschedule("2026-12-01T01:00:00.000Z"),
       ).resolves.not.toThrow();
+    });
+
+    it("recorrência antiga sem data final: só o início limita o remanejamento", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...stored,
+        endDate: null,
+      });
+
+      await expect(
+        reschedule("2027-06-15T10:00:00.000Z"),
+      ).resolves.not.toThrow();
+      await expect(
+        reschedule("2026-09-30T10:00:00.000Z"),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it("deve recusar agendamento de outra recorrência", async () => {

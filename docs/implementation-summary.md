@@ -241,6 +241,13 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **PATCH:** o encaixe só é reavaliado quando horário ou serviço mudam; sem isso, o valor gravado se mantém e o `overBooking` enviado sozinho não muda nada.
 - **Sem sobreposição:** a checagem de conflito de cliente e profissional continua valendo no encaixe.
 - **Retrato do momento:** o valor não é recalculado se o horário de funcionamento mudar depois. Os jobs de status e de cobrança tratam o encaixe como qualquer avulso.
+
+### 2.25 Recorrência sem limite de duração
+
+- **Fim do limite de 60 dias** para a recorrência avulsa (pedido de cliente): a data final continua obrigatória e não pode vir antes da inicial, mas o prazo é livre (ex.: um ano); o controle fica com o front. Sem migração.
+- **Remanejamento:** continua limitado ao período da própria recorrência; recorrências antigas sem data final passam a ter só o limite inicial (antes, 60 dias a partir do início).
+- **Tempo de transação compartilhado:** `LONG_TRANSACTION_TIMEOUT_MS` (30 s) em `src/prisma/transaction-options.ts`, usado na criação da recorrência e na contratação de plano. O padrão global de 5 s foi mantido de propósito: uma transação ocupa uma conexão do pool, e um limite curto faz uma transação comum travada falhar cedo.
+- **Consequência:** a recorrência longa gera todos os agendamentos e pagamentos `PENDING` na criação (ver `technical-debt.md`).
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
