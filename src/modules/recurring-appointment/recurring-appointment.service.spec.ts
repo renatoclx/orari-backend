@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
@@ -80,8 +84,17 @@ describe("RecurringAppointmentService", () => {
     endDate,
     note: null,
     isActive: true,
+    clientPlanId: null,
     createdAt: new Date("2026-09-17"),
     updatedAt: null,
+    client: { id: "client-1", name: "Ana Paula", photoUrl: null },
+    professional: { id: "professional-1", name: "Carla", photoUrl: null },
+    service: {
+      id: "service-1",
+      name: "Pilates",
+      color: "#FF8800",
+      duration: 60,
+    },
     days: [
       {
         id: "day-1",
@@ -225,6 +238,105 @@ describe("RecurringAppointmentService", () => {
       await recurringService.create(dto, COMPANY_ID);
 
       expect(generatedOccurrences()[0]).toBe("2026-10-06T17:00:00.000Z");
+    });
+  });
+
+  describe("dados relacionados nas respostas", () => {
+    // O que a tela precisa, e nada além disso (sem documento nem contatos).
+    const expectedInclude = {
+      days: { orderBy: { startTime: "asc" } },
+      client: { select: { id: true, name: true, photoUrl: true } },
+      professional: { select: { id: true, name: true, photoUrl: true } },
+      service: {
+        select: { id: true, name: true, color: true, duration: true },
+      },
+    };
+
+    it("deve devolver cliente, profissional e serviço junto com os ids planos", async () => {
+      const result = await recurringService.create(dto, COMPANY_ID);
+
+      expect(result).toMatchObject({
+        clientId: "client-1",
+        professionalId: "professional-1",
+        serviceId: "service-1",
+        clientPlanId: null,
+        client: { id: "client-1", name: "Ana Paula", photoUrl: null },
+        professional: { id: "professional-1", name: "Carla", photoUrl: null },
+        service: {
+          id: "service-1",
+          name: "Pilates",
+          color: "#FF8800",
+          duration: 60,
+        },
+      });
+    });
+
+    it("deve pedir as relações no create, no detalhe, na listagem e na edição", async () => {
+      prismaMock.recurringAppointment.findMany.mockResolvedValue([stored]);
+      prismaMock.recurringAppointment.count.mockResolvedValue(1);
+
+      await recurringService.create(dto, COMPANY_ID);
+      await recurringService.findOne("recurring-1", COMPANY_ID);
+      await recurringService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
+      await recurringService.update(
+        "recurring-1",
+        { note: "ajuste" },
+        COMPANY_ID,
+      );
+
+      for (const call of [
+        prismaMock.recurringAppointment.create,
+        prismaMock.recurringAppointment.findFirst,
+        prismaMock.recurringAppointment.findMany,
+        prismaMock.recurringAppointment.update,
+      ]) {
+        expect(call).toHaveBeenCalledWith(
+          expect.objectContaining({ include: expectedInclude }),
+        );
+      }
+    });
+
+    it("deve informar o clientPlanId quando a recorrência é de um pacote", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...stored,
+        clientPlanId: "client-plan-1",
+      });
+
+      await expect(
+        recurringService.findOne("recurring-1", COMPANY_ID),
+      ).resolves.toMatchObject({ clientPlanId: "client-plan-1" });
+    });
+  });
+
+  describe("mensagem de conflito com a data", () => {
+    it("deve repassar o fuso da empresa para a mensagem de conflito da criação", async () => {
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+
+      await recurringService.create(dto, COMPANY_ID);
+
+      // (tx, dados, ocorrências, fuso, observação)
+      expect(appointmentServiceMock.createFromRecurrence).toHaveBeenCalledWith(
+        prismaMock,
+        expect.anything(),
+        expect.any(Array),
+        "America/Sao_Paulo",
+        null,
+      );
+    });
+
+    it("deve manter o erro de conflito do AppointmentService sem alterá-lo", async () => {
+      appointmentServiceMock.createFromRecurrence.mockRejectedValueOnce(
+        new ConflictException(
+          "Conflito em 06/10/2026 às 11:00: O profissional já possui um agendamento neste horário",
+        ),
+      );
+
+      await expect(recurringService.create(dto, COMPANY_ID)).rejects.toThrow(
+        "Conflito em 06/10/2026 às 11:00:",
+      );
+      expect(
+        paymentServiceMock.createPendingForAppointments,
+      ).not.toHaveBeenCalled();
     });
   });
 

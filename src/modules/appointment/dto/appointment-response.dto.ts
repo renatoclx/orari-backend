@@ -21,6 +21,12 @@ export class AppointmentServiceDto {
   duration!: number;
 }
 
+/** Recorrência de origem: `clientPlanId` preenchido quando ela é de um pacote. */
+export class AppointmentOriginDto {
+  id!: string;
+  clientPlanId!: string | null;
+}
+
 export class AppointmentResponseDto {
   id!: string;
   companyId!: string;
@@ -43,6 +49,8 @@ export class AppointmentResponseDto {
   professional!: AppointmentPersonDto;
   /** Mesmo que o serviço tenha sido excluído depois, o nome continua aqui. */
   service!: AppointmentServiceDto;
+  /** Nulo no agendamento avulso. */
+  recurringAppointment!: AppointmentOriginDto | null;
 }
 
 export class AppointmentPageDto {
