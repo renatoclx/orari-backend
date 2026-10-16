@@ -82,6 +82,8 @@ export class RecurringAppointmentController {
   }
 
   // Remanejamento: remarca um agendamento da recorrência dentro do período dela.
+  // Antes de iniciar (SCHEDULED ou CONFIRMED); em sessão de pacote, também após
+  // falta (NO_SHOW), que volta a SCHEDULED.
   @Patch(":id/appointments/:appointmentId/reschedule")
   rescheduleAppointment(
     @Param("id", ParseUUIDPipe) id: string,

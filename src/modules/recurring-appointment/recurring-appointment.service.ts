@@ -361,6 +361,8 @@ export class RecurringAppointmentService {
           tx,
           appointment,
           startAt,
+          // Só o pacote tem reposição de sessão em que o cliente não compareceu.
+          { allowNoShow: Boolean(recurring.clientPlanId) },
         );
       await this.paymentService.moveDueDate(
         tx,

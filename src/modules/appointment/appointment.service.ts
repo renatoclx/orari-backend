@@ -327,8 +327,19 @@ export class AppointmentService {
     db: PrismaClientLike,
     appointment: Appointment,
     startAt: Date,
+    { allowNoShow = false }: { allowNoShow?: boolean } = {},
   ): Promise<Appointment> {
-    this.ensureIsUpcoming(appointment, "remanejado");
+    /*
+     * Reposição de pacote: quando o cliente não compareceu (NO_SHOW), a sessão
+     * já passou e pode ganhar uma nova data, e volta a SCHEDULED. Só quem chama
+     * autoriza (sessões de pacote); nos demais casos o remanejamento é só antes
+     * de iniciar.
+     */
+    const isReplacement =
+      allowNoShow && appointment.status === AppointmentStatus.NO_SHOW;
+    if (!isReplacement) {
+      this.ensureIsUpcoming(appointment, "remanejado");
+    }
     this.ensureIsNotInThePast(startAt);
 
     const { companyId, clientId, professionalId } = appointment;
@@ -351,7 +362,13 @@ export class AppointmentService {
 
     return db.appointment.update({
       where: { id: appointment.id },
-      data: { startAt, endAt, updatedAt: new Date() },
+      data: {
+        startAt,
+        endAt,
+        // Sem status no data, o Prisma mantém o atual (o remanejamento comum não o muda).
+        status: isReplacement ? AppointmentStatus.SCHEDULED : undefined,
+        updatedAt: new Date(),
+      },
     });
   }
 

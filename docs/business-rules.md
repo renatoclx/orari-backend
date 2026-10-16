@@ -217,6 +217,7 @@
 - Cada serviço do plano tem seus próprios dias, horários e profissional, informados na contratação. A contratação informa exatamente os serviços do plano, nem mais nem menos.
 - Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes, exceto o limite de 60 dias.
 - Os agendamentos de um plano podem ser remanejados dentro do período da contratação, e um agendamento pode ser cancelado individualmente; a sessão cancelada não é reposta.
+- Reposição por falta: quando o cliente não comparece a uma sessão do plano e a empresa a marca como `NO_SHOW`, a sessão pode ser remanejada para uma nova data dentro do período da contratação, desde que haja horário disponível (funcionamento da empresa, sem conflito). Ela volta a `SCHEDULED` e a quantidade de sessões do plano se mantém; o registro da falta deixa de existir, porque é a mesma sessão que muda de data. Só sessões `NO_SHOW` entram: concluídas e em andamento continuam não podendo ser remanejadas. A regra vale só para pacotes; recorrências avulsas seguem remanejando apenas antes de iniciar.
 - A recorrência de um serviço do plano não é encerrada isoladamente: o encerramento acontece pelo cancelamento da contratação.
 
 ### Contratação
@@ -290,4 +291,4 @@
 - IN_PROGRESS - Quando o agendamento começa a ser válido através do dia e horário agendado.
 - COMPLETED - Quando o atendimento é encerrado, baseado no horário final do agendamento.
 - CANCELLED - Quando o agendamento é encerrado manualmente pelo usuário.
-- NO_SHOW - Será implementado futuramente.
+- NO_SHOW - Quando o cliente não compareceu. É marcado manualmente pela empresa (não há automação). Em sessão de pacote, permite a reposição da sessão (ver Planos); nos demais agendamentos não tem regra própria por enquanto.

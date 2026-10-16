@@ -539,6 +539,79 @@ describe("AppointmentService", () => {
       },
     );
 
+    describe("reposição de pacote após falta (NO_SHOW)", () => {
+      const noShow = {
+        ...appointment,
+        recurringAppointmentId: "recurring-1",
+        status: "NO_SHOW",
+        startAt: new Date(Date.now() - 86_400_000),
+      };
+      const replace = (appt: object = noShow, allowNoShow = true) =>
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          appt as never,
+          newStartAt,
+          { allowNoShow },
+        );
+
+      it("deve remanejar a sessão com falta para a nova data e voltá-la a SCHEDULED", async () => {
+        await replace();
+
+        expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+          where: { id: "appointment-1" },
+          data: {
+            startAt: newStartAt,
+            endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+            status: "SCHEDULED",
+            updatedAt: anyDate,
+          },
+        });
+      });
+
+      it("deve manter as validações da nova data: futura, funcionamento e conflito", async () => {
+        await expect(
+          appointmentService.rescheduleFromRecurrence(
+            prismaMock as never,
+            noShow as never,
+            new Date(Date.now() - 60_000),
+            { allowNoShow: true },
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+        });
+        await expect(replace()).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      });
+
+      it("não deve valer sem a autorização do pacote (recorrência avulsa)", async () => {
+        await expect(replace(noShow, false)).rejects.toThrow(
+          "Agendamento com status NO_SHOW não pode ser remanejado",
+        );
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      });
+
+      it.each(["COMPLETED", "IN_PROGRESS", "CANCELLED"])(
+        "mesmo no pacote, continua recusando a sessão %s",
+        async (status) => {
+          await expect(replace({ ...noShow, status })).rejects.toBeInstanceOf(
+            BadRequestException,
+          );
+          expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it("remanejar antes de iniciar não muda o status, no pacote ou fora dele", async () => {
+        await replace({ ...appointment, status: "CONFIRMED" });
+
+        const { data } = prismaMock.appointment.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        };
+        expect(data.status).toBeUndefined();
+      });
+    });
+
     it("deve aceitar agendamento CONFIRMED", async () => {
       await expect(
         appointmentService.rescheduleFromRecurrence(
