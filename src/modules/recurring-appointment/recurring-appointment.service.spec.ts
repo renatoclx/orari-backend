@@ -489,13 +489,31 @@ describe("RecurringAppointmentService", () => {
 
       expect(
         appointmentServiceMock.rescheduleFromRecurrence,
-      ).toHaveBeenCalledWith(prismaMock, generated, startAt);
+      ).toHaveBeenCalledWith(prismaMock, generated, startAt, {
+        allowNoShow: false,
+      });
       expect(paymentServiceMock.moveDueDate).toHaveBeenCalledWith(
         prismaMock,
         "appointment-1",
         startAt,
         "UTC",
       );
+    });
+
+    it("sessão de pacote: autoriza a reposição após falta (NO_SHOW)", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...stored,
+        clientPlanId: "client-plan-1",
+      });
+      const startAt = new Date("2026-10-08T10:00:00.000Z");
+
+      await reschedule(startAt.toISOString());
+
+      expect(
+        appointmentServiceMock.rescheduleFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, generated, startAt, {
+        allowNoShow: true,
+      });
     });
 
     it("deve aceitar o último dia do período", async () => {
