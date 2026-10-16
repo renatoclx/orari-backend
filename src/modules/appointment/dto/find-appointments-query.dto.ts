@@ -16,6 +16,11 @@ export class FindAppointmentsQueryDto extends PaginationQueryDto {
   @IsUUID()
   clientId?: string;
 
+  /** Sessões de uma recorrência (ou de um pacote). Sem o filtro, nada muda. */
+  @IsOptional()
+  @IsUUID()
+  recurringAppointmentId?: string;
+
   /**
    * Início do período, incluído (from <= startAt < to). É um instante ISO 8601
    * em UTC: para o dia 15/10 em São Paulo, use 2026-10-15T03:00:00.000Z. Uma data

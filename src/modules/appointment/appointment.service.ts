@@ -11,6 +11,7 @@ import {
   PeopleType,
 } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { toZonedParts } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { PeopleService } from "../people/people.service";
@@ -29,6 +30,8 @@ const withRelations = {
   client: { select: { id: true, name: true, photoUrl: true } },
   professional: { select: { id: true, name: true, photoUrl: true } },
   service: { select: { id: true, name: true, color: true, duration: true } },
+  // Origem: diz se o agendamento veio de uma recorrência e se ela é de um pacote.
+  recurringAppointment: { select: { id: true, clientPlanId: true } },
 } satisfies Prisma.AppointmentInclude;
 
 export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
@@ -150,6 +153,7 @@ export class AppointmentService {
       status,
       professionalId,
       clientId,
+      recurringAppointmentId,
       from,
       to,
     }: FindAppointmentsQueryDto,
@@ -160,6 +164,7 @@ export class AppointmentService {
       status,
       professionalId,
       clientId,
+      recurringAppointmentId,
       startAt: from || to ? { gte: from, lt: to } : undefined,
     };
 
@@ -605,7 +610,6 @@ export class AppointmentService {
     },
     companyId: string,
     ignoreId?: string, // recebe o id de um agendamento, onde ele ignora o id na consulta
-    occurrenceLabel?: string, // monta a mensagem de erro
   ) {
     const conflict = await db.appointment.findFirst({
       where: {
@@ -624,9 +628,7 @@ export class AppointmentService {
         conflict.professionalId === professionalId ? "profissional" : "cliente";
 
       throw new ConflictException(
-        occurrenceLabel
-          ? `O ${who} já possui um agendamento em ${occurrenceLabel}`
-          : `O ${who} já possui um agendamento neste horário`,
+        `O ${who} já possui um agendamento neste horário`,
       );
     }
   }
@@ -644,21 +646,24 @@ export class AppointmentService {
     db: PrismaClientLike,
     data: RecurrenceAppointmentData,
     occurrences: AppointmentOccurrence[],
+    timeZone: string,
     note?: string | null,
   ): Promise<Pick<Appointment, "id" | "startAt">[]> {
     for (const { startAt, endAt } of occurrences) {
-      await this.businessHourService.ensureWithinBusinessHours(
-        data.companyId,
-        startAt,
-        endAt,
-      );
-      await this.ensureSlotIsFree(
-        db,
-        { ...data, startAt, endAt }, // Pega tudo que existe em data e adiciona startAt e endAt
-        data.companyId,
-        undefined,
-        startAt.toISOString(),
-      );
+      try {
+        await this.businessHourService.ensureWithinBusinessHours(
+          data.companyId,
+          startAt,
+          endAt,
+        );
+        await this.ensureSlotIsFree(
+          db,
+          { ...data, startAt, endAt }, // Pega tudo que existe em data e adiciona startAt e endAt
+          data.companyId,
+        );
+      } catch (error) {
+        throw this.withOccurrence(error, startAt, timeZone);
+      }
     }
 
     // Devolve id e início de cada agendamento: a recorrência precisa deles
@@ -671,6 +676,29 @@ export class AppointmentService {
       })),
       select: { id: true, startAt: true },
     });
+  }
+
+  /**
+   * A criação da recorrência é tudo ou nada, então o erro precisa dizer qual
+   * ocorrência o causou. Mantém o tipo do erro (409 de conflito, 400 de horário
+   * de funcionamento) e só acrescenta a data e a hora no fuso da empresa.
+   */
+  private withOccurrence(error: unknown, startAt: Date, timeZone: string) {
+    const { day, month, year, hours, minutes } = toZonedParts(
+      startAt,
+      timeZone,
+    );
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const when = `${pad(day)}/${pad(month)}/${year} às ${pad(hours)}:${pad(minutes)}`;
+
+    if (error instanceof ConflictException) {
+      return new ConflictException(`Conflito em ${when}: ${error.message}`);
+    }
+    if (error instanceof BadRequestException) {
+      return new BadRequestException(`Conflito em ${when}: ${error.message}`);
+    }
+
+    return error;
   }
 
   /**

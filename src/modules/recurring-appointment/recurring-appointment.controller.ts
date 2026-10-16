@@ -8,12 +8,22 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
+import {
+  RecurringAppointmentPageDto,
+  RecurringAppointmentResponseDto,
+} from "./dto/recurring-appointment-response.dto";
 import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 import { RecurringAppointmentService } from "./recurring-appointment.service";
@@ -28,6 +38,16 @@ export class RecurringAppointmentController {
   ) {}
 
   @Post()
+  @ApiOperation({
+    summary: "Cria a recorrência e gera os agendamentos do período",
+    description:
+      "Tudo ou nada: se uma ocorrência conflitar, nada é criado e o erro " +
+      "informa a data e o horário (no fuso da empresa) que causaram o " +
+      'problema, ex.: "Conflito em 28/10/2026 às 09:00: O profissional já ' +
+      'possui um agendamento neste horário" (409; 400 se for fora do ' +
+      "horário de funcionamento).",
+  })
+  @ApiCreatedResponse({ type: RecurringAppointmentResponseDto })
   create(
     @Body() dto: CreateRecurringAppointmentDto,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -36,6 +56,7 @@ export class RecurringAppointmentController {
   }
 
   @Get()
+  @ApiOkResponse({ type: RecurringAppointmentPageDto })
   findAll(
     @Query() query: FindRecurringAppointmentsQueryDto,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -47,6 +68,7 @@ export class RecurringAppointmentController {
   }
 
   @Get(":id")
+  @ApiOkResponse({ type: RecurringAppointmentResponseDto })
   findOne(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -55,6 +77,7 @@ export class RecurringAppointmentController {
   }
 
   @Patch(":id")
+  @ApiOkResponse({ type: RecurringAppointmentResponseDto })
   update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateRecurringAppointmentDto,

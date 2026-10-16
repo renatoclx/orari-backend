@@ -20,6 +20,7 @@ const relations = {
   client: { select: { id: true, name: true, photoUrl: true } },
   professional: { select: { id: true, name: true, photoUrl: true } },
   service: { select: { id: true, name: true, color: true, duration: true } },
+  recurringAppointment: { select: { id: true, clientPlanId: true } },
 };
 
 describe("AppointmentService", () => {
@@ -341,6 +342,7 @@ describe("AppointmentService", () => {
           serviceId: "service-1",
         },
         [{ startAt, endAt }],
+        "UTC",
       );
 
       expect(
@@ -406,6 +408,7 @@ describe("AppointmentService", () => {
         prismaMock as never,
         recurrenceData,
         occurrences,
+        "UTC",
         "sessão semanal",
       );
 
@@ -424,6 +427,77 @@ describe("AppointmentService", () => {
       });
     });
 
+    it("deve informar a data e o horário no fuso da empresa, não em UTC", async () => {
+      // 14:00 UTC é 11:00 em São Paulo (UTC-3).
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        clientId: "client-1",
+      });
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "America/Sao_Paulo",
+        ),
+      ).rejects.toThrow(
+        "Conflito em 06/10/2026 às 11:00: O cliente já possui um agendamento neste horário",
+      );
+    });
+
+    it("deve apontar a data da ocorrência que conflitou, não a da primeira", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ professionalId: "professional-1" });
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toThrow("Conflito em 13/10/2026 às 14:00:");
+      expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
+    });
+
+    it("horário fora do funcionamento também informa a data e mantém o 400", async () => {
+      businessHourServiceMock.ensureWithinBusinessHours.mockRejectedValueOnce(
+        new BadRequestException(
+          "O horário está fora do funcionamento da empresa",
+        ),
+      );
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toSatisfy(
+        (error: unknown) =>
+          error instanceof BadRequestException &&
+          error.message ===
+            "Conflito em 06/10/2026 às 14:00: O horário está fora do funcionamento da empresa",
+      );
+    });
+
+    it("outros erros seguem sem o prefixo de data", async () => {
+      prismaMock.appointment.findFirst.mockRejectedValueOnce(
+        new Error("banco"),
+      );
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toThrow(/^banco$/);
+    });
+
     it("deve abortar sem criar nada quando uma ocorrência conflita", async () => {
       prismaMock.appointment.findFirst.mockResolvedValueOnce({
         professionalId: "professional-1",
@@ -434,11 +508,13 @@ describe("AppointmentService", () => {
           prismaMock as never,
           recurrenceData,
           occurrences,
+          "UTC",
         ),
       ).rejects.toSatisfy(
         (error: unknown) =>
           error instanceof ConflictException &&
-          error.message.includes("2026-10-06T14:00:00.000Z"),
+          error.message ===
+            "Conflito em 06/10/2026 às 14:00: O profissional já possui um agendamento neste horário",
       );
       expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
     });
@@ -1056,6 +1132,23 @@ describe("AppointmentService", () => {
       });
     });
 
+    it("deve filtrar as sessões de uma recorrência, mantendo o escopo da empresa", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+      prismaMock.appointment.count.mockResolvedValue(0);
+
+      await appointmentService.findAll(
+        { page: 1, limit: 100, recurringAppointmentId: "recurring-1" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          companyId: COMPANY_ID,
+          recurringAppointmentId: "recurring-1",
+        }) as unknown,
+      });
+    });
+
     it("deve incluir cliente, profissional e serviço, ordenando por início e id", async () => {
       prismaMock.appointment.findMany.mockResolvedValue([]);
       prismaMock.appointment.count.mockResolvedValue(0);
@@ -1090,6 +1183,10 @@ describe("AppointmentService", () => {
         "name",
         "color",
         "duration",
+      ]);
+      expect(fields(relations.recurringAppointment.select)).toEqual([
+        "id",
+        "clientPlanId",
       ]);
     });
   });
