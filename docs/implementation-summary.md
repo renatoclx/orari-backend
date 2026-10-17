@@ -44,6 +44,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | States | `GET /states`, `GET /states/:id` | Autenticado |
 | Cities | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id` | Autenticado |
 | Companies | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id` | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
+| Companies (a própria empresa) | `PATCH /me` (nome fantasia), `POST`/`DELETE /me/logo` | ADMIN e SUPER_ADMIN, na empresa do token |
 | Users | `POST`, `GET` (`?companyId`), `GET /:id`, `PATCH /:id`, `PATCH /:id/password`, `DELETE /:id` | SUPER_ADMIN (qualquer empresa ativa) e ADMIN (própria empresa) |
 | People | CRUD + `GET` (`?name`, `?document`, `?type`; inclui inativas), `PATCH /:id/restore`, `POST`/`DELETE /:id/photo` | Qualquer tipo, só na própria empresa |
 | Contacts | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
@@ -262,6 +263,17 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Sessões de uma recorrência:** filtro `recurringAppointmentId` em `GET /appointments`, que reaproveita a ordenação, a paginação e os dados relacionados. A empresa continua no `where`: um id de outra empresa devolve lista vazia.
 - **Conflito com data e horário:** o `createFromRecurrence` envolve a validação de cada ocorrência e prefixa o erro com `Conflito em dd/MM/aaaa às HH:mm:`, no fuso da empresa (`withOccurrence`). Mantém o tipo do erro (409 de conflito, 400 de horário de funcionamento); outros erros passam sem alteração. O parâmetro `occurrenceLabel` do `ensureSlotIsFree`, que citava a data em UTC no formato ISO, foi removido. O fuso passa a ser parâmetro do `createFromRecurrence` (antes da observação). Vale também para a contratação de plano.
 - **Dry-run:** avaliado e adiado. Viável (rota de preview com a mesma validação, coletando todos os conflitos), custo de uma etapa pequena; vale se o front sentir falta com recorrências longas.
+
+### 2.28 Configurações da empresa (pedido do frontend)
+
+- **`PATCH /companies/me`** (ADMIN e SUPER_ADMIN): altera só o `fantasyName` da empresa do token (`UpdateOwnCompanyDto`; qualquer outro campo é recusado com 400). Espaços nas pontas são cortados; texto vazio, só espaços ou `null` removem o nome fantasia (o `/auth/me` volta a mostrar a razão social); até 100 caracteres; corpo `{}` responde 200 sem alterar nada. Os demais dados cadastrais seguem no `PATCH /companies/:id` do SUPER_ADMIN, sem mudança. O USER recebe 403.
+- **`POST /companies/me/logo`** (multipart, campo `logo`) e **`DELETE /companies/me/logo`** (204): JPEG ou PNG, até 2 MB (acima disso, 413), formato conferido pelo conteúdo, servida em `/uploads/companies/<arquivo>`; `logoUrl` guarda o caminho relativo. Trocar ou remover apaga o arquivo anterior depois de o banco apontar para o novo, e só se ele estiver na pasta das logos (`removeStoredLogo`): uma URL externa ou o caminho de outra pasta, gravados pelo SUPER_ADMIN, nunca são apagados. O envio repete, de propósito, a lógica da foto de pessoa, sem extrair um helper compartilhado.
+- **Rotas `me` antes das `:id` no controller:** o id é validado como UUID, e `me` cairia nele e responderia 400.
+- **Leitura da própria empresa:** `GET /companies/:id` já permitia ao ADMIN e ao USER ler a própria empresa (outra empresa responde 404), então não foi criado `GET /companies/me`.
+- **`/auth/me` sem mudança:** lê `fantasyName` e `logoUrl` do banco a cada chamada e reflete as duas alterações.
+- **Seed:** `seed.ts` e `seed-demo.ts` não têm `logoUrl`; a URL de exemplo existia só na linha da Empresa Teste no banco local.
+- Para um SUPER_ADMIN, "a própria empresa" é a empresa da plataforma.\n
+
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)

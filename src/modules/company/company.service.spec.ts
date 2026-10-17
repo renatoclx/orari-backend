@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -7,6 +8,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import {
   adminUser,
   COMPANY_ID,
@@ -41,6 +43,8 @@ describe("CompanyService", () => {
     },
   };
 
+  const storageMock = { save: vi.fn(), remove: vi.fn() };
+
   const dto: CreateCompanyDto = {
     corporateReason: "Orari LTDA",
     cnpj: "11222333000181",
@@ -56,6 +60,7 @@ describe("CompanyService", () => {
       providers: [
         CompanyService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: LocalFileStorage, useValue: storageMock },
       ],
     }).compile();
 
@@ -246,6 +251,152 @@ describe("CompanyService", () => {
           superAdminUser,
         ),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe("a própria empresa (nome fantasia)", () => {
+    beforeEach(() => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        ...company,
+        fantasyName: "Bem Estar",
+      });
+      prismaMock.company.update.mockResolvedValue(company);
+    });
+
+    it("deve alterar só o nome fantasia da empresa do token", async () => {
+      await companyService.updateOwn(COMPANY_ID, { fantasyName: "Novo Nome" });
+
+      expect(prismaMock.company.update).toHaveBeenCalledWith({
+        where: { id: COMPANY_ID },
+        data: { fantasyName: "Novo Nome", updatedAt: anyDate },
+      });
+    });
+
+    it("null remove o nome fantasia", async () => {
+      await companyService.updateOwn(COMPANY_ID, { fantasyName: null });
+
+      expect(prismaMock.company.update).toHaveBeenCalledWith({
+        where: { id: COMPANY_ID },
+        data: { fantasyName: null, updatedAt: anyDate },
+      });
+    });
+
+    it("sem o campo, devolve a empresa sem gravar nada", async () => {
+      const result = await companyService.updateOwn(COMPANY_ID, {});
+
+      expect(result).toMatchObject({ id: COMPANY_ID });
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar NotFoundException quando a empresa do token não existe", async () => {
+      prismaMock.company.findUnique.mockResolvedValue(null);
+
+      await expect(
+        companyService.updateOwn(COMPANY_ID, { fantasyName: "X" }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("logo da própria empresa", () => {
+    // Assinaturas mínimas de cada formato (os primeiros bytes do arquivo).
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const gif = Buffer.from("GIF89a");
+
+    beforeEach(() => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        ...company,
+        logoUrl: null,
+      });
+      storageMock.save.mockResolvedValue("/uploads/companies/nova.jpg");
+      prismaMock.company.update.mockResolvedValue({
+        ...company,
+        logoUrl: "/uploads/companies/nova.jpg",
+      });
+    });
+
+    it("deve gravar a logo na pasta das empresas e preencher o logoUrl", async () => {
+      const result = await companyService.updateLogo(COMPANY_ID, jpeg);
+
+      expect(storageMock.save).toHaveBeenCalledWith("companies", jpeg, "jpg");
+      expect(prismaMock.company.update).toHaveBeenCalledWith({
+        where: { id: COMPANY_ID },
+        data: { logoUrl: "/uploads/companies/nova.jpg", updatedAt: anyDate },
+      });
+      expect(result.logoUrl).toBe("/uploads/companies/nova.jpg");
+      expect(storageMock.remove).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar PNG com a extensão correta", async () => {
+      await companyService.updateLogo(COMPANY_ID, png);
+
+      expect(storageMock.save).toHaveBeenCalledWith("companies", png, "png");
+    });
+
+    it("deve recusar formato que não é JPEG nem PNG, sem gravar nada", async () => {
+      await expect(
+        companyService.updateLogo(COMPANY_ID, gif),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(storageMock.save).not.toHaveBeenCalled();
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+    });
+
+    it("deve apagar a logo anterior só depois de o banco apontar para a nova", async () => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        ...company,
+        logoUrl: "/uploads/companies/antiga.png",
+      });
+
+      await companyService.updateLogo(COMPANY_ID, jpeg);
+
+      expect(storageMock.remove).toHaveBeenCalledWith(
+        "/uploads/companies/antiga.png",
+      );
+      expect(
+        prismaMock.company.update.mock.invocationCallOrder[0],
+      ).toBeLessThan(storageMock.remove.mock.invocationCallOrder[0]);
+    });
+
+    it.each([
+      ["URL externa", "https://example.com/logo.png"],
+      ["foto de uma pessoa", "/uploads/people/foto.jpg"],
+    ])(
+      "não deve apagar do disco um logoUrl que é %s",
+      async (_nome, logoUrl) => {
+        prismaMock.company.findUnique.mockResolvedValue({
+          ...company,
+          logoUrl,
+        });
+
+        await companyService.updateLogo(COMPANY_ID, jpeg);
+        await companyService.removeLogo(COMPANY_ID);
+
+        expect(storageMock.remove).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve remover a logo: limpa o logoUrl e apaga o arquivo", async () => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        ...company,
+        logoUrl: "/uploads/companies/antiga.png",
+      });
+
+      await companyService.removeLogo(COMPANY_ID);
+
+      expect(prismaMock.company.update).toHaveBeenCalledWith({
+        where: { id: COMPANY_ID },
+        data: { logoUrl: null, updatedAt: anyDate },
+      });
+      expect(storageMock.remove).toHaveBeenCalledWith(
+        "/uploads/companies/antiga.png",
+      );
+    });
+
+    it("não deve fazer nada ao remover quando a empresa não tem logo", async () => {
+      await companyService.removeLogo(COMPANY_ID);
+
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+      expect(storageMock.remove).not.toHaveBeenCalled();
     });
   });
 });
