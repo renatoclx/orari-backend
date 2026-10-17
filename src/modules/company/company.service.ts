@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,12 +11,19 @@ import {
   resolveCompanyScope,
 } from "../../common/authorization/company-scope";
 import { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
+import { detectImageExtension } from "../../common/storage/image-type";
+import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateCompanyDto } from "./dto/create-company.dto";
 import { FindCompaniesQueryDto } from "./dto/find-companies-query.dto";
 import { UpdateCompanyDto } from "./dto/update-company.dto";
+import { UpdateOwnCompanyDto } from "./dto/update-own-company.dto";
+
+// Pasta das logos dentro do armazenamento de arquivos (servida em /uploads/companies).
+const LOGO_FOLDER = "companies";
+const LOGO_PUBLIC_PREFIX = `/uploads/${LOGO_FOLDER}/`;
 
 /**
  * Empresas não são excluídas: são inativadas (ver docs/business-rules.md).
@@ -24,7 +32,10 @@ import { UpdateCompanyDto } from "./dto/update-company.dto";
  */
 @Injectable()
 export class CompanyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: LocalFileStorage,
+  ) {}
 
   async create(dto: CreateCompanyDto): Promise<Company> {
     try {
@@ -136,6 +147,74 @@ export class CompanyService {
       });
     } catch (error) {
       throw this.mapUniqueViolation(error);
+    }
+  }
+
+  /**
+   * O administrador altera a própria empresa, identificada pelo token (nunca
+   * pela URL): só o nome fantasia. Sem o campo, nada é alterado.
+   */
+  async updateOwn(
+    companyId: string,
+    dto: UpdateOwnCompanyDto,
+  ): Promise<Company> {
+    const company = await this.findById(companyId);
+    if (dto.fantasyName === undefined) {
+      return company;
+    }
+
+    return this.prisma.company.update({
+      where: { id: companyId },
+      data: { fantasyName: dto.fantasyName, updatedAt: new Date() },
+    });
+  }
+
+  /**
+   * Grava a logo da própria empresa e substitui a anterior. O formato é
+   * conferido pelo conteúdo (JPEG ou PNG); o tamanho já foi limitado no upload.
+   * O arquivo antigo só é apagado depois que o banco aponta para o novo.
+   */
+  async updateLogo(companyId: string, content: Buffer): Promise<Company> {
+    const company = await this.findById(companyId);
+
+    const extension = detectImageExtension(content);
+    if (!extension) {
+      throw new BadRequestException("A logo deve ser uma imagem JPEG ou PNG");
+    }
+
+    const logoUrl = await this.storage.save(LOGO_FOLDER, content, extension);
+    const updated = await this.prisma.company.update({
+      where: { id: companyId },
+      data: { logoUrl, updatedAt: new Date() },
+    });
+
+    await this.removeStoredLogo(company.logoUrl);
+
+    return updated;
+  }
+
+  // Remove a logo: limpa o caminho no banco e apaga o arquivo.
+  async removeLogo(companyId: string): Promise<void> {
+    const company = await this.findById(companyId);
+    if (!company.logoUrl) {
+      return;
+    }
+
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { logoUrl: null, updatedAt: new Date() },
+    });
+    await this.removeStoredLogo(company.logoUrl);
+  }
+
+  /**
+   * Só apaga arquivo que está na pasta das logos. O SUPER_ADMIN pode ter
+   * gravado no logoUrl uma URL externa, ou até o caminho da foto de uma pessoa:
+   * isso nunca deve ser apagado do disco por aqui.
+   */
+  private async removeStoredLogo(logoUrl: string | null): Promise<void> {
+    if (logoUrl?.startsWith(LOGO_PUBLIC_PREFIX)) {
+      await this.storage.remove(logoUrl);
     }
   }
 

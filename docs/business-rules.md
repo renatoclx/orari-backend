@@ -8,7 +8,9 @@
 
 ## Empresas
 
-- Apenas SUPER_ADMIN cadastra e edita empresas.
+- Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, CNPJ, data de fundação, subdomínio, fuso e status).
+- O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O USER não altera nada. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
+- A logo é opcional, em JPEG ou PNG, com até 2 MB; o formato é conferido pelo conteúdo do arquivo. É servida publicamente e o `logoUrl` guarda o caminho relativo. Enviar uma nova logo substitui a anterior, que é apagada; a logo também pode ser removida. Só se apaga do disco arquivo da pasta das logos: uma URL externa gravada no `logoUrl` pelo SUPER_ADMIN nunca é apagada.
 - ADMIN e USER consultam apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
 - Uma empresa é criada ativa, salvo indicação contrária.
 - Empresas não são excluídas: são inativadas.
