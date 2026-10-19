@@ -1132,6 +1132,27 @@ describe("AppointmentService", () => {
       });
     });
 
+    it.each([
+      [undefined, "asc"],
+      ["desc", "desc"],
+    ] as const)(
+      "com order=%s ordena pelo início em %s, desempatando pelo id",
+      async (order, direction) => {
+        prismaMock.appointment.findMany.mockResolvedValue([]);
+        prismaMock.appointment.count.mockResolvedValue(0);
+
+        await appointmentService.findAll(
+          { page: 1, limit: 10, order },
+          COMPANY_ID,
+        );
+
+        const [{ orderBy }] = prismaMock.appointment.findMany.mock.calls[0] as [
+          { orderBy: unknown },
+        ];
+        expect(orderBy).toEqual([{ startAt: direction }, { id: direction }]);
+      },
+    );
+
     it("deve filtrar as sessões de uma recorrência, mantendo o escopo da empresa", async () => {
       prismaMock.appointment.findMany.mockResolvedValue([]);
       prismaMock.appointment.count.mockResolvedValue(0);

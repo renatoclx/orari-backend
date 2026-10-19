@@ -154,6 +154,7 @@ export class AppointmentService {
       professionalId,
       clientId,
       recurringAppointmentId,
+      order,
       from,
       to,
     }: FindAppointmentsQueryDto,
@@ -172,10 +173,11 @@ export class AppointmentService {
       this.prisma.appointment.findMany({
         where,
         include: withRelations,
-        // A agenda é lida em ordem cronológica, e não por data de cadastro. O id
-        // desempata horários iguais: sem ele, a ordem entre eles pode mudar de
-        // uma página para a outra e repetir ou perder agendamentos.
-        orderBy: [{ startAt: "asc" }, { id: "asc" }],
+        // A agenda é lida em ordem cronológica, e não por data de cadastro; o
+        // histórico pode pedir a inversa (desc). O id desempata horários iguais,
+        // na mesma direção: sem ele, a ordem entre eles pode mudar de uma página
+        // para a outra e repetir ou perder agendamentos.
+        orderBy: [{ startAt: order ?? "asc" }, { id: order ?? "asc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
