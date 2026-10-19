@@ -289,6 +289,28 @@ describe("PeopleService", () => {
   });
 
   describe("findAll", () => {
+    it.each([
+      [true, null],
+      [false, { not: null }],
+    ])(
+      "com isActive=%s filtra deletedAt por %j",
+      async (isActive, deletedAt) => {
+        prismaMock.people.findMany.mockResolvedValue([]);
+        prismaMock.people.count.mockResolvedValue(0);
+
+        await peopleService.findAll(
+          { page: 1, limit: 10, isActive },
+          COMPANY_ID,
+        );
+
+        const [{ where }] = prismaMock.people.count.mock.calls[0] as [
+          { where: { companyId: string; deletedAt: unknown } },
+        ];
+        expect(where.companyId).toBe(COMPANY_ID);
+        expect(where.deletedAt).toEqual(deletedAt);
+      },
+    );
+
     it("deve combinar o escopo da empresa com os filtros", async () => {
       prismaMock.people.findMany.mockResolvedValue([
         { ...people, contacts: [principalContact] },
