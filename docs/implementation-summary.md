@@ -243,6 +243,13 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Sem sobreposição:** a checagem de conflito de cliente e profissional continua valendo no encaixe.
 - **Retrato do momento:** o valor não é recalculado se o horário de funcionamento mudar depois. Os jobs de status e de cobrança tratam o encaixe como qualquer avulso.
 
+### 2.25 Recorrência sem limite de duração
+
+- **Fim do limite de 60 dias** para a recorrência avulsa (pedido de cliente): a data final continua obrigatória e não pode vir antes da inicial, mas o prazo é livre (ex.: um ano); o controle fica com o front. Sem migração.
+- **Remanejamento:** continua limitado ao período da própria recorrência; recorrências antigas sem data final passam a ter só o limite inicial (antes, 60 dias a partir do início).
+- **Tempo de transação compartilhado:** `LONG_TRANSACTION_TIMEOUT_MS` (30 s) em `src/prisma/transaction-options.ts`, usado na criação da recorrência e na contratação de plano. O padrão global de 5 s foi mantido de propósito: uma transação ocupa uma conexão do pool, e um limite curto faz uma transação comum travada falhar cedo.
+- **Consequência:** a recorrência longa gera todos os agendamentos e pagamentos `PENDING` na criação (ver `technical-debt.md`).
+
 ### 2.26 Cancelamento só antes de iniciar
 
 - **`PATCH /appointments/:id` com `status: CANCELLED`** só passa para agendamento `SCHEDULED` ou `CONFIRMED` com `startAt` futuro (`AppointmentService.ensureCanBeCancelled`). O horário é conferido além do status por causa do intervalo de 5 minutos do job de status. Recusas (400): "Agendamento que já iniciou não pode ser cancelado" (em andamento, ou início agora ou no passado), "Agendamento concluído não pode ser cancelado", "Agendamento em que o cliente não compareceu não pode ser cancelado" e "O agendamento já está cancelado" (400, como o cancelamento de uma sessão pela recorrência e o da contratação).
@@ -272,7 +279,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Leitura da própria empresa:** `GET /companies/:id` já permitia ao ADMIN e ao USER ler a própria empresa (outra empresa responde 404), então não foi criado `GET /companies/me`.
 - **`/auth/me` sem mudança:** lê `fantasyName` e `logoUrl` do banco a cada chamada e reflete as duas alterações.
 - **Seed:** `seed.ts` e `seed-demo.ts` não têm `logoUrl`; a URL de exemplo existia só na linha da Empresa Teste no banco local.
-- Para um SUPER_ADMIN, "a própria empresa" é a empresa da plataforma.\n
+- Para um SUPER_ADMIN, "a própria empresa" é a empresa da plataforma.
 
 ---
 

@@ -14,6 +14,7 @@ import {
 } from "../../common/time/time-of-day";
 import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
+import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import {
   AppointmentOccurrence,
   AppointmentService,
@@ -79,16 +80,10 @@ interface ScheduleData {
   days: RecurringDayDto[];
 }
 
-// Período máximo de uma recorrência avulsa (ver docs/business-rules.md).
-export const MAX_RECURRENCE_DAYS = 60;
-
 // Resultado da baixa em lote dos pagamentos de uma recorrência.
 export interface SettlePaymentsResponse {
   settled: number;
 }
-
-// Um dia em milissegundos: usado para medir a distância entre duas datas puras.
-const DAY_IN_MS = 86_400_000;
 
 /**
  * Dias da recorrência e os dados relacionados que a tela desenha sem novas
@@ -150,33 +145,37 @@ export class RecurringAppointmentService {
     );
     // O valor de cada agendamento é o preço vigente do serviço.
     const price = this.ensureServiceHasPrice(service.price);
-    // Valida o período antes de gravar: em ordem e com até 60 dias.
+    // Valida o período antes de gravar: a data final não pode vir antes da inicial.
     this.ensurePeriodIsValid(dto.startDate, dto.endDate);
     this.ensureDaysAreValid(dto.days, service.duration);
 
     const timeZone = await this.companyService.getTimeZone(companyId);
 
     // Recorrência, agendamentos e pagamentos nascem juntos: se algum horário
-    // conflitar, nada é gravado.
-    const created = await this.prisma.$transaction(async (tx) => {
-      const { recurring, appointments } = await this.createSchedule(
-        tx,
-        { ...dto, companyId },
-        service.duration,
-        timeZone,
-      );
+    // conflitar, nada é gravado. Sem limite de período, uma recorrência longa
+    // gera centenas de agendamentos, por isso o tempo da transação é maior.
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        const { recurring, appointments } = await this.createSchedule(
+          tx,
+          { ...dto, companyId },
+          service.duration,
+          timeZone,
+        );
 
-      // Só a recorrência avulsa cobra por agendamento; a de plano é cobrada pela contratação.
-      await this.paymentService.createPendingForAppointments(
-        tx,
-        companyId,
-        appointments,
-        price,
-        timeZone,
-      );
+        // Só a recorrência avulsa cobra por agendamento; a de plano é cobrada pela contratação.
+        await this.paymentService.createPendingForAppointments(
+          tx,
+          companyId,
+          appointments,
+          price,
+          timeZone,
+        );
 
-      return recurring;
-    });
+        return recurring;
+      },
+      { timeout: LONG_TRANSACTION_TIMEOUT_MS },
+    );
 
     return this.toResponse(created);
   }
@@ -522,26 +521,16 @@ export class RecurringAppointmentService {
     return price;
   }
 
-  // O período vai da data inicial à final e não pode passar de MAX_RECURRENCE_DAYS.
+  // O período vai da data inicial à final, sem limite de duração: o front define o prazo.
   private ensurePeriodIsValid(startDate: Date, endDate: Date) {
     if (endDate < startDate) {
       throw new BadRequestException("endDate deve ser posterior a startDate");
-    }
-
-    const days = Math.round(
-      (endDate.getTime() - startDate.getTime()) / DAY_IN_MS,
-    );
-    if (days > MAX_RECURRENCE_DAYS) {
-      throw new BadRequestException(
-        `O período da recorrência não pode passar de ${MAX_RECURRENCE_DAYS} dias`,
-      );
     }
   }
 
   /**
    * A nova data, no calendário da empresa, precisa cair entre o início e o fim
-   * da recorrência. Recorrências antigas sem data final usam o limite de
-   * MAX_RECURRENCE_DAYS a partir do início.
+   * da recorrência. Recorrências antigas sem data final só têm o limite inicial.
    */
   private ensureWithinPeriod(
     startAt: Date,
@@ -552,13 +541,10 @@ export class RecurringAppointmentService {
     timeZone: string,
   ) {
     const day = toZonedParts(startAt, timeZone);
-    const lastDay =
-      endDate ??
-      new Date(startDate.getTime() + MAX_RECURRENCE_DAYS * DAY_IN_MS);
 
     const withinPeriod =
       this.isBeforeOrSameDay(this.toDateParts(startDate), day) &&
-      this.isBeforeOrSameDay(day, this.toDateParts(lastDay));
+      (!endDate || this.isBeforeOrSameDay(day, this.toDateParts(endDate)));
 
     if (!withinPeriod) {
       throw new BadRequestException(

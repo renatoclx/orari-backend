@@ -15,14 +15,17 @@ funcionamento (contagem, fuso e janelas do dia) e a agenda do cliente e do
 profissional. São cerca de 4 a 5 consultas por agendamento, todas dentro da
 transação de criação.
 
-**Impacto:** uma recorrência avulsa (até 60 dias) gera poucos agendamentos. Uma
-contratação de plano de 12 meses, com 2 serviços e 2 dias por semana, gera cerca
-de 200 agendamentos, ou seja, cerca de 1.000 consultas. Com o banco em outro
+**Impacto:** uma recorrência ou contratação de plano longa gera muitos
+agendamentos. Uma contratação de 12 meses, com 2 serviços e 2 dias por semana,
+gera cerca de 200 agendamentos, ou seja, cerca de 1.000 consultas; uma
+recorrência avulsa de um ano, 2 dias por semana, cerca de 104. Com o banco em outro
 servidor, a transação pode passar do tempo limite do Prisma (5 segundos por
 padrão).
 
-**Mitigação atual:** a transação da contratação de plano tem tempo limite maior
-(30 segundos). A recorrência avulsa não foi alterada.
+**Mitigação atual:** a criação da recorrência avulsa e a contratação de plano usam
+um tempo limite maior (30 segundos), definido em um só lugar
+(`src/prisma/transaction-options.ts`). As demais transações mantêm o padrão de 5
+segundos, que funciona como alarme para uma transação comum que trave.
 
 **Como resolver:** buscar uma vez o horário de funcionamento da empresa e os
 agendamentos do cliente e do profissional no período inteiro, e validar as

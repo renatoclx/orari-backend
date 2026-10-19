@@ -147,7 +147,8 @@
 - A recorrência precisa de ao menos um dia; cada dia tem dia da semana, horário inicial e final, e o fim deve ser posterior ao início.
 - Dois dias da mesma recorrência não podem se sobrepor no mesmo dia da semana.
 - A data final é obrigatória e não pode ser anterior à inicial.
-- O período entre a data inicial e a final não pode ultrapassar 60 dias. Esse limite vale para a criação de recorrências avulsas; contratações de plano seguem as regras de Planos.
+- Não há limite de duração entre a data inicial e a final (ex.: uma recorrência de um ano); o prazo é definido por quem cria a recorrência. A data final não pode ser anterior à inicial.
+- Todos os agendamentos e pagamentos do período são gerados na criação: uma recorrência longa gera muitos registros de uma vez.
 - Informar a lista de dias em uma edição substitui todos os dias anteriores.
 - Não há exclusão: a recorrência é desativada por `isActive`.
 - Cada dia precisa reservar ao menos a duração do serviço, que é o que define o fim dos agendamentos gerados.
@@ -221,7 +222,7 @@
 ### Serviços e horários
 
 - Cada serviço do plano tem seus próprios dias, horários e profissional, informados na contratação. A contratação informa exatamente os serviços do plano, nem mais nem menos.
-- Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes, exceto o limite de 60 dias.
+- Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes.
 - Os agendamentos de um plano podem ser remanejados dentro do período da contratação, e um agendamento pode ser cancelado individualmente; a sessão cancelada não é reposta.
 - Reposição por falta: quando o cliente não comparece a uma sessão do plano e a empresa a marca como `NO_SHOW`, a sessão pode ser remanejada para uma nova data dentro do período da contratação, desde que haja horário disponível (funcionamento da empresa, sem conflito). Ela volta a `SCHEDULED` e a quantidade de sessões do plano se mantém; o registro da falta deixa de existir, porque é a mesma sessão que muda de data. Só sessões `NO_SHOW` entram: concluídas e em andamento continuam não podendo ser remanejadas. A regra vale só para pacotes; recorrências avulsas seguem remanejando apenas antes de iniciar.
 - A recorrência de um serviço do plano não é encerrada isoladamente: o encerramento acontece pelo cancelamento da contratação.
