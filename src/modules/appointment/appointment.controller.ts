@@ -9,6 +9,7 @@ import {
   Query,
 } from "@nestjs/common";
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -71,6 +72,18 @@ export class AppointmentController {
 
   @Patch(":id")
   @ApiOkResponse({ type: AppointmentResponseDto })
+  @ApiBadRequestResponse({
+    description:
+      "Um agendamento concluído com pagamento (pendente ou pago) não aceita " +
+      'nenhuma alteração: "Agendamento concluído com pagamento não pode ser ' +
+      'alterado". Cancelar (status CANCELLED) só é permitido para agendamento ' +
+      "SCHEDULED ou CONFIRMED que ainda não " +
+      'iniciou. Fora disso: "Agendamento que já iniciou não pode ser ' +
+      'cancelado", "Agendamento concluído não pode ser cancelado", ' +
+      '"Agendamento em que o cliente não compareceu não pode ser cancelado" ' +
+      'ou "O agendamento já está cancelado". Ao cancelar, o pagamento ' +
+      "PENDING do agendamento também é cancelado.",
+  })
   update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateAppointmentDto,

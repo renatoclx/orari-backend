@@ -20,14 +20,18 @@ const relations = {
   client: { select: { id: true, name: true, photoUrl: true } },
   professional: { select: { id: true, name: true, photoUrl: true } },
   service: { select: { id: true, name: true, color: true, duration: true } },
+  recurringAppointment: { select: { id: true, clientPlanId: true } },
 };
 
 describe("AppointmentService", () => {
   let appointmentService: AppointmentService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Suporta as duas formas: lista de operações e transação interativa.
+    $transaction: vi.fn(
+      (arg: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+        typeof arg === "function" ? arg(prismaMock) : Promise.all(arg),
     ),
+    payment: { updateMany: vi.fn(), count: vi.fn() },
     appointment: {
       create: vi.fn(),
       createManyAndReturn: vi.fn(),
@@ -73,6 +77,8 @@ describe("AppointmentService", () => {
       id === "client-1" ? asClient : asProfessional,
     );
     serviceServiceMock.findActive.mockResolvedValue({ duration: 30 });
+    // Padrão: agendamento sem pagamento (nada o trava).
+    prismaMock.payment.count.mockResolvedValue(0);
     // Padrão: horário dentro do funcionamento (sem encaixe).
     businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(true);
     prismaMock.appointment.findFirst.mockResolvedValue(null);
@@ -336,6 +342,7 @@ describe("AppointmentService", () => {
           serviceId: "service-1",
         },
         [{ startAt, endAt }],
+        "UTC",
       );
 
       expect(
@@ -401,6 +408,7 @@ describe("AppointmentService", () => {
         prismaMock as never,
         recurrenceData,
         occurrences,
+        "UTC",
         "sessão semanal",
       );
 
@@ -419,6 +427,77 @@ describe("AppointmentService", () => {
       });
     });
 
+    it("deve informar a data e o horário no fuso da empresa, não em UTC", async () => {
+      // 14:00 UTC é 11:00 em São Paulo (UTC-3).
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        clientId: "client-1",
+      });
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "America/Sao_Paulo",
+        ),
+      ).rejects.toThrow(
+        "Conflito em 06/10/2026 às 11:00: O cliente já possui um agendamento neste horário",
+      );
+    });
+
+    it("deve apontar a data da ocorrência que conflitou, não a da primeira", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ professionalId: "professional-1" });
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toThrow("Conflito em 13/10/2026 às 14:00:");
+      expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
+    });
+
+    it("horário fora do funcionamento também informa a data e mantém o 400", async () => {
+      businessHourServiceMock.ensureWithinBusinessHours.mockRejectedValueOnce(
+        new BadRequestException(
+          "O horário está fora do funcionamento da empresa",
+        ),
+      );
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toSatisfy(
+        (error: unknown) =>
+          error instanceof BadRequestException &&
+          error.message ===
+            "Conflito em 06/10/2026 às 14:00: O horário está fora do funcionamento da empresa",
+      );
+    });
+
+    it("outros erros seguem sem o prefixo de data", async () => {
+      prismaMock.appointment.findFirst.mockRejectedValueOnce(
+        new Error("banco"),
+      );
+
+      await expect(
+        appointmentService.createFromRecurrence(
+          prismaMock as never,
+          recurrenceData,
+          occurrences,
+          "UTC",
+        ),
+      ).rejects.toThrow(/^banco$/);
+    });
+
     it("deve abortar sem criar nada quando uma ocorrência conflita", async () => {
       prismaMock.appointment.findFirst.mockResolvedValueOnce({
         professionalId: "professional-1",
@@ -429,16 +508,18 @@ describe("AppointmentService", () => {
           prismaMock as never,
           recurrenceData,
           occurrences,
+          "UTC",
         ),
       ).rejects.toSatisfy(
         (error: unknown) =>
           error instanceof ConflictException &&
-          error.message.includes("2026-10-06T14:00:00.000Z"),
+          error.message ===
+            "Conflito em 06/10/2026 às 14:00: O profissional já possui um agendamento neste horário",
       );
       expect(prismaMock.appointment.createManyAndReturn).not.toHaveBeenCalled();
     });
 
-    it("deve cancelar apenas os futuros ainda em SCHEDULED", async () => {
+    it("deve cancelar os futuros ainda em SCHEDULED ou CONFIRMED", async () => {
       prismaMock.appointment.updateMany.mockResolvedValue({ count: 3 });
       const from = new Date("2026-10-01T00:00:00.000Z");
 
@@ -452,7 +533,7 @@ describe("AppointmentService", () => {
       expect(prismaMock.appointment.updateMany).toHaveBeenCalledWith({
         where: {
           recurringAppointmentId: "recurring-1",
-          status: "SCHEDULED",
+          status: { in: ["SCHEDULED", "CONFIRMED"] },
           startAt: { gte: from },
         },
         data: { status: "CANCELLED", updatedAt: anyDate },
@@ -515,6 +596,98 @@ describe("AppointmentService", () => {
       },
     );
 
+    it.each(["SCHEDULED", "CONFIRMED"])(
+      "deve recusar remanejar %s cujo início já passou, mesmo antes de o job mudar o status",
+      async (status) => {
+        await expect(
+          appointmentService.rescheduleFromRecurrence(
+            prismaMock as never,
+            {
+              ...appointment,
+              recurringAppointmentId: "recurring-1",
+              status,
+              startAt: new Date(Date.now() - 60_000),
+            } as never,
+            newStartAt,
+          ),
+        ).rejects.toThrow("Agendamento que já iniciou não pode ser remanejado");
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      },
+    );
+
+    describe("reposição de pacote após falta (NO_SHOW)", () => {
+      const noShow = {
+        ...appointment,
+        recurringAppointmentId: "recurring-1",
+        status: "NO_SHOW",
+        startAt: new Date(Date.now() - 86_400_000),
+      };
+      const replace = (appt: object = noShow, allowNoShow = true) =>
+        appointmentService.rescheduleFromRecurrence(
+          prismaMock as never,
+          appt as never,
+          newStartAt,
+          { allowNoShow },
+        );
+
+      it("deve remanejar a sessão com falta para a nova data e voltá-la a SCHEDULED", async () => {
+        await replace();
+
+        expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+          where: { id: "appointment-1" },
+          data: {
+            startAt: newStartAt,
+            endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+            status: "SCHEDULED",
+            updatedAt: anyDate,
+          },
+        });
+      });
+
+      it("deve manter as validações da nova data: futura, funcionamento e conflito", async () => {
+        await expect(
+          appointmentService.rescheduleFromRecurrence(
+            prismaMock as never,
+            noShow as never,
+            new Date(Date.now() - 60_000),
+            { allowNoShow: true },
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+        });
+        await expect(replace()).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      });
+
+      it("não deve valer sem a autorização do pacote (recorrência avulsa)", async () => {
+        await expect(replace(noShow, false)).rejects.toThrow(
+          "Agendamento com status NO_SHOW não pode ser remanejado",
+        );
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      });
+
+      it.each(["COMPLETED", "IN_PROGRESS", "CANCELLED"])(
+        "mesmo no pacote, continua recusando a sessão %s",
+        async (status) => {
+          await expect(replace({ ...noShow, status })).rejects.toBeInstanceOf(
+            BadRequestException,
+          );
+          expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it("remanejar antes de iniciar não muda o status, no pacote ou fora dele", async () => {
+        await replace({ ...appointment, status: "CONFIRMED" });
+
+        const { data } = prismaMock.appointment.update.mock.calls[0][0] as {
+          data: Record<string, unknown>;
+        };
+        expect(data.status).toBeUndefined();
+      });
+    });
+
     it("deve aceitar agendamento CONFIRMED", async () => {
       await expect(
         appointmentService.rescheduleFromRecurrence(
@@ -564,6 +737,22 @@ describe("AppointmentService", () => {
       });
     });
 
+    it("deve recusar cancelar sessão cujo início já passou, mesmo ainda SCHEDULED", async () => {
+      // O job de status roda a cada 5 minutos: a sessão pode já ter começado.
+      await expect(
+        appointmentService.cancelFromRecurrence(
+          prismaMock as never,
+          {
+            ...appointment,
+            recurringAppointmentId: "recurring-1",
+            status: "SCHEDULED",
+            startAt: new Date(Date.now() - 60_000),
+          } as never,
+        ),
+      ).rejects.toThrow("Agendamento que já iniciou não pode ser cancelado");
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
     it("não deve cancelar agendamento já concluído", async () => {
       await expect(
         appointmentService.cancelFromRecurrence(
@@ -586,6 +775,288 @@ describe("AppointmentService", () => {
       );
 
       expect(prismaMock.appointment.update).toHaveBeenCalled();
+    });
+  });
+
+  describe("cancelamento (só antes de iniciar)", () => {
+    const future = new Date(Date.now() + 2 * 3_600_000);
+    const past = new Date(Date.now() - 60_000);
+    const cancel = (current: Record<string, unknown>, extra = {}) => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        ...appointment,
+        ...current,
+      });
+      return appointmentService.update(
+        "appointment-1",
+        { status: "CANCELLED", ...extra },
+        COMPANY_ID,
+      );
+    };
+
+    it.each(["SCHEDULED", "CONFIRMED"])(
+      "deve cancelar %s futuro e o pagamento PENDING dele, na mesma transação",
+      async (status) => {
+        await cancel({ status, startAt: future });
+
+        expect(prismaMock.$transaction).toHaveBeenCalledWith(
+          expect.any(Function),
+        );
+        expect(prismaMock.appointment.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: "CANCELLED" }) as unknown,
+          }),
+        );
+        // Só o PENDING: o PAID não muda (não há reembolso).
+        expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+          where: {
+            appointmentId: "appointment-1",
+            status: "PENDING",
+            deletedAt: null,
+          },
+          data: { status: "CANCELLED", updatedAt: anyDate },
+        });
+      },
+    );
+
+    it.each([
+      ["IN_PROGRESS", "Agendamento que já iniciou não pode ser cancelado"],
+      ["COMPLETED", "Agendamento concluído não pode ser cancelado"],
+      [
+        "NO_SHOW",
+        "Agendamento em que o cliente não compareceu não pode ser cancelado",
+      ],
+      ["CANCELLED", "O agendamento já está cancelado"],
+    ])(
+      "deve recusar com 400 o cancelamento de %s, sem alterar nada",
+      async (status, message) => {
+        const attempt = cancel({ status, startAt: future });
+
+        await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
+        await expect(cancel({ status, startAt: future })).rejects.toThrow(
+          message,
+        );
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+        expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["SCHEDULED", "CONFIRMED"])(
+      "deve recusar %s cujo início já passou, mesmo antes de o job mudar o status",
+      async (status) => {
+        await expect(cancel({ status, startAt: past })).rejects.toThrow(
+          "Agendamento que já iniciou não pode ser cancelado",
+        );
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve recusar o cancelamento exatamente no horário de início", async () => {
+      vi.useFakeTimers();
+      const now = new Date("2026-10-20T13:00:00.000Z");
+      vi.setSystemTime(now);
+      try {
+        await expect(cancel({ startAt: now })).rejects.toThrow(
+          "Agendamento que já iniciou não pode ser cancelado",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("deve aplicar a regra quando o cancelamento vem junto com outros campos", async () => {
+      // Um novo horário no mesmo PATCH não "desfaz" o início já ocorrido.
+      await expect(
+        cancel({ startAt: past }, { startAt: future, note: "remarcar" }),
+      ).rejects.toThrow("Agendamento que já iniciou não pode ser cancelado");
+
+      prismaMock.appointment.findFirst.mockResolvedValue(null);
+      await cancel({ startAt: future }, { note: "cliente desmarcou" });
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "CANCELLED",
+            note: "cliente desmarcou",
+          }) as unknown,
+        }),
+      );
+    });
+
+    it("deve continuar recusando o cancelamento de agendamento de recorrência pelo PATCH comum", async () => {
+      await expect(
+        cancel({ startAt: future, recurringAppointmentId: "recurring-1" }),
+      ).rejects.toThrow(
+        "Agendamento de recorrência é cancelado pelo cancelamento da recorrência",
+      );
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve permitir alterar a observação de um agendamento já iniciado", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce({
+          ...appointment,
+          status: "IN_PROGRESS",
+          startAt: past,
+        })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { note: "chegou atrasado" },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeUndefined();
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("concluído com pagamento não é mais alterado", () => {
+    const completed = {
+      ...appointment,
+      status: "COMPLETED",
+      startAt: new Date(Date.now() - 86_400_000),
+    };
+    const lockedMessage =
+      "Agendamento concluído com pagamento não pode ser alterado";
+
+    it.each([
+      ["observação", { note: "ajuste" }],
+      ["status", { status: "NO_SHOW" as const }],
+      ["serviço", { serviceId: "service-2" }],
+      ["cliente", { clientId: "client-2" }],
+      ["horário", { startAt: new Date(Date.now() + 86_400_000) }],
+    ])(
+      "deve recusar alterar %s com pagamento pendente ou pago",
+      async (_n, change) => {
+        prismaMock.appointment.findFirst.mockResolvedValue(completed);
+        prismaMock.payment.count.mockResolvedValue(1);
+
+        await expect(
+          appointmentService.update("appointment-1", change, COMPANY_ID),
+        ).rejects.toThrow(lockedMessage);
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve contar só o pagamento pendente ou pago e não excluído", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(completed);
+      prismaMock.payment.count.mockResolvedValue(1);
+
+      await expect(
+        appointmentService.update("appointment-1", { note: "x" }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.count).toHaveBeenCalledWith({
+        where: {
+          appointmentId: "appointment-1",
+          deletedAt: null,
+          status: { in: ["PENDING", "PAID"] },
+        },
+      });
+    });
+
+    it("deve liberar a edição quando o concluído não tem pagamento ativo", async () => {
+      // Pagamento excluído ou cancelado não conta: count devolve 0.
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(completed)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { note: "ajuste" },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeUndefined();
+      expect(prismaMock.appointment.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("não deve consultar pagamento quando o agendamento não está concluído", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(appointment)
+        .mockResolvedValueOnce(null);
+
+      await appointmentService.update(
+        "appointment-1",
+        { note: "ajuste" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.payment.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancelado é estado final", () => {
+    const cancelled = { ...appointment, status: "CANCELLED" };
+
+    it.each([
+      "SCHEDULED",
+      "CONFIRMED",
+      "IN_PROGRESS",
+      "COMPLETED",
+      "NO_SHOW",
+    ] as const)(
+      "deve recusar com 400 voltar um agendamento cancelado para %s",
+      async (status) => {
+        prismaMock.appointment.findFirst.mockResolvedValue(cancelled);
+
+        await expect(
+          appointmentService.update("appointment-1", { status }, COMPANY_ID),
+        ).rejects.toThrow("Agendamento cancelado não pode mudar de status");
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve recusar reabrir mesmo junto com outros campos", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(cancelled);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { status: "SCHEDULED", note: "voltou" },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("deve recusar reabrir também um agendamento de recorrência", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue({
+        ...cancelled,
+        recurringAppointmentId: "recurring-1",
+      });
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { status: "CONFIRMED" },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("Agendamento cancelado não pode mudar de status");
+    });
+
+    it("deve continuar permitindo alterar a observação de um cancelado", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(cancelled);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { note: "cliente desmarcou por telefone" },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeUndefined();
+      expect(prismaMock.appointment.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("repetir CANCELLED cai na regra do cancelamento: já está cancelado", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValue(cancelled);
+
+      await expect(
+        appointmentService.update(
+          "appointment-1",
+          { status: "CANCELLED" },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("O agendamento já está cancelado");
     });
   });
 
@@ -661,6 +1132,23 @@ describe("AppointmentService", () => {
       });
     });
 
+    it("deve filtrar as sessões de uma recorrência, mantendo o escopo da empresa", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+      prismaMock.appointment.count.mockResolvedValue(0);
+
+      await appointmentService.findAll(
+        { page: 1, limit: 100, recurringAppointmentId: "recurring-1" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          companyId: COMPANY_ID,
+          recurringAppointmentId: "recurring-1",
+        }) as unknown,
+      });
+    });
+
     it("deve incluir cliente, profissional e serviço, ordenando por início e id", async () => {
       prismaMock.appointment.findMany.mockResolvedValue([]);
       prismaMock.appointment.count.mockResolvedValue(0);
@@ -695,6 +1183,10 @@ describe("AppointmentService", () => {
         "name",
         "color",
         "duration",
+      ]);
+      expect(fields(relations.recurringAppointment.select)).toEqual([
+        "id",
+        "clientPlanId",
       ]);
     });
   });

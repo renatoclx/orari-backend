@@ -46,6 +46,14 @@ export interface RecurringAppointmentResponse {
   createdAt: Date;
   updatedAt: Date | null;
   days: RecurringDayDto[];
+  client: { id: string; name: string; photoUrl: string | null };
+  professional: { id: string; name: string; photoUrl: string | null };
+  service: {
+    id: string;
+    name: string;
+    color: string | null;
+    duration: number;
+  };
 }
 
 // Agenda de um serviço de um plano contratado. O período vem da contratação.
@@ -77,12 +85,22 @@ export interface SettlePaymentsResponse {
   settled: number;
 }
 
-const withDays = {
-  include: { days: { orderBy: { startTime: "asc" } } },
+/**
+ * Dias da recorrência e os dados relacionados que a tela desenha sem novas
+ * chamadas (só o necessário). As relações são lidas pela chave, sem filtrar
+ * exclusão lógica: pessoa ou serviço excluídos continuam com o nome.
+ */
+const withDetails = {
+  include: {
+    days: { orderBy: { startTime: "asc" } },
+    client: { select: { id: true, name: true, photoUrl: true } },
+    professional: { select: { id: true, name: true, photoUrl: true } },
+    service: { select: { id: true, name: true, color: true, duration: true } },
+  },
 } satisfies Prisma.RecurringAppointmentDefaultArgs;
 
-type RecurringAppointmentWithDays = Prisma.RecurringAppointmentGetPayload<
-  typeof withDays
+type RecurringAppointmentWithDetails = Prisma.RecurringAppointmentGetPayload<
+  typeof withDetails
 >;
 
 /**
@@ -245,7 +263,7 @@ export class RecurringAppointmentService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.recurringAppointment.findMany({
         where,
-        ...withDays,
+        ...withDetails,
         orderBy: { startDate: "asc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -267,7 +285,7 @@ export class RecurringAppointmentService {
   ): Promise<RecurringAppointmentResponse> {
     const recurring = await this.prisma.recurringAppointment.findFirst({
       where: { id, companyId },
-      ...withDays,
+      ...withDetails,
     });
 
     if (!recurring) {
@@ -299,7 +317,7 @@ export class RecurringAppointmentService {
       const recurring = await tx.recurringAppointment.update({
         where: { id },
         data: { ...dto, updatedAt: new Date() },
-        ...withDays,
+        ...withDetails,
       });
 
       if (cancels) {
@@ -360,6 +378,8 @@ export class RecurringAppointmentService {
           tx,
           appointment,
           startAt,
+          // Só o pacote tem reposição de sessão em que o cliente não compareceu.
+          { allowNoShow: Boolean(recurring.clientPlanId) },
         );
       await this.paymentService.moveDueDate(
         tx,
@@ -440,7 +460,7 @@ export class RecurringAppointmentService {
   ) {
     const recurring = await tx.recurringAppointment.create({
       data: { ...data, days: { create: this.toDayRows(days) } },
-      ...withDays,
+      ...withDetails,
     });
 
     const appointments = await this.appointmentService.createFromRecurrence(
@@ -460,6 +480,7 @@ export class RecurringAppointmentService {
         timeZone,
         new Date(),
       ),
+      timeZone,
       recurring.note,
     );
 
@@ -718,7 +739,7 @@ export class RecurringAppointmentService {
   }
 
   private toResponse(
-    recurring: RecurringAppointmentWithDays,
+    recurring: RecurringAppointmentWithDetails,
   ): RecurringAppointmentResponse {
     const { days, ...rest } = recurring;
 

@@ -49,7 +49,10 @@ latência de cada consulta é maior; vale medir de novo no ambiente real.
 autenticação**: quem tiver o link abre a imagem. O nome do arquivo é um UUID,
 então o link não é adivinhável, mas não expira.
 
-**Impacto:** foto de pessoa é dado pessoal (LGPD). Em produção, com mais de uma
+**Impacto:** foto de pessoa é dado pessoal (LGPD). As logos das empresas
+(`/uploads/companies`) seguem o mesmo esquema de armazenamento e acesso; por
+serem identidade visual pública, o acesso aberto não é problema de privacidade,
+mas valem a perda de arquivos e a falta de réplica abaixo. Em produção, com mais de uma
 instância do servidor ou com deploy que recria o disco, os arquivos locais
 também se perdem ou ficam só em uma das instâncias.
 

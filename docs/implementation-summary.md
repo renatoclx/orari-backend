@@ -44,6 +44,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | States | `GET /states`, `GET /states/:id` | Autenticado |
 | Cities | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id` | Autenticado |
 | Companies | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id` | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
+| Companies (a própria empresa) | `PATCH /me` (nome fantasia), `POST`/`DELETE /me/logo` | ADMIN e SUPER_ADMIN, na empresa do token |
 | Users | `POST`, `GET` (`?companyId`), `GET /:id`, `PATCH /:id`, `PATCH /:id/password`, `DELETE /:id` | SUPER_ADMIN (qualquer empresa ativa) e ADMIN (própria empresa) |
 | People | CRUD + `GET` (`?name`, `?document`, `?type`; inclui inativas), `PATCH /:id/restore`, `POST`/`DELETE /:id/photo` | Qualquer tipo, só na própria empresa |
 | Contacts | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
@@ -138,7 +139,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Pagamento por agendamento:** a criação gera um pagamento `PENDING` por agendamento, na mesma transação, com o preço do serviço e vencimento no dia local do agendamento. Serviço sem preço é recusado.
 - **Método na baixa:** `Payment.paymentMethodId` passou a ser opcional; é obrigatório quando o pagamento está `PAID`.
 - **Pagamento integral:** `POST /recurring-appointments/:id/payments/settle` dá baixa em todos os `PENDING` da recorrência com o mesmo método.
-- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
+- **Cancelamento:** cancela os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` (ver 2.26) e, em seguida, os pagamentos `PENDING` deles. Pagamentos `PAID` não mudam.
 
 ### 2.11 Remanejamento (Etapa 4)
 
@@ -166,7 +167,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 ### 2.14 Cancelamento da contratação (Etapa 7)
 
 - **Sem multa e sem reembolso**, em qualquer modalidade (decisão de 2026-10-10; o efeito sobre o desconto do mensal ficou como pendência pós-MVP no roadmap).
-- **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
+- **`PATCH /client-plans/:id/cancel`:** grava `ClientPlan.cancelledAt`, encerra as recorrências do plano e cancela os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` (`RecurringAppointmentService.endForClientPlan`, o único caminho para encerrar uma agenda de plano). No mensal, as parcelas `PENDING` com vencimento a partir de hoje (fuso da empresa) viram `CANCELLED`; as atrasadas continuam `PENDING`. No integral, o pagamento não muda. Tudo em uma transação.
 - **Recusas (400):** contratação já cancelada ou com o período terminado.
 - **`firstDueDate` obrigatório no mensal** (validação no DTO): sem vencimento, o cancelamento não teria como separar parcelas atrasadas das futuras. No integral continua opcional.
 
@@ -248,6 +249,38 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 - **Remanejamento:** continua limitado ao período da própria recorrência; recorrências antigas sem data final passam a ter só o limite inicial (antes, 60 dias a partir do início).
 - **Tempo de transação compartilhado:** `LONG_TRANSACTION_TIMEOUT_MS` (30 s) em `src/prisma/transaction-options.ts`, usado na criação da recorrência e na contratação de plano. O padrão global de 5 s foi mantido de propósito: uma transação ocupa uma conexão do pool, e um limite curto faz uma transação comum travada falhar cedo.
 - **Consequência:** a recorrência longa gera todos os agendamentos e pagamentos `PENDING` na criação (ver `technical-debt.md`).
+
+### 2.26 Cancelamento só antes de iniciar
+
+- **`PATCH /appointments/:id` com `status: CANCELLED`** só passa para agendamento `SCHEDULED` ou `CONFIRMED` com `startAt` futuro (`AppointmentService.ensureCanBeCancelled`). O horário é conferido além do status por causa do intervalo de 5 minutos do job de status. Recusas (400): "Agendamento que já iniciou não pode ser cancelado" (em andamento, ou início agora ou no passado), "Agendamento concluído não pode ser cancelado", "Agendamento em que o cliente não compareceu não pode ser cancelado" e "O agendamento já está cancelado" (400, como o cancelamento de uma sessão pela recorrência e o da contratação).
+- **Estado atual:** a regra olha o agendamento antes das outras mudanças do mesmo `PATCH`; um novo `startAt` não libera o cancelamento de quem já começou. Observação e demais status seguem livres; o agendamento de recorrência continua recusado no `PATCH` comum.
+- **Pagamento junto:** cancelar um avulso cancela o pagamento `PENDING` dele na mesma transação (`PAID` não muda). Cobre os casos em que o avulso podia ficar cancelado com cobrança pendente: pagamento lançado à mão antes do atendimento e a ida e volta de status (`COMPLETED` → `SCHEDULED` → `CANCELLED`). O `AppointmentService` grava o pagamento direto pelo Prisma, como exceção à regra do módulo dono, porque não pode usar o `PaymentService` (dependência circular); é o mesmo recurso do cadastro completo de pessoas.
+- **`POST /payments` recusa agendamento cancelado:** 409 "Agendamento cancelado não pode receber pagamento", antes de validar o método e de gravar. Os demais status seguem aceitos.
+- **Fechado nesta mesma etapa:** o cancelamento de uma sessão pela rota da recorrência (`.../appointments/:id/cancel`) passou a usar a mesma regra do avulso (`ensureCanBeCancelled`), conferindo também o horário e usando as mesmas mensagens; e `CANCELLED` virou estado final do pagamento: `PATCH /payments` não o leva a outro status (409 "Pagamento cancelado não pode mudar de status"), embora repetir `CANCELLED` e editar outros campos continuem aceitos.
+- **Também fechado:** o remanejamento de uma sessão da recorrência confere o horário, além do status (400 "Agendamento que já iniciou não pode ser remanejado"), e `CANCELLED` virou estado final do agendamento: o `PATCH` comum não o leva a outro status (400 "Agendamento cancelado não pode mudar de status", inclusive em agendamento de recorrência). Repetir `CANCELLED` cai na regra do cancelamento e a observação segue editável. Isso fecha o caminho de reabrir um agendamento cujo pagamento já foi cancelado.
+- **Remarcar o avulso já iniciado é permitido de propósito** (decisão do produto: o cliente que atrasa uns 10 minutos precisa conseguir remarcar). Valem as regras atuais de data futura, horário, encaixe e conflito para o novo horário. A restrição de "só antes de iniciar" vale para cancelar e para remanejar sessão de recorrência.
+- **Cancelamento em lote inclui `CONFIRMED`:** cancelar a recorrência (e, por consequência, a contratação do plano) cancela os futuros em `SCHEDULED` **ou** `CONFIRMED` (`cancelFutureFromRecurrence`), e os pagamentos `PENDING` deles. Antes, os confirmados ficavam ativos. Cancelar uma sessão ou a recorrência inteira seguem a mesma regra.
+- **Reposição por falta, só em pacote:** o remanejamento (`.../appointments/:id/reschedule`) de uma sessão de **pacote** marcada `NO_SHOW` é aceito (a sessão já passou) e a devolve a `SCHEDULED` na nova data, mantendo as validações da nova data (futura, dentro do período, horário de funcionamento sem encaixe, sem conflito). A recorrência decide pelo `clientPlanId` e autoriza com `{ allowNoShow: true }` em `AppointmentService.rescheduleFromRecurrence`; recorrência avulsa continua só antes de iniciar. `COMPLETED`, `IN_PROGRESS` e `CANCELLED` seguem recusados. A falta é marcada à mão (`PATCH` com `status: NO_SHOW`; sem pagamento próprio, a sessão de pacote concluída pode ser marcada depois). O registro da falta se perde na reposição.
+- **Concluído com pagamento não é mais alterado:** `PATCH /appointments/:id` em agendamento `COMPLETED` com pagamento `PENDING` ou `PAID` não excluído responde 400 "Agendamento concluído com pagamento não pode ser alterado", para qualquer campo (`ensureNotLockedByPayment`, que só consulta o pagamento quando o agendamento está concluído). Pagamento cancelado ou excluído libera a edição. Sessão de plano não tem pagamento próprio e não é travada.
+
+### 2.27 Leitura de recorrências (pedido do frontend)
+
+- **Dados relacionados na recorrência:** `GET /recurring-appointments`, `GET /:id`, `POST` e `PATCH` devolvem `client` e `professional` (`id`, `name`, `photoUrl`) e `service` (`id`, `name`, `color`, `duration`), com os ids planos mantidos e o `clientPlanId` já existente. O `include` único (`withDetails`, antes `withDays`) cobre as quatro rotas; a relação é lida pela chave, sem filtrar exclusão lógica, então pessoa e serviço excluídos mantêm o nome. Swagger com `RecurringAppointmentResponseDto`.
+- **Origem do agendamento:** a resposta de agendamento ganhou `recurringAppointment: { id, clientPlanId } | null`. Escolhi o objeto aninhado, e não um `clientPlanId` solto no agendamento, por ser só uma relação a mais no `include` existente, sem código de montagem em quatro métodos.
+- **Sessões de uma recorrência:** filtro `recurringAppointmentId` em `GET /appointments`, que reaproveita a ordenação, a paginação e os dados relacionados. A empresa continua no `where`: um id de outra empresa devolve lista vazia.
+- **Conflito com data e horário:** o `createFromRecurrence` envolve a validação de cada ocorrência e prefixa o erro com `Conflito em dd/MM/aaaa às HH:mm:`, no fuso da empresa (`withOccurrence`). Mantém o tipo do erro (409 de conflito, 400 de horário de funcionamento); outros erros passam sem alteração. O parâmetro `occurrenceLabel` do `ensureSlotIsFree`, que citava a data em UTC no formato ISO, foi removido. O fuso passa a ser parâmetro do `createFromRecurrence` (antes da observação). Vale também para a contratação de plano.
+- **Dry-run:** avaliado e adiado. Viável (rota de preview com a mesma validação, coletando todos os conflitos), custo de uma etapa pequena; vale se o front sentir falta com recorrências longas.
+
+### 2.28 Configurações da empresa (pedido do frontend)
+
+- **`PATCH /companies/me`** (ADMIN e SUPER_ADMIN): altera só o `fantasyName` da empresa do token (`UpdateOwnCompanyDto`; qualquer outro campo é recusado com 400). Espaços nas pontas são cortados; texto vazio, só espaços ou `null` removem o nome fantasia (o `/auth/me` volta a mostrar a razão social); até 100 caracteres; corpo `{}` responde 200 sem alterar nada. Os demais dados cadastrais seguem no `PATCH /companies/:id` do SUPER_ADMIN, sem mudança. O USER recebe 403.
+- **`POST /companies/me/logo`** (multipart, campo `logo`) e **`DELETE /companies/me/logo`** (204): JPEG ou PNG, até 2 MB (acima disso, 413), formato conferido pelo conteúdo, servida em `/uploads/companies/<arquivo>`; `logoUrl` guarda o caminho relativo. Trocar ou remover apaga o arquivo anterior depois de o banco apontar para o novo, e só se ele estiver na pasta das logos (`removeStoredLogo`): uma URL externa ou o caminho de outra pasta, gravados pelo SUPER_ADMIN, nunca são apagados. O envio repete, de propósito, a lógica da foto de pessoa, sem extrair um helper compartilhado.
+- **Rotas `me` antes das `:id` no controller:** o id é validado como UUID, e `me` cairia nele e responderia 400.
+- **Leitura da própria empresa:** `GET /companies/:id` já permitia ao ADMIN e ao USER ler a própria empresa (outra empresa responde 404), então não foi criado `GET /companies/me`.
+- **`/auth/me` sem mudança:** lê `fantasyName` e `logoUrl` do banco a cada chamada e reflete as duas alterações.
+- **Seed:** `seed.ts` e `seed-demo.ts` não têm `logoUrl`; a URL de exemplo existia só na linha da Empresa Teste no banco local.
+- Para um SUPER_ADMIN, "a própria empresa" é a empresa da plataforma.
+
 ---
 
 ## 3. Arquitetura transversal (código compartilhado)
