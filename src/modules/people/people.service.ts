@@ -151,9 +151,14 @@ export class PeopleService {
    * Detalhe exibido na tela da pessoa, com contato e endereço principais.
    * As validações internas (ex.: agendamentos) usam o findOne, sem esses JOINs.
    */
+  /**
+   * Consulta (GET /people/:id): devolve também a pessoa inativa, só para
+   * leitura (ex.: o histórico do cliente). Alterar, excluir e vincular continuam
+   * só para ativas (findOne).
+   */
   async findDetail(id: string, companyId: string): Promise<PeopleDetail> {
     const people = await this.prisma.people.findFirst({
-      where: { id, companyId, deletedAt: null },
+      where: { id, companyId },
       omit: omitSearchColumn,
       include: {
         contacts: principalContactQuery,

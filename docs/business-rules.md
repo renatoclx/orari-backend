@@ -57,7 +57,7 @@
   - Uma cidade inexistente em qualquer endereço recusa o cadastro inteiro (404), sem criar a pessoa.
   - Depois do cadastro, telefone, contatos e endereços são mantidos pelas rotas de contatos e endereços; a edição da pessoa não os altera.
 - A listagem de pessoas traz ativas e excluídas (inativas): o status é derivado da data de exclusão (`deletedAt`). O filtro opcional `isActive` traz só as ativas (`true`) ou só as inativas (`false`).
-- Uma pessoa excluída continua na listagem, mas não pode ser consultada, editada nem excluída de novo (404), nem ser usada em agendamentos.
+- Uma pessoa excluída continua na listagem e pode ser consultada (`GET /people/:id`, só leitura, com o `deletedAt`; ex.: o histórico do cliente), mas não pode ser editada nem excluída de novo (404), nem ser usada em agendamentos.
 - Uma pessoa excluída pode ser reativada. A reativação é recusada quando a pessoa não existe (404), já está ativa (409) ou quando o CPF dela está em uso por outra pessoa ativa da empresa (409). Ao reativar, os contatos e endereços dela voltam a ser acessíveis.
 - A foto da pessoa é opcional e enviada por uma rota própria, em JPEG ou PNG, com até 2 MB. O formato é conferido pelo conteúdo do arquivo, e não só pela extensão.
 - O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
