@@ -490,7 +490,8 @@ model PaymentMethod {
   company  Company   @relation(fields: [companyId], references: [id])
   payments Payment[]
 
-  @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
+  // Único pelo nome normalizado: "PIX", "Pix" e "pix" são o mesmo método.
+  @@unique([companyId, normalizedName], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
   @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("payment_methods")

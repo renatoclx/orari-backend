@@ -58,6 +58,15 @@ export class PaymentMethodController {
     return this.paymentMethodService.update(id, dto, currentUser.companyId);
   }
 
+  // Reativa um método inativado (limpa o deletedAt).
+  @Patch(":id/restore")
+  restore(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.paymentMethodService.restore(id, currentUser.companyId);
+  }
+
   @Delete(":id")
   @HttpCode(204)
   remove(
