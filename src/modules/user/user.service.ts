@@ -112,7 +112,11 @@ export class UserService {
     { page, limit, companyId }: FindUsersQueryDto,
     currentUser: AuthenticatedUser,
   ): Promise<PaginatedResult<PublicUser>> {
-    const where = this.visibleTo(currentUser, companyId);
+    // A listagem traz ativos e inativos (o status vem do deletedAt), para que
+    // um usuário inativado possa ser reativado.
+    const where = this.visibleTo(currentUser, companyId, {
+      includeDeleted: true,
+    });
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
@@ -187,6 +191,42 @@ export class UserService {
     });
   }
 
+  // Reativa um usuário inativado (limpa o deletedAt).
+  async restore(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<PublicUser> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id,
+        ...this.visibleTo(currentUser, undefined, { includeDeleted: true }),
+      },
+      select: { deletedAt: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException("Usuário não encontrado");
+    }
+    if (!user.deletedAt) {
+      throw new ConflictException("O usuário já está ativo");
+    }
+
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: { deletedAt: null, updatedAt: new Date() },
+        omit: omitPassword,
+      });
+    } catch (error) {
+      // O e-mail é único só entre ativos: outro usuário pode ter assumido o dele.
+      throw isUniqueConstraintViolation(error)
+        ? new ConflictException(
+            "Não é possível reativar: o e-mail já está em uso por outro usuário ativo",
+          )
+        : error;
+    }
+  }
+
   async remove(id: string, currentUser: AuthenticatedUser): Promise<void> {
     if (id === currentUser.id) {
       throw new ForbiddenException("Não é possível excluir o próprio usuário");
@@ -213,15 +253,19 @@ export class UserService {
   private visibleTo(
     currentUser: AuthenticatedUser,
     requestedCompanyId?: string,
+    // A listagem e a reativação também enxergam os inativos; as demais
+    // operações (consultar, alterar, trocar senha, excluir) só os ativos.
+    { includeDeleted = false }: { includeDeleted?: boolean } = {},
   ): Prisma.UserWhereInput {
     const companyId = resolveCompanyScope(currentUser, requestedCompanyId);
+    const active = includeDeleted ? {} : { deletedAt: null };
 
     if (isSuperAdmin(currentUser)) {
-      return { deletedAt: null, companyId, company: { isActive: true } };
+      return { ...active, companyId, company: { isActive: true } };
     }
 
     return {
-      deletedAt: null,
+      ...active,
       companyId,
       type: { not: UserType.SUPER_ADMIN },
     };

@@ -136,17 +136,17 @@
 
 ### Atributos
 
-| Nome       | Descrição              |
-| ---------- | ---------------------- |
-| id         | Identificador único    |
-| name       | Nome da pessoa         |
-| document   | CPF da pessoa (opcional) |
+| Nome       | Descrição                     |
+| ---------- | ----------------------------- |
+| id         | Identificador único           |
+| name       | Nome da pessoa                |
+| document   | CPF da pessoa (opcional)      |
 | birthDate  | Data de nascimento (opcional) |
-| profession | Profissão (opcional)   |
-| type       | Tipo de pessoa         |
-| note       | Observações (opcional) |
-| photoUrl   | Caminho da foto (opcional) |
-| companyId  | Código da empresa      |
+| profession | Profissão (opcional)          |
+| type       | Tipo de pessoa                |
+| note       | Observações (opcional)        |
+| photoUrl   | Caminho da foto (opcional)    |
+| companyId  | Código da empresa             |
 
 - Telefone e e-mail da pessoa ficam nos contatos (`Contact`).
 
@@ -283,19 +283,19 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 ### Atributos
 
-| Nome                   | Descrição                                        |
-| ---------------------- | ------------------------------------------------ |
-| id                     | Identificador único                              |
-| companyId              | Código da empresa                                |
-| clientId               | Código do cliente (deriva de pessoa)             |
-| professionalId         | Código do profissional (deriva de pessoa)        |
-| serviceId              | Código do serviço                                |
-| startAt                | Data e horário de início do serviço              |
-| endAt                  | Data e horário final do serviço                  |
-| status                 | Situação do agendamento                          |
-| note                   | Observação (opcional)                            |
+| Nome                   | Descrição                                         |
+| ---------------------- | ------------------------------------------------- |
+| id                     | Identificador único                               |
+| companyId              | Código da empresa                                 |
+| clientId               | Código do cliente (deriva de pessoa)              |
+| professionalId         | Código do profissional (deriva de pessoa)         |
+| serviceId              | Código do serviço                                 |
+| startAt                | Data e horário de início do serviço               |
+| endAt                  | Data e horário final do serviço                   |
+| status                 | Situação do agendamento                           |
+| note                   | Observação (opcional)                             |
 | overBooking            | Encaixe: marcado fora do horário de funcionamento |
-| recurringAppointmentId | Agendamento recorrente que o originou (opcional) |
+| recurringAppointmentId | Agendamento recorrente que o originou (opcional)  |
 
 ### Relacionamentos
 
@@ -368,11 +368,12 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 ### Atributos
 
-| Nome      | Descrição           |
-| --------- | ------------------- |
-| id        | Identificador único |
-| planId    | Código do plano     |
-| serviceId | Código do serviço   |
+| Nome            | Descrição                                  |
+| --------------- | ------------------------------------------ |
+| id              | Identificador único                        |
+| planId          | Código do plano                            |
+| serviceId       | Código do serviço                          |
+| sessionsPerWeek | Atendimentos do serviço por semana (1 a 7) |
 
 ### Relacionamentos
 

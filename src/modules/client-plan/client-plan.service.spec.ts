@@ -50,8 +50,13 @@ describe("ClientPlanService", () => {
     isActive: true,
     monthlyPrice: new Decimal(400),
     services: [
-      { id: "service-1", name: "Fisioterapia", isActive: true },
-      { id: "service-2", name: "Pilates", isActive: true },
+      {
+        id: "service-1",
+        name: "Fisioterapia",
+        isActive: true,
+        sessionsPerWeek: 1,
+      },
+      { id: "service-2", name: "Pilates", isActive: true, sessionsPerWeek: 1 },
     ],
     periods: [
       {
@@ -280,6 +285,77 @@ describe("ClientPlanService", () => {
         expect(prismaMock.$transaction).not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe("create: frequência semanal", () => {
+    const twoDays = [
+      ...days,
+      { weekDay: "THURSDAY" as const, startTime: "10:00", endTime: "11:00" },
+    ];
+    const twoPerWeek = {
+      ...plan,
+      services: [plan.services[0], { ...plan.services[1], sessionsPerWeek: 2 }],
+    };
+
+    it.each([
+      { caso: "a menos", pilates: days },
+      { caso: "a mais", pilates: [...twoDays, ...days] },
+    ])(
+      "deve recusar quantidade de dias diferente da prevista ($caso)",
+      async ({ pilates }) => {
+        planServiceMock.findOne.mockResolvedValueOnce(twoPerWeek);
+
+        await expect(
+          clientPlanService.create(
+            {
+              ...dto,
+              schedules: [
+                dto.schedules[0],
+                { ...dto.schedules[1], days: pilates },
+              ],
+            },
+            COMPANY_ID,
+          ),
+        ).rejects.toThrow(
+          "Pilates: escolha 2 dias da semana (o plano prevê 2 atendimentos por semana)",
+        );
+        expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve usar o singular quando o plano prevê um atendimento", async () => {
+      await expect(
+        clientPlanService.create(
+          {
+            ...dto,
+            schedules: [
+              { ...dto.schedules[0], days: twoDays },
+              dto.schedules[1],
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow(
+        "Fisioterapia: escolha 1 dia da semana (o plano prevê 1 atendimento por semana)",
+      );
+    });
+
+    it("deve aceitar a quantidade exata de dias", async () => {
+      planServiceMock.findOne.mockResolvedValueOnce(twoPerWeek);
+
+      await expect(
+        clientPlanService.create(
+          {
+            ...dto,
+            schedules: [
+              dto.schedules[0],
+              { ...dto.schedules[1], days: twoDays },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).resolves.toBeDefined();
+    });
   });
 
   describe("create: plano", () => {

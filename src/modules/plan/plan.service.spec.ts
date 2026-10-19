@@ -33,7 +33,10 @@ describe("PlanService", () => {
   const dto: CreatePlanDto = {
     name: "Pilates + Fisio",
     monthlyPrice: 450,
-    serviceIds: ["service-1", "service-2"],
+    services: [
+      { serviceId: "service-1", sessionsPerWeek: 2 },
+      { serviceId: "service-2", sessionsPerWeek: 1 },
+    ],
     periods: [
       { months: 3, discountPercent: 10, monthlyDiscountPercent: 5 },
       { months: 6, discountPercent: 15, monthlyDiscountPercent: 8 },
@@ -51,8 +54,14 @@ describe("PlanService", () => {
     createdAt: new Date("2026-10-07"),
     updatedAt: null,
     items: [
-      { service: { id: "service-1", name: "Fisioterapia", isActive: true } },
-      { service: { id: "service-2", name: "Pilates", isActive: true } },
+      {
+        sessionsPerWeek: 2,
+        service: { id: "service-1", name: "Fisioterapia", isActive: true },
+      },
+      {
+        sessionsPerWeek: 1,
+        service: { id: "service-2", name: "Pilates", isActive: true },
+      },
     ],
     periods: dto.periods,
   };
@@ -87,7 +96,7 @@ describe("PlanService", () => {
             normalizedName: "pilates + fisio",
             companyId: COMPANY_ID,
             items: {
-              create: [{ serviceId: "service-1" }, { serviceId: "service-2" }],
+              create: dto.services,
             },
             periods: { create: dto.periods },
           },
@@ -99,8 +108,18 @@ describe("PlanService", () => {
       const result = await planService.create(dto, COMPANY_ID);
 
       expect(result.services).toEqual([
-        { id: "service-1", name: "Fisioterapia", isActive: true },
-        { id: "service-2", name: "Pilates", isActive: true },
+        {
+          id: "service-1",
+          name: "Fisioterapia",
+          isActive: true,
+          sessionsPerWeek: 2,
+        },
+        {
+          id: "service-2",
+          name: "Pilates",
+          isActive: true,
+          sessionsPerWeek: 1,
+        },
       ]);
       expect(result).not.toHaveProperty("items");
     });
@@ -126,6 +145,22 @@ describe("PlanService", () => {
       await expect(planService.create(dto, COMPANY_ID)).rejects.toBeInstanceOf(
         ConflictException,
       );
+      expect(prismaMock.plan.create).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar serviço repetido no plano sem gravar", async () => {
+      await expect(
+        planService.create(
+          {
+            ...dto,
+            services: [
+              { serviceId: "service-1", sessionsPerWeek: 1 },
+              { serviceId: "service-1", sessionsPerWeek: 2 },
+            ],
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.plan.create).not.toHaveBeenCalled();
     });
 
@@ -211,7 +246,7 @@ describe("PlanService", () => {
 
       await planService.update(
         "plan-1",
-        { serviceIds: ["service-3"], periods },
+        { services: [{ serviceId: "service-3", sessionsPerWeek: 3 }], periods },
         COMPANY_ID,
       );
 
@@ -219,7 +254,10 @@ describe("PlanService", () => {
         expect.objectContaining({
           where: { id: "plan-1" },
           data: {
-            items: { deleteMany: {}, create: [{ serviceId: "service-3" }] },
+            items: {
+              deleteMany: {},
+              create: [{ serviceId: "service-3", sessionsPerWeek: 3 }],
+            },
             periods: { deleteMany: {}, create: periods },
             updatedAt: anyDate,
           },

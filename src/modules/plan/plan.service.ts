@@ -13,6 +13,7 @@ import { ServiceService } from "../service/service.service";
 import { CreatePlanDto } from "./dto/create-plan.dto";
 import { FindPlansQueryDto } from "./dto/find-plans-query.dto";
 import { PlanPeriodDto } from "./dto/plan-period.dto";
+import { PlanServiceItemDto } from "./dto/plan-service-item.dto";
 import { UpdatePlanDto } from "./dto/update-plan.dto";
 
 // Serviços e períodos vêm junto com o plano; a coluna de busca fica de fora.
@@ -21,6 +22,7 @@ const withDetails = {
   include: {
     items: {
       select: {
+        sessionsPerWeek: true,
         service: { select: { id: true, name: true, isActive: true } },
       },
       orderBy: { service: { name: "asc" } },
@@ -38,10 +40,15 @@ const withDetails = {
 
 type PlanWithDetails = Prisma.PlanGetPayload<typeof withDetails>;
 
-// O item do plano é devolvido como o próprio serviço: quem consome não precisa
-// conhecer a tabela intermediária.
+// O item do plano é devolvido como o próprio serviço, acrescido da frequência
+// semanal: quem consome não precisa conhecer a tabela intermediária.
+export type PlanServiceResponse =
+  PlanWithDetails["items"][number]["service"] & {
+    sessionsPerWeek: number;
+  };
+
 export type PlanResponse = Omit<PlanWithDetails, "items"> & {
-  services: PlanWithDetails["items"][number]["service"][];
+  services: PlanServiceResponse[];
 };
 
 /**
@@ -62,9 +69,9 @@ export class PlanService {
   ) {}
 
   async create(dto: CreatePlanDto, companyId: string): Promise<PlanResponse> {
-    const { serviceIds, periods = [], ...data } = dto;
+    const { services, periods = [], ...data } = dto;
 
-    await this.ensureServicesAreActive(serviceIds, companyId);
+    await this.ensureServices(services, companyId);
     this.ensurePeriodsAreUnique(periods);
 
     try {
@@ -73,7 +80,7 @@ export class PlanService {
           ...data,
           normalizedName: normalizeForSearch(dto.name),
           companyId,
-          items: { create: this.toItemRows(serviceIds) },
+          items: { create: services },
           periods: { create: periods },
         },
         ...withDetails,
@@ -133,10 +140,10 @@ export class PlanService {
     companyId: string,
   ): Promise<PlanResponse> {
     await this.findOne(id, companyId);
-    const { serviceIds, periods, ...data } = dto;
+    const { services, periods, ...data } = dto;
 
-    if (serviceIds) {
-      await this.ensureServicesAreActive(serviceIds, companyId);
+    if (services) {
+      await this.ensureServices(services, companyId);
     }
     if (periods) {
       this.ensurePeriodsAreUnique(periods);
@@ -153,9 +160,7 @@ export class PlanService {
           ...(data.name !== undefined && {
             normalizedName: normalizeForSearch(data.name),
           }),
-          ...(serviceIds && {
-            items: { deleteMany: {}, create: this.toItemRows(serviceIds) },
-          }),
+          ...(services && { items: { deleteMany: {}, create: services } }),
           ...(periods && { periods: { deleteMany: {}, create: periods } }),
           updatedAt: new Date(),
         },
@@ -168,11 +173,20 @@ export class PlanService {
     }
   }
 
-  // Cada serviço precisa ser da empresa (404) e estar ativo (409) no cadastro e na edição.
-  private async ensureServicesAreActive(
-    serviceIds: string[],
+  // Sem serviço repetido (400); cada um precisa ser da empresa (404) e estar
+  // ativo (409) no cadastro e na edição.
+  private async ensureServices(
+    services: PlanServiceItemDto[],
     companyId: string,
   ) {
+    const serviceIds = services.map((item) => item.serviceId);
+
+    if (new Set(serviceIds).size !== serviceIds.length) {
+      throw new BadRequestException(
+        "Um serviço não pode aparecer duas vezes no plano",
+      );
+    }
+
     for (const serviceId of serviceIds) {
       await this.serviceService.findActive(serviceId, companyId);
     }
@@ -189,14 +203,16 @@ export class PlanService {
     }
   }
 
-  private toItemRows(serviceIds: string[]) {
-    return serviceIds.map((serviceId) => ({ serviceId }));
-  }
-
   private toResponse(plan: PlanWithDetails): PlanResponse {
     const { items, ...rest } = plan;
 
-    return { ...rest, services: items.map((item) => item.service) };
+    return {
+      ...rest,
+      services: items.map(({ service, sessionsPerWeek }) => ({
+        ...service,
+        sessionsPerWeek,
+      })),
+    };
   }
 
   private mapUniqueViolation(error: unknown): unknown {

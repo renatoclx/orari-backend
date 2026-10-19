@@ -13,7 +13,11 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import { CompanyService } from "../company/company.service";
 import { PaymentService } from "../payment/payment.service";
-import { PlanResponse, PlanService } from "../plan/plan.service";
+import {
+  PlanResponse,
+  PlanService,
+  PlanServiceResponse,
+} from "../plan/plan.service";
 import { RecurringDayDto } from "../recurring-appointment/dto/recurring-day.dto";
 import { RecurringAppointmentService } from "../recurring-appointment/recurring-appointment.service";
 import {
@@ -307,6 +311,28 @@ export class ClientPlanService {
             : ""),
       );
     }
+
+    // A frequência do plano é exata: cada horário da agenda é um atendimento
+    // semanal (o mesmo dia pode ter dois horários que não se sobrepõem).
+    for (const service of plan.services) {
+      const days = schedules.find(
+        (schedule) => schedule.serviceId === service.id,
+      )?.days;
+      if (days && days.length !== service.sessionsPerWeek) {
+        throw new BadRequestException(this.frequencyMessage(service));
+      }
+    }
+  }
+
+  // Ex.: "Pilates: escolha 2 dias da semana (o plano prevê 2 atendimentos por semana)".
+  private frequencyMessage({ name, sessionsPerWeek }: PlanServiceResponse) {
+    const days = sessionsPerWeek === 1 ? "1 dia" : `${sessionsPerWeek} dias`;
+    const sessions =
+      sessionsPerWeek === 1
+        ? "1 atendimento"
+        : `${sessionsPerWeek} atendimentos`;
+
+    return `${name}: escolha ${days} da semana (o plano prevê ${sessions} por semana)`;
   }
 
   /**

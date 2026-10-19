@@ -330,7 +330,10 @@ async function main() {
       name: "Bem-estar",
       description: "Massagem e fisioterapia semanais",
       monthlyPrice: 400,
-      serviceIds: [massagem.id, fisioterapia.id],
+      services: [
+        { serviceId: massagem.id, sessionsPerWeek: 1 },
+        { serviceId: fisioterapia.id, sessionsPerWeek: 1 },
+      ],
       periods: [
         { months: 3, discountPercent: 10, monthlyDiscountPercent: 5 },
         { months: 6, discountPercent: 15, monthlyDiscountPercent: 8 },

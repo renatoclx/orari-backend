@@ -1,18 +1,17 @@
 import { Type } from "class-transformer";
 import {
   ArrayMinSize,
-  ArrayUnique,
   IsArray,
   IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Min,
   ValidateNested,
 } from "class-validator";
 import { PlanPeriodDto } from "./plan-period.dto";
+import { PlanServiceItemDto } from "./plan-service-item.dto";
 
 // A empresa não é informada: o plano pertence à empresa do usuário autenticado.
 export class CreatePlanDto {
@@ -35,12 +34,15 @@ export class CreatePlanDto {
   @IsBoolean()
   isActive?: boolean;
 
-  /** O plano precisa de ao menos um serviço, sem repetir o mesmo. */
+  /**
+   * O plano precisa de ao menos um serviço, sem repetir o mesmo (a repetição é
+   * conferida no service, pois o ArrayUnique não compara objetos).
+   */
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayUnique()
-  @IsUUID("all", { each: true })
-  serviceIds!: string[];
+  @ValidateNested({ each: true })
+  @Type(() => PlanServiceItemDto)
+  services!: PlanServiceItemDto[];
 
   /**
    * Opcional: o plano pode ser montado aos poucos, mas só é contratado com um

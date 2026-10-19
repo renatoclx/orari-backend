@@ -32,6 +32,8 @@
 - Ninguém pode excluir a própria conta nem alterar o próprio tipo.
 - O login é recusado para usuários excluídos e para usuários de empresas inativas, sempre com a mesma mensagem genérica de credenciais inválidas.
 - Um usuário autenticado perde o acesso imediatamente quando é excluído ou quando sua empresa fica inativa.
+- A exclusão é lógica (inativação): preenche o `deletedAt`. A listagem (`GET /users`) traz ativos e inativos; consultar, alterar, trocar a senha e excluir valem só para ativos (inativo responde 404).
+- Um usuário inativado pode ser reativado por `PATCH /users/:id/restore` (limpa o `deletedAt`), pelos mesmos perfis e com o mesmo alcance da gestão de usuários. Reativar um usuário já ativo responde 409; se o e-mail dele estiver em uso por outro usuário ativo, também responde 409.
 
 ## Senhas
 
@@ -200,6 +202,7 @@
 - Um plano é o pacote de serviços; os períodos (ex.: 3, 6 ou 12 meses) são opções de contratação do mesmo plano.
 - Um plano é composto por um ou mais serviços da própria empresa, ativos no momento do cadastro ou da edição.
 - Um serviço não pode aparecer mais de uma vez no mesmo plano.
+- Cada serviço do plano define `sessionsPerWeek`, a quantidade de atendimentos por semana (inteiro de 1 a 7, obrigatório). O cadastro e a edição recebem `services: [{ serviceId, sessionsPerWeek }]`.
 - Os serviços e os períodos de um plano podem ser editados; a lista informada substitui a anterior. Contratações já feitas não mudam.
 - O valor mensal do plano (`monthlyPrice`) é definido pela empresa no cadastro e não depende dos preços dos serviços.
 - Não há exclusão: o plano é desativado por `isActive` e pode ser reativado.
@@ -222,6 +225,8 @@
 ### Serviços e horários
 
 - Cada serviço do plano tem seus próprios dias, horários e profissional, informados na contratação. A contratação informa exatamente os serviços do plano, nem mais nem menos.
+- A agenda de cada serviço precisa ter exatamente `sessionsPerWeek` horários por semana (cada item de `days` é um atendimento semanal; o mesmo dia pode ter dois horários que não se sobrepõem). Quantidade diferente é recusada (400), com a mensagem indicando o serviço e a quantidade prevista.
+- A frequência vale só no momento da contratação: as recorrências guardam os dias, então alterar o plano depois não muda contratações já feitas.
 - Cada serviço gera uma recorrência própria, com o período da contratação. Seus agendamentos seguem todas as regras de agendamentos recorrentes.
 - Os agendamentos de um plano podem ser remanejados dentro do período da contratação, e um agendamento pode ser cancelado individualmente; a sessão cancelada não é reposta.
 - Reposição por falta: quando o cliente não comparece a uma sessão do plano e a empresa a marca como `NO_SHOW`, a sessão pode ser remanejada para uma nova data dentro do período da contratação, desde que haja horário disponível (funcionamento da empresa, sem conflito). Ela volta a `SCHEDULED` e a quantidade de sessões do plano se mantém; o registro da falta deixa de existir, porque é a mesma sessão que muda de data. Só sessões `NO_SHOW` entram: concluídas e em andamento continuam não podendo ser remanejadas. A regra vale só para pacotes; recorrências avulsas seguem remanejando apenas antes de iniciar.
