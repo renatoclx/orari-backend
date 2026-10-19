@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsDate, IsEnum, IsOptional, IsUUID } from "class-validator";
+import { IsDate, IsEnum, IsIn, IsOptional, IsUUID } from "class-validator";
 import { AppointmentStatus } from "../../../../generated/prisma/enums";
 import { PaginationQueryDto } from "../../../common/dto/pagination-query.dto";
 
@@ -36,4 +36,12 @@ export class FindAppointmentsQueryDto extends PaginationQueryDto {
   @Type(() => Date)
   @IsDate()
   to?: Date;
+
+  /**
+   * Ordem pelo início: `asc` (padrão, a agenda) ou `desc` (o mais recente
+   * primeiro, ex.: atendimentos anteriores no histórico do cliente).
+   */
+  @IsOptional()
+  @IsIn(["asc", "desc"])
+  order?: "asc" | "desc";
 }

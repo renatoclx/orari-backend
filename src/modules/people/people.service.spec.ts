@@ -289,6 +289,28 @@ describe("PeopleService", () => {
   });
 
   describe("findAll", () => {
+    it.each([
+      [true, null],
+      [false, { not: null }],
+    ])(
+      "com isActive=%s filtra deletedAt por %j",
+      async (isActive, deletedAt) => {
+        prismaMock.people.findMany.mockResolvedValue([]);
+        prismaMock.people.count.mockResolvedValue(0);
+
+        await peopleService.findAll(
+          { page: 1, limit: 10, isActive },
+          COMPANY_ID,
+        );
+
+        const [{ where }] = prismaMock.people.count.mock.calls[0] as [
+          { where: { companyId: string; deletedAt: unknown } },
+        ];
+        expect(where.companyId).toBe(COMPANY_ID);
+        expect(where.deletedAt).toEqual(deletedAt);
+      },
+    );
+
     it("deve combinar o escopo da empresa com os filtros", async () => {
       prismaMock.people.findMany.mockResolvedValue([
         { ...people, contacts: [principalContact] },
@@ -397,9 +419,24 @@ describe("PeopleService", () => {
       });
       expect(prismaMock.people.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "1", companyId: COMPANY_ID, deletedAt: null },
+          // Sem filtro de deletedAt: a consulta também traz a pessoa inativa.
+          where: { id: "1", companyId: COMPANY_ID },
         }),
       );
+    });
+
+    it("deve devolver a pessoa inativa (só leitura), com o deletedAt", async () => {
+      const deletedAt = new Date("2026-10-01T12:00:00.000Z");
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        deletedAt,
+        contacts: [],
+        addresses: [],
+      });
+
+      await expect(
+        peopleService.findDetail("1", COMPANY_ID),
+      ).resolves.toMatchObject({ deletedAt });
     });
 
     it("deve devolver null quando não há principais marcados", async () => {

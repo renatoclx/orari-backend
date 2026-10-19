@@ -283,6 +283,15 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve trazer a origem do pagamento (atendimento ou plano)", async () => {
+      await paymentService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
+
+      const [{ include }] = prismaMock.payment.findMany.mock.calls[0] as [
+        { include: Record<string, unknown> },
+      ];
+      expect(Object.keys(include)).toEqual(["appointment", "clientPlan"]);
+    });
+
     it("deve ordenar por vencimento, com os sem vencimento no fim", async () => {
       await paymentService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
 

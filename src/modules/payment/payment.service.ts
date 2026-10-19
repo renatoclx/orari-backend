@@ -61,6 +61,27 @@ export interface AppointmentToCharge {
 // Pagamento como a API devolve: com o atraso calculado no fuso da empresa.
 export type PaymentResponse = Payment & { isOverdue: boolean };
 
+/**
+ * Na listagem, a origem de cada pagamento, para a tela descrevê-lo: o
+ * atendimento (data e serviço) ou o plano da contratação. Lidos pela chave,
+ * sem filtrar exclusão: o nome continua mesmo que o serviço ou o plano mudem.
+ */
+const withOrigin = {
+  appointment: {
+    select: {
+      id: true,
+      startAt: true,
+      service: { select: { id: true, name: true } },
+    },
+  },
+  clientPlan: {
+    select: { id: true, plan: { select: { id: true, name: true } } },
+  },
+} satisfies Prisma.PaymentInclude;
+
+export type PaymentListItem = PaymentResponse &
+  Prisma.PaymentGetPayload<{ include: typeof withOrigin }>;
+
 // Um pagamento de contratação de plano: valor e vencimento já calculados.
 export interface ClientPlanCharge {
   amount: Decimal;
@@ -132,7 +153,7 @@ export class PaymentService {
       dueTo,
     }: FindPaymentsQueryDto,
     companyId: string,
-  ): Promise<PaginatedResult<PaymentResponse>> {
+  ): Promise<PaginatedResult<PaymentListItem>> {
     const today = await this.todayFor(companyId);
 
     // Cada filtro opcional entra no AND só quando informado.
@@ -166,6 +187,7 @@ export class PaymentService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.payment.findMany({
         where,
+        include: withOrigin,
         // Visão financeira: o que vence primeiro aparece primeiro; sem
         // vencimento vai para o fim.
         orderBy: [
@@ -465,7 +487,11 @@ export class PaymentService {
    * Atraso é derivado, não gravado: pendente com vencimento antes de hoje. O
    * status continua PENDING até a baixa (ver business-rules.md).
    */
-  private toResponse(payment: Payment, today: Date): PaymentResponse {
+  // Genérico: a listagem passa o pagamento com a origem, e ela é mantida.
+  private toResponse<T extends Payment>(
+    payment: T,
+    today: Date,
+  ): T & { isOverdue: boolean } {
     const isOverdue =
       payment.status === PaymentStatus.PENDING &&
       payment.dueDate !== null &&

@@ -107,12 +107,16 @@ export class PeopleService {
   }
 
   async findAll(
-    { page, limit, name, document, type }: FindPeopleQueryDto,
+    { page, limit, name, document, type, isActive }: FindPeopleQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<PeopleListItem>> {
-    // Inclui as inativas: o status é derivado do deletedAt, que vai na resposta.
+    // Sem filtro de status, inclui as inativas: o status é derivado do deletedAt,
+    // que vai na resposta.
     const where: Prisma.PeopleWhereInput = {
       companyId,
+      ...(isActive !== undefined && {
+        deletedAt: isActive ? null : { not: null },
+      }),
       // O termo é normalizado como a coluna: a busca ignora acentos e maiúsculas
       // e pode usar o índice trigram de normalizedName.
       normalizedName: name ? { contains: normalizeForSearch(name) } : undefined,
@@ -147,9 +151,14 @@ export class PeopleService {
    * Detalhe exibido na tela da pessoa, com contato e endereço principais.
    * As validações internas (ex.: agendamentos) usam o findOne, sem esses JOINs.
    */
+  /**
+   * Consulta (GET /people/:id): devolve também a pessoa inativa, só para
+   * leitura (ex.: o histórico do cliente). Alterar, excluir e vincular continuam
+   * só para ativas (findOne).
+   */
   async findDetail(id: string, companyId: string): Promise<PeopleDetail> {
     const people = await this.prisma.people.findFirst({
-      where: { id, companyId, deletedAt: null },
+      where: { id, companyId },
       omit: omitSearchColumn,
       include: {
         contacts: principalContactQuery,

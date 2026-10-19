@@ -56,8 +56,8 @@
   - Nenhum item é marcado como principal automaticamente.
   - Uma cidade inexistente em qualquer endereço recusa o cadastro inteiro (404), sem criar a pessoa.
   - Depois do cadastro, telefone, contatos e endereços são mantidos pelas rotas de contatos e endereços; a edição da pessoa não os altera.
-- A listagem de pessoas traz ativas e excluídas (inativas): o status é derivado da data de exclusão (`deletedAt`). Não há filtro de status por enquanto.
-- Uma pessoa excluída continua na listagem, mas não pode ser consultada, editada nem excluída de novo (404), nem ser usada em agendamentos.
+- A listagem de pessoas traz ativas e excluídas (inativas): o status é derivado da data de exclusão (`deletedAt`). O filtro opcional `isActive` traz só as ativas (`true`) ou só as inativas (`false`).
+- Uma pessoa excluída continua na listagem e pode ser consultada (`GET /people/:id`, só leitura, com o `deletedAt`; ex.: o histórico do cliente), mas não pode ser editada nem excluída de novo (404), nem ser usada em agendamentos.
 - Uma pessoa excluída pode ser reativada. A reativação é recusada quando a pessoa não existe (404), já está ativa (409) ou quando o CPF dela está em uso por outra pessoa ativa da empresa (409). Ao reativar, os contatos e endereços dela voltam a ser acessíveis.
 - A foto da pessoa é opcional e enviada por uma rota própria, em JPEG ou PNG, com até 2 MB. O formato é conferido pelo conteúdo do arquivo, e não só pela extensão.
 - O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
@@ -113,7 +113,7 @@
 - O agendamento precisa caber inteiro em uma janela de atendimento da empresa (ver "Horário de funcionamento"), exceto quando é um encaixe autorizado. Cancelar um agendamento não passa por essa verificação.
 - Toda resposta de agendamento (listagem, consulta, criação e alteração) traz, além dos códigos, o cliente e o profissional (`id`, `name`, `photoUrl`) e o serviço (`id`, `name`, `color`, `duration`), e nenhum outro dado deles.
 - Uma pessoa ou serviço excluídos depois continuam aparecendo com o nome nos agendamentos que já os usavam: o histórico não perde o nome.
-- A listagem é ordenada pelo início do agendamento, do mais antigo para o mais novo; horários iguais seguem uma ordem fixa, para a paginação não repetir nem perder registros.
+- A listagem é ordenada pelo início do agendamento, do mais antigo para o mais novo; com `order=desc`, do mais novo para o mais antigo (ex.: atendimentos anteriores do cliente). Horários iguais seguem uma ordem fixa, na mesma direção, para a paginação não repetir nem perder registros.
 - A resposta do agendamento informa a origem: `recurringAppointment` com o `id` da recorrência e o `clientPlanId` (preenchido quando ela é de um pacote), ou nulo no agendamento avulso.
 - A listagem de agendamentos pode ser filtrada por recorrência (as sessões de uma recorrência ou de um pacote), mantendo a ordem, a paginação e o escopo da empresa. Sem o filtro, nada muda.
 - A agenda de um dia usa o período `from` e `to` (início incluído, fim excluído) com instantes em UTC: o início do dia e o início do dia seguinte, no fuso da empresa.
@@ -287,6 +287,7 @@
 - O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa, sem diferenciar maiúsculas nem acentos ("PIX" e "Pix" são o mesmo método).
 - A exclusão do método de pagamento é lógica (inativação). A listagem (`GET /payment-methods`) traz ativos e inativos; com `isActive=true`, só os ativos (ex.: escolher o método na baixa de um pagamento). Consultar, alterar, excluir e usar na baixa valem só para ativos.
 - Um método inativado pode ser reativado por `PATCH /payment-methods/:id/restore` (limpa o `deletedAt`). Reativar um método já ativo responde 409; se o nome estiver em uso por outro método ativo da empresa, também responde 409.
+- A listagem de pagamentos (`GET /payments`) traz a origem de cada um, para a tela descrevê-lo: o atendimento (`appointment`, com a data e o serviço) ou a contratação (`clientPlan`, com o nome do plano).
 - Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
 - Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
 - Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.
