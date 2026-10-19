@@ -38,6 +38,12 @@ const visibleToSuperAdmin = (companyId?: string) => ({
   company: { isActive: true },
 });
 
+// A listagem e a reativação também enxergam os inativos (sem o filtro de deletedAt).
+const withDeleted = (filter: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(filter).filter(([key]) => key !== "deletedAt"),
+  );
+
 describe("UserService", () => {
   let userService: UserService;
   const prismaMock = {
@@ -222,14 +228,14 @@ describe("UserService", () => {
       prismaMock.user.count.mockResolvedValue(1);
     });
 
-    it("ADMIN lista só a própria empresa, sem SUPER_ADMINs e sem senha", async () => {
+    it("ADMIN lista só a própria empresa (ativos e inativos), sem SUPER_ADMINs e sem senha", async () => {
       const result = await userService.findAll(
         { page: 1, limit: 10 },
         adminUser,
       );
 
       expect(prismaMock.user.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: visibleToAdmin, omit }),
+        expect.objectContaining({ where: withDeleted(visibleToAdmin), omit }),
       );
       expect(result).toEqual({
         items: [storedUser],
@@ -256,10 +262,10 @@ describe("UserService", () => {
       );
 
       expect(prismaMock.user.count).toHaveBeenNthCalledWith(1, {
-        where: visibleToSuperAdmin(undefined),
+        where: withDeleted(visibleToSuperAdmin(undefined)),
       });
       expect(prismaMock.user.count).toHaveBeenNthCalledWith(2, {
-        where: visibleToSuperAdmin(OTHER_COMPANY_ID),
+        where: withDeleted(visibleToSuperAdmin(OTHER_COMPANY_ID)),
       });
     });
   });
@@ -364,6 +370,59 @@ describe("UserService", () => {
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(bcrypt.hash).not.toHaveBeenCalled();
       expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("restore", () => {
+    it("deve reativar o usuário inativado, sem expor a senha", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ deletedAt: new Date() });
+      prismaMock.user.update.mockResolvedValue(storedUser);
+
+      await expect(userService.restore("user-2", adminUser)).resolves.toEqual(
+        storedUser,
+      );
+
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: { id: "user-2", ...withDeleted(visibleToAdmin) },
+        select: { deletedAt: true },
+      });
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: "user-2" },
+        data: { deletedAt: null, updatedAt: anyDate },
+        omit,
+      });
+    });
+
+    it("deve lançar NotFoundException para usuário fora do alcance", async () => {
+      prismaMock.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        userService.restore("user-2", adminUser),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar ConflictException quando o usuário já está ativo", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ deletedAt: null });
+
+      await expect(
+        userService.restore("user-2", adminUser),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar ConflictException quando o e-mail já está em uso por outro ativo", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ deletedAt: new Date() });
+      prismaMock.user.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        userService.restore("user-2", adminUser),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

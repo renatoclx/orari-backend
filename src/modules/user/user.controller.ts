@@ -71,6 +71,15 @@ export class UserController {
     return this.userService.resetPassword(id, dto, currentUser);
   }
 
+  // Reativa um usuário inativado (limpa o deletedAt).
+  @Patch(":id/restore")
+  restore(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.userService.restore(id, currentUser);
+  }
+
   @Delete(":id")
   @HttpCode(204)
   remove(

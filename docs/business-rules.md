@@ -32,6 +32,8 @@
 - Ninguém pode excluir a própria conta nem alterar o próprio tipo.
 - O login é recusado para usuários excluídos e para usuários de empresas inativas, sempre com a mesma mensagem genérica de credenciais inválidas.
 - Um usuário autenticado perde o acesso imediatamente quando é excluído ou quando sua empresa fica inativa.
+- A exclusão é lógica (inativação): preenche o `deletedAt`. A listagem (`GET /users`) traz ativos e inativos; consultar, alterar, trocar a senha e excluir valem só para ativos (inativo responde 404).
+- Um usuário inativado pode ser reativado por `PATCH /users/:id/restore` (limpa o `deletedAt`), pelos mesmos perfis e com o mesmo alcance da gestão de usuários. Reativar um usuário já ativo responde 409; se o e-mail dele estiver em uso por outro usuário ativo, também responde 409.
 
 ## Senhas
 
