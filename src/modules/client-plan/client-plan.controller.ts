@@ -8,10 +8,20 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClientPlanService } from "./client-plan.service";
+import {
+  ClientPlanPageDto,
+  ClientPlanResponseDto,
+} from "./dto/client-plan-response.dto";
 import { CreateClientPlanDto } from "./dto/create-client-plan.dto";
 import { FindClientPlansQueryDto } from "./dto/find-client-plans-query.dto";
 
@@ -23,6 +33,7 @@ export class ClientPlanController {
   constructor(private readonly clientPlanService: ClientPlanService) {}
 
   @Post()
+  @ApiCreatedResponse({ type: ClientPlanResponseDto })
   create(
     @Body() dto: CreateClientPlanDto,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -31,6 +42,14 @@ export class ClientPlanController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: "Lista as contratações, da mais recente para a mais antiga",
+    description:
+      "Cada contratação traz o cliente, o plano e, em cada serviço, o serviço, " +
+      "o profissional e os dias, mesmo que tenham sido excluídos ou inativados " +
+      "depois. O filtro status usa o dia de hoje no fuso da empresa.",
+  })
+  @ApiOkResponse({ type: ClientPlanPageDto })
   findAll(
     @Query() query: FindClientPlansQueryDto,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -39,6 +58,7 @@ export class ClientPlanController {
   }
 
   @Get(":id")
+  @ApiOkResponse({ type: ClientPlanResponseDto })
   findOne(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -48,6 +68,7 @@ export class ClientPlanController {
 
   // Cancela sem multa: encerra as agendas e, no mensal, as parcelas a vencer.
   @Patch(":id/cancel")
+  @ApiOkResponse({ type: ClientPlanResponseDto })
   cancel(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,

@@ -237,6 +237,12 @@
 - Alterar preços de serviços ou o plano depois da contratação não altera o valor da contratação.
 - Ao fim do período contratado, a continuidade exige uma nova contratação, como nas recorrências.
 
+### Consulta das contratações
+
+- As respostas de contratação (listagem, consulta, criação e cancelamento) trazem o cliente (`id`, `name`, `photoUrl`), o plano (`id`, `name`) e, em cada recorrência, o serviço, o profissional, os dias (`weekDay`, `startTime`, `endTime` em HH:MM) e `isActive`. Os ids continuam planos. Cliente, plano, serviço ou profissional excluídos ou inativados depois continuam aparecendo com o nome.
+- A listagem aceita o filtro opcional `status`, com "hoje" no fuso da empresa: `active` (não cancelada e com data final de hoje em diante, inclusive as que ainda vão começar), `cancelled` (com data de cancelamento) e `ended` (não cancelada e com data final anterior a hoje). Sem o filtro, todas são listadas.
+- A listagem vem da contratação mais recente para a mais antiga (data de criação decrescente).
+
 ### Troca de serviços
 
 - O plano fecha o contrato com os serviços contratados: não há troca de serviço durante a contratação.
