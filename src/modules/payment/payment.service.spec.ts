@@ -13,6 +13,7 @@ import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
+import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { PaymentService } from "./payment.service";
 
 const anyDate: unknown = expect.any(Date);
@@ -22,10 +23,18 @@ const ownedByCompany = { companyId: COMPANY_ID };
 
 describe("PaymentService", () => {
   let paymentService: PaymentService;
-  const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+  const prismaMock: Record<string, unknown> & {
+    payment: Record<string, ReturnType<typeof vi.fn>>;
+    people: Record<string, ReturnType<typeof vi.fn>>;
+  } = {
+    // Aceita a forma em lote (array) e a interativa (função, que recebe o próprio mock).
+    $transaction: vi.fn(
+      (operations: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+        typeof operations === "function"
+          ? operations(prismaMock)
+          : Promise.all(operations),
     ),
+    people: { findMany: vi.fn(), count: vi.fn() },
     payment: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -862,6 +871,262 @@ describe("PaymentService", () => {
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findCheckouts", () => {
+    // Hoje: 10/10/2026 em UTC (relógio fixo do beforeEach).
+    const today = new Date("2026-10-10");
+    const fromAppointment = (
+      id: string,
+      clientId: string,
+      amount: string,
+      status = "PENDING",
+    ) => ({
+      id,
+      status,
+      amount: new Decimal(amount),
+      appointment: { id: `a-${id}`, clientId },
+      clientPlan: null,
+    });
+    const fromPlan = (id: string, clientId: string, amount: string) => ({
+      id,
+      status: "PENDING",
+      amount: new Decimal(amount),
+      appointment: null,
+      clientPlan: { id: `cp-${id}`, clientId, billingType: "INTEGRAL" },
+    });
+
+    it("deve filtrar o dia: vencem hoje, integral sem vencimento e pagos hoje", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([]);
+      prismaMock.people.findMany.mockResolvedValue([]);
+      prismaMock.people.count.mockResolvedValue(0);
+
+      await paymentService.findCheckouts({ page: 1, limit: 10 }, COMPANY_ID);
+
+      // Atrasado (dueDate < hoje), futuro, CANCELLED, excluído e pago ontem
+      // ficam de fora porque nenhuma das três regras os alcança.
+      expect(prismaMock.payment.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: {
+            companyId: COMPANY_ID,
+            deletedAt: null,
+            OR: [
+              { status: "PENDING", dueDate: today },
+              {
+                status: "PENDING",
+                dueDate: null,
+                clientPlan: { billingType: "INTEGRAL" },
+              },
+              {
+                status: "PAID",
+                paidAt: {
+                  gte: new Date("2026-10-10T00:00:00.000Z"),
+                  lt: new Date("2026-10-11T00:00:00.000Z"),
+                },
+              },
+            ],
+          },
+        }),
+      );
+    });
+
+    it("deve usar o dia no fuso da empresa", async () => {
+      // 01:00 UTC de 11/10 ainda é 10/10 em São Paulo (UTC-3).
+      vi.setSystemTime(new Date("2026-10-11T01:00:00.000Z"));
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+      prismaMock.payment.findMany.mockResolvedValue([]);
+      prismaMock.people.findMany.mockResolvedValue([]);
+      prismaMock.people.count.mockResolvedValue(0);
+
+      await paymentService.findCheckouts({ page: 1, limit: 10 }, COMPANY_ID);
+
+      const [{ where }] = prismaMock.payment.findMany.mock.calls[0] as [
+        { where: { OR: Record<string, unknown>[] } },
+      ];
+      expect(where.OR[0].dueDate).toEqual(today);
+      expect(where.OR[2].paidAt).toEqual({
+        gte: new Date("2026-10-10T03:00:00.000Z"),
+        lt: new Date("2026-10-11T03:00:00.000Z"),
+      });
+    });
+
+    it("deve agrupar por cliente, somar os totais e paginar por cliente", async () => {
+      prismaMock.payment.findMany
+        .mockResolvedValueOnce([
+          fromAppointment("p1", "c1", "100"),
+          fromPlan("p2", "c1", "50.5"),
+          fromAppointment("p3", "c2", "30"),
+        ])
+        .mockResolvedValueOnce([
+          fromAppointment("p1", "c1", "100"),
+          fromPlan("p2", "c1", "50.5"),
+          fromAppointment("p4", "c1", "20", "PAID"),
+        ]);
+      prismaMock.people.findMany.mockResolvedValue([{ id: "c1", name: "Ana" }]);
+      prismaMock.people.count.mockResolvedValue(2);
+
+      const result = await paymentService.findCheckouts(
+        { page: 1, limit: 1 },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.people.findMany).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          id: { in: ["c1", "c2"] },
+          normalizedName: undefined,
+        },
+        select: { id: true, name: true },
+        orderBy: [{ normalizedName: "asc" }, { id: "asc" }],
+        skip: 0,
+        take: 1,
+      });
+      expect(result.total).toBe(2);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].client).toEqual({ id: "c1", name: "Ana" });
+      expect(result.items[0].total.toString()).toBe("170.5");
+      expect(result.items[0].pendingTotal.toString()).toBe("150.5");
+      expect(result.items[0].payments).toHaveLength(3);
+    });
+
+    it("deve buscar o nome sem acento nem maiúsculas", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([]);
+      prismaMock.people.findMany.mockResolvedValue([]);
+      prismaMock.people.count.mockResolvedValue(0);
+
+      await paymentService.findCheckouts(
+        { page: 2, limit: 5, search: "JOSÉ" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            normalizedName: { contains: "jose" },
+          }) as unknown,
+          skip: 5,
+          take: 5,
+        }),
+      );
+    });
+
+    it("não deve buscar pagamentos quando a página não tem clientes", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([]);
+      prismaMock.people.findMany.mockResolvedValue([]);
+      prismaMock.people.count.mockResolvedValue(0);
+
+      const result = await paymentService.findCheckouts(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      expect(result.items).toEqual([]);
+      expect(prismaMock.payment.findMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("settle", () => {
+    const ids = ["p1", "p2"];
+    const body = { paymentIds: ids, paymentMethodId: "method-1" };
+    const pending = (clientId: string, status = "PENDING") => ({
+      status,
+      appointment: { clientId },
+      clientPlan: null,
+    });
+
+    beforeEach(() => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        pending("c1"),
+        pending("c1"),
+      ]);
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 2 });
+    });
+
+    it("deve dar baixa numa transação, com método e o momento da requisição", async () => {
+      const result = await paymentService.settle(body, COMPANY_ID);
+
+      expect(result).toEqual({ settled: 2 });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ids },
+          status: "PENDING",
+          deletedAt: null,
+          companyId: COMPANY_ID,
+        },
+        data: {
+          status: "PAID",
+          paymentMethodId: "method-1",
+          paidAt: new Date("2026-10-10T12:00:00.000Z"),
+          updatedAt: anyDate,
+        },
+      });
+    });
+
+    it("deve usar o paidAt informado", async () => {
+      const paidAt = new Date("2026-10-09T15:00:00.000Z");
+
+      await paymentService.settle({ ...body, paidAt }, COMPANY_ID);
+
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ paidAt }) as unknown,
+        }),
+      );
+    });
+
+    it("deve lançar NotFoundException quando algum pagamento não é da empresa", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([pending("c1")]);
+
+      await expect(
+        paymentService.settle(body, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar NotFoundException para método inexistente na empresa", async () => {
+      paymentMethodServiceMock.findOne.mockRejectedValueOnce(
+        new NotFoundException(),
+      );
+
+      await expect(
+        paymentService.settle(body, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar ConflictException quando algum não está PENDING", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        pending("c1"),
+        pending("c1", "PAID"),
+      ]);
+
+      await expect(
+        paymentService.settle(body, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar BadRequestException para clientes diferentes", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        pending("c1"),
+        pending("c2"),
+      ]);
+
+      await expect(
+        paymentService.settle(body, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve lançar ConflictException se uma baixa concorrente tirou algum do PENDING", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(
+        paymentService.settle(body, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });
