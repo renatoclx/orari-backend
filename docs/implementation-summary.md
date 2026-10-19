@@ -16,48 +16,48 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 
 ### Entidades
 
-| Entidade | Exclusão | Observações |
-|---|---|---|
-| State | — (somente leitura, seed IBGE) | 27 estados |
-| City | — (somente leitura, seed IBGE) | 5.571 cidades; busca por nome sem acento |
-| Company | **Não é excluída**, é inativada (`isActive`) | CNPJ numérico ou alfanumérico com dígitos verificadores |
-| User | Soft delete | Tipos `SUPER_ADMIN`, `ADMIN`, `USER` |
-| People | Soft delete | CPF com dígitos verificadores; tipos `CLIENT`, `EMPLOYEE`, `PROFESSIONAL` |
-| Contact | Soft delete | Dono exclusivo (empresa **ou** pessoa); telefone e/ou e-mail |
-| Address | Soft delete | Dono exclusivo; pertence a uma cidade |
-| Service | Soft delete | Nome único por empresa; duração em minutos; `isActive` |
-| Appointment | **Sem exclusão** (controlado por `status`) | Fim calculado pela duração do serviço; sem conflito de horário |
-| RecurringAppointment | **Sem exclusão** (`isActive`) | Período + dias da semana |
-| RecurringDay | Exclusão física (substituída em bloco) | Dia da semana e horários (`time`) |
-| PaymentMethod | Soft delete | Nome único por empresa |
-| Plan | **Sem exclusão** (`isActive`, reativável) | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco |
-| Payment | Soft delete | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
-| BusinessHour | Soft delete | Janelas de atendimento por dia da semana |
-| Notification | **Sem exclusão** (resolvida) | Sem tipos em uso (entidade mantida para o futuro) |
+| Entidade             | Exclusão                                     | Observações                                                                                      |
+| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| State                | — (somente leitura, seed IBGE)               | 27 estados                                                                                       |
+| City                 | — (somente leitura, seed IBGE)               | 5.571 cidades; busca por nome sem acento                                                         |
+| Company              | **Não é excluída**, é inativada (`isActive`) | CNPJ numérico ou alfanumérico com dígitos verificadores                                          |
+| User                 | Soft delete                                  | Tipos `SUPER_ADMIN`, `ADMIN`, `USER`                                                             |
+| People               | Soft delete                                  | CPF com dígitos verificadores; tipos `CLIENT`, `EMPLOYEE`, `PROFESSIONAL`                        |
+| Contact              | Soft delete                                  | Dono exclusivo (empresa **ou** pessoa); telefone e/ou e-mail                                     |
+| Address              | Soft delete                                  | Dono exclusivo; pertence a uma cidade                                                            |
+| Service              | Soft delete                                  | Nome único por empresa; duração em minutos; `isActive`                                           |
+| Appointment          | **Sem exclusão** (controlado por `status`)   | Fim calculado pela duração do serviço; sem conflito de horário                                   |
+| RecurringAppointment | **Sem exclusão** (`isActive`)                | Período + dias da semana                                                                         |
+| RecurringDay         | Exclusão física (substituída em bloco)       | Dia da semana e horários (`time`)                                                                |
+| PaymentMethod        | Soft delete                                  | Nome único por empresa                                                                           |
+| Plan                 | **Sem exclusão** (`isActive`, reativável)    | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco               |
+| Payment              | Soft delete                                  | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
+| BusinessHour         | Soft delete                                  | Janelas de atendimento por dia da semana                                                         |
+| Notification         | **Sem exclusão** (resolvida)                 | Sem tipos em uso (entidade mantida para o futuro)                                                |
 
 ### Rotas
 
-| Recurso | Rotas | Quem acessa |
-|---|---|---|
-| Auth | `POST /auth/login` | Público |
-| Auth | `GET /auth/me` | Qualquer usuário autenticado (o próprio perfil) |
-| States | `GET /states`, `GET /states/:id` | Autenticado |
-| Cities | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id` | Autenticado |
-| Companies | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id` | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
-| Companies (a própria empresa) | `PATCH /me` (nome fantasia), `POST`/`DELETE /me/logo` | ADMIN e SUPER_ADMIN, na empresa do token |
-| Users | `POST`, `GET` (`?companyId`), `GET /:id`, `PATCH /:id`, `PATCH /:id/password`, `DELETE /:id` | SUPER_ADMIN (qualquer empresa ativa) e ADMIN (própria empresa) |
-| People | CRUD + `GET` (`?name`, `?document`, `?type`; inclui inativas), `PATCH /:id/restore`, `POST`/`DELETE /:id/photo` | Qualquer tipo, só na própria empresa |
-| Contacts | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
-| Addresses | CRUD + `GET` (`?companyId`, `?peopleId`) | Qualquer tipo, só na própria empresa |
-| Services | CRUD + `GET` (`?name`, `?isActive`) | Qualquer tipo, só na própria empresa |
-| Appointments | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`; com cliente, profissional e serviço), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
-| Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
-| Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Client plans | `POST`, `GET` (`?clientId`, `?planId`, `?status`), `GET /:id`, `PATCH /:id/cancel` | Qualquer tipo, só na própria empresa |
-| Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`) | Qualquer tipo, só na própria empresa |
-| Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
-| Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
+| Recurso                       | Rotas                                                                                                                                                                                                                                               | Quem acessa                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Auth                          | `POST /auth/login`                                                                                                                                                                                                                                  | Público                                                                              |
+| Auth                          | `GET /auth/me`                                                                                                                                                                                                                                      | Qualquer usuário autenticado (o próprio perfil)                                      |
+| States                        | `GET /states`, `GET /states/:id`                                                                                                                                                                                                                    | Autenticado                                                                          |
+| Cities                        | `GET /cities` (`?stateId`, `?name`), `GET /cities/:id`                                                                                                                                                                                              | Autenticado                                                                          |
+| Companies                     | `POST`, `GET` (`?isActive`), `GET /:id`, `PATCH /:id`                                                                                                                                                                                               | Escrita e filtro por status: SUPER_ADMIN. Leitura: demais tipos só a própria empresa |
+| Companies (a própria empresa) | `PATCH /me` (nome fantasia), `POST`/`DELETE /me/logo`                                                                                                                                                                                               | ADMIN e SUPER_ADMIN, na empresa do token                                             |
+| Users                         | `POST`, `GET` (`?companyId`), `GET /:id`, `PATCH /:id`, `PATCH /:id/password`, `DELETE /:id`                                                                                                                                                        | SUPER_ADMIN (qualquer empresa ativa) e ADMIN (própria empresa)                       |
+| People                        | CRUD + `GET` (`?name`, `?document`, `?type`; inclui inativas), `PATCH /:id/restore`, `POST`/`DELETE /:id/photo`                                                                                                                                     | Qualquer tipo, só na própria empresa                                                 |
+| Contacts                      | CRUD + `GET` (`?companyId`, `?peopleId`)                                                                                                                                                                                                            | Qualquer tipo, só na própria empresa                                                 |
+| Addresses                     | CRUD + `GET` (`?companyId`, `?peopleId`)                                                                                                                                                                                                            | Qualquer tipo, só na própria empresa                                                 |
+| Services                      | CRUD + `GET` (`?name`, `?isActive`)                                                                                                                                                                                                                 | Qualquer tipo, só na própria empresa                                                 |
+| Appointments                  | `POST`, `GET` (`?status`, `?professionalId`, `?clientId`, `?from`, `?to`; com cliente, profissional e serviço), `GET /:id`, `PATCH /:id`                                                                                                            | Qualquer tipo, só na própria empresa                                                 |
+| Recurring appointments        | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa                                                 |
+| Payment methods               | CRUD + `GET` (`?name`)                                                                                                                                                                                                                              | Qualquer tipo, só na própria empresa                                                 |
+| Plans                         | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id`                                                                                                                                                                                      | Qualquer tipo, só na própria empresa                                                 |
+| Client plans                  | `POST`, `GET` (`?clientId`, `?planId`, `?status`), `GET /:id`, `PATCH /:id/cancel`                                                                                                                                                                  | Qualquer tipo, só na própria empresa                                                 |
+| Payments                      | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`)                                                                                           | Qualquer tipo, só na própria empresa                                                 |
+| Business hours                | CRUD + `GET` (`?weekDay`)                                                                                                                                                                                                                           | Qualquer tipo, só na própria empresa                                                 |
+| Notifications                 | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read`                                                                                                                                                                            | Qualquer tipo, só na própria empresa                                                 |
 
 Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status HTTP seguem o `coding-standards.md` (201/200/204).
 
@@ -152,7 +152,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 ### 2.12 Catálogo de planos (Etapa 5)
 
 - **Entidades:** `Plan` (valor mensal próprio, `monthlyPrice`), `PlanItem` (serviço do plano; renomeado de `PlanService` para não colidir com a classe do NestJS) e `PlanPeriod` (meses e os dois percentuais de desconto).
-- **Cadastro em um payload:** `POST /plans` recebe `serviceIds` e `periods`; no `PATCH`, cada lista informada substitui a anterior, como os dias da recorrência.
+- **Cadastro em um payload:** `POST /plans` recebe `services` (`serviceId` + `sessionsPerWeek`) e `periods`; no `PATCH`, cada lista informada substitui a anterior, como os dias da recorrência.
 - **Validações:** ao menos um serviço, sem repetição, todos da empresa e ativos (reaproveita `ServiceService.findActive`); períodos com meses distintos e percentuais de 0 a 100; nome único (409).
 - **Resposta:** os itens saem como `services` (`id`, `name`, `isActive`), sem expor a tabela intermediária.
 - **Para a contratação (Etapa 6):** recusar plano inativo, sem períodos ou com serviço inativo.
@@ -285,20 +285,21 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 ## 3. Arquitetura transversal (código compartilhado)
 
-| Arquivo | Papel |
-|---|---|
+| Arquivo                                 | Papel                                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `common/authorization/company-scope.ts` | `resolveCompanyScope()`: define em qual empresa o usuário pode agir (SUPER_ADMIN escolhe a empresa; os demais usam a própria, e pedir outra retorna 403) |
-| `common/authorization/owner-scope.ts` | `ownedByCompany()`: filtro de contatos e endereços visíveis para uma empresa (os da própria empresa e os de suas pessoas não excluídas) |
-| `common/decorators/` | `@Public()`, `@Roles()`, `@CurrentUser()` |
-| `common/dto/` | Paginação, `OwnerDto` (dono exclusivo), filtro por dono |
-| `common/validators/` | `ExactlyOneOf`, `AtLeastOneOf`, `Match`, `IsCpf`, `IsCnpj` |
-| `common/text/normalize-for-search.ts` | Normalização usada na busca por nome |
-| `common/time/time-of-day.ts` | Conversão entre `"HH:MM"` e as colunas `time` |
-| `common/time/time-zone.ts` | Conversões entre o relógio da empresa e o instante UTC |
-| `prisma/prisma-errors.ts` | Detecção de violação de unicidade (P2002 → 409) |
-| `modules/auth/guards/roles.guard.ts` | Verificação de `@Roles()` (403) |
+| `common/authorization/owner-scope.ts`   | `ownedByCompany()`: filtro de contatos e endereços visíveis para uma empresa (os da própria empresa e os de suas pessoas não excluídas)                  |
+| `common/decorators/`                    | `@Public()`, `@Roles()`, `@CurrentUser()`                                                                                                                |
+| `common/dto/`                           | Paginação, `OwnerDto` (dono exclusivo), filtro por dono                                                                                                  |
+| `common/validators/`                    | `ExactlyOneOf`, `AtLeastOneOf`, `Match`, `IsCpf`, `IsCnpj`                                                                                               |
+| `common/text/normalize-for-search.ts`   | Normalização usada na busca por nome                                                                                                                     |
+| `common/time/time-of-day.ts`            | Conversão entre `"HH:MM"` e as colunas `time`                                                                                                            |
+| `common/time/time-zone.ts`              | Conversões entre o relógio da empresa e o instante UTC                                                                                                   |
+| `prisma/prisma-errors.ts`               | Detecção de violação de unicidade (P2002 → 409)                                                                                                          |
+| `modules/auth/guards/roles.guard.ts`    | Verificação de `@Roles()` (403)                                                                                                                          |
 
 **Convenções de resposta**
+
 - Registros fora do alcance do usuário respondem **404**, para não revelar que existem.
 - Pedir explicitamente outra empresa, seja no filtro ou no payload, responde **403**.
 
@@ -310,17 +311,17 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 
 ### Migrations
 
-| Migration | Conteúdo |
-|---|---|
-| `20260916190816_init` | Tabela `users` |
-| `20260917134153_create_domain_entities` | Entidades de domínio, enums e CHECK de dono exclusivo |
-| `20260917140435_update_domain_entities` | User completo, `isActive` em Company, campos obrigatórios e opcionais, CHECK de telefone/e-mail |
-| `20260917164530_partial_unique_indexes` | Índices únicos parciais |
-| `20260917170003_super_admin_and_company_inactivation` | `SUPER_ADMIN`, remoção de `companies.deletedAt`, CPF com `CHAR(11)` |
-| `20260917171259_accent_insensitive_name_search` | `pg_trgm`, `normalizedName` e índices GIN (escrita à mão, em etapas) |
-| `20260917185855_scheduling_and_payments` | Serviços, agendamentos, recorrências, métodos de pagamento e pagamentos |
-| `20260917191312_business_hours_and_recurrence_link` | Janelas de atendimento e vínculo do agendamento com a recorrência |
-| `20260917192848_company_timezone_and_notifications` | Fuso da empresa e entidade de notificações |
+| Migration                                             | Conteúdo                                                                                        |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `20260916190816_init`                                 | Tabela `users`                                                                                  |
+| `20260917134153_create_domain_entities`               | Entidades de domínio, enums e CHECK de dono exclusivo                                           |
+| `20260917140435_update_domain_entities`               | User completo, `isActive` em Company, campos obrigatórios e opcionais, CHECK de telefone/e-mail |
+| `20260917164530_partial_unique_indexes`               | Índices únicos parciais                                                                         |
+| `20260917170003_super_admin_and_company_inactivation` | `SUPER_ADMIN`, remoção de `companies.deletedAt`, CPF com `CHAR(11)`                             |
+| `20260917171259_accent_insensitive_name_search`       | `pg_trgm`, `normalizedName` e índices GIN (escrita à mão, em etapas)                            |
+| `20260917185855_scheduling_and_payments`              | Serviços, agendamentos, recorrências, métodos de pagamento e pagamentos                         |
+| `20260917191312_business_hours_and_recurrence_link`   | Janelas de atendimento e vínculo do agendamento com a recorrência                               |
+| `20260917192848_company_timezone_and_notifications`   | Fuso da empresa e entidade de notificações                                                      |
 
 **Observação:** o `prisma migrate dev` exige terminal interativo quando há avisos. Nesses casos, as migrations foram geradas com `prisma migrate diff --from-config-datasource --to-schema ... --script` e aplicadas com `prisma migrate deploy`.
 
@@ -347,12 +348,14 @@ npm run seed:demo             # opcional: cadastro completo de demonstração
 ```
 
 **Variáveis do seed:**
+
 - empresa: `SEED_COMPANY_CORPORATE_REASON`, `SEED_COMPANY_CNPJ`, `SEED_COMPANY_SUBDOMAIN`, `SEED_COMPANY_FOUNDATION_DATE`;
 - SUPER_ADMIN: `SEED_SUPER_ADMIN_NAME`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_SUPER_ADMIN_PASSWORD`.
 
 Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta** e nunca altera registros existentes.
 
 **Ambiente de desenvolvimento**
+
 - O usuário precisa estar no grupo `docker`.
 - O `alb_locacoes_postgres` usa a porta 5433, e o Postgres nativo usa a 5432.
 
@@ -373,10 +376,12 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 7. Pendências e pontos de atenção
 
 **Pendente**
+
 - **Dados provisórios do seed:** empresa "Orari", CNPJ `11111111000191`, `admin@orari.local`. É preciso trocar pelos dados reais antes de usar em outro ambiente e, como o seed não altera registros, atualizar também os registros já existentes.
 - **Commit:** todo o trabalho desde a criação das entidades ainda não foi commitado.
 
 **Atenção**
+
 - **Recurso preview `partialIndexes`:** ao atualizar o Prisma, revisar o changelog. As versões estão fixadas propositalmente.
 - **Coluna `normalizedName`:** qualquer gravação de nome de pessoa ou cidade fora dos services ou do seed precisa preenchê-la.
 - **Extensões:** outros ambientes precisam permitir `pg_trgm` (e `unaccent`, usada durante a migration).
@@ -389,3 +394,8 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - Respostas de `/client-plans` incluem `client`, `plan` e, por recorrência, `service`, `professional`, `days` (HH:MM) e `isActive`, mantendo os ids planos.
 - `GET /client-plans?status=active|cancelled|ended` ("hoje" no fuso da empresa); ordem por `createdAt` decrescente, com `id` como desempate.
 - Swagger: `src/modules/client-plan/dto/client-plan-response.dto.ts`.
+
+## 2.30 Frequência semanal dos serviços do plano
+
+- `PlanItem.sessionsPerWeek` (1 a 7, migração `20261019120000_plan_item_sessions_per_week`, itens existentes ficam com 1). `serviceIds` foi removido de `POST`/`PATCH /plans`, que agora recebem `services: [{ serviceId, sessionsPerWeek }]`; a resposta devolve `sessionsPerWeek` em cada serviço.
+- `POST /client-plans` exige que a agenda de cada serviço tenha exatamente `sessionsPerWeek` dias; a contratação não guarda a frequência, pois as recorrências já guardam os dias.

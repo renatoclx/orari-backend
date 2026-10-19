@@ -8,7 +8,9 @@ import { CreatePlanDto } from "./create-plan.dto";
 const base = {
   name: "Pilates + Fisio",
   monthlyPrice: 450,
-  serviceIds: ["8f14e45f-ceea-4c6a-9f1b-6d2f1c3b7a10"],
+  services: [
+    { serviceId: "8f14e45f-ceea-4c6a-9f1b-6d2f1c3b7a10", sessionsPerWeek: 2 },
+  ],
 };
 const period = { months: 3, discountPercent: 10, monthlyDiscountPercent: 5 };
 
@@ -28,17 +30,39 @@ describe("CreatePlanDto", () => {
   });
 
   it("deve exigir ao menos um serviço", async () => {
-    await expect(errorsFor({ ...base, serviceIds: [] })).resolves.toEqual([
-      "serviceIds",
+    await expect(errorsFor({ ...base, services: [] })).resolves.toEqual([
+      "services",
     ]);
   });
 
-  it("deve recusar serviço repetido", async () => {
-    const serviceId = base.serviceIds[0];
+  it.each([0, 8, 1.5, "x"])(
+    "deve recusar sessionsPerWeek %s",
+    async (sessionsPerWeek) => {
+      await expect(
+        errorsFor({
+          ...base,
+          services: [{ ...base.services[0], sessionsPerWeek }],
+        }),
+      ).resolves.toEqual(["services"]);
+    },
+  );
 
-    await expect(
-      errorsFor({ ...base, serviceIds: [serviceId, serviceId] }),
-    ).resolves.toEqual(["serviceIds"]);
+  it.each([1, 7])(
+    "deve aceitar sessionsPerWeek %s",
+    async (sessionsPerWeek) => {
+      await expect(
+        errorsFor({
+          ...base,
+          services: [{ ...base.services[0], sessionsPerWeek }],
+        }),
+      ).resolves.toEqual([]);
+    },
+  );
+
+  it("deve recusar o antigo serviceIds", async () => {
+    await expect(errorsFor({ ...base, serviceIds: ["x"] })).resolves.toContain(
+      "serviceIds",
+    );
   });
 
   it.each([

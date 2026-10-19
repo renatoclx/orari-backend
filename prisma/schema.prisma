@@ -389,10 +389,12 @@ model Plan {
 // Serviço incluído em um plano. Faz parte do plano: é criado e substituído junto
 // com ele, por isso usa exclusão física (ver docs/database.md).
 model PlanItem {
-  id        String   @id @default(uuid())
-  planId    String
-  serviceId String
-  createdAt DateTime @default(now())
+  id              String   @id @default(uuid())
+  planId          String
+  serviceId       String
+  // Atendimentos por semana deste serviço no plano (1 a 7, validado no DTO).
+  sessionsPerWeek Int      @default(1)
+  createdAt       DateTime @default(now())
 
   plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
   service Service @relation(fields: [serviceId], references: [id])
