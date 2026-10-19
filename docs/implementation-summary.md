@@ -54,7 +54,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Recurring appointments | `POST`, `GET` (`?professionalId`, `?clientId`, `?isActive`), `GET /:id`, `PATCH /:id` (só `note` e cancelamento), `POST /:id/payments/settle`, `PATCH /:id/appointments/:appointmentId/reschedule`, `PATCH /:id/appointments/:appointmentId/cancel` | Qualquer tipo, só na própria empresa |
 | Payment methods | CRUD + `GET` (`?name`) | Qualquer tipo, só na própria empresa |
 | Plans | `POST`, `GET` (`?name`, `?isActive`), `GET /:id`, `PATCH /:id` | Qualquer tipo, só na própria empresa |
-| Client plans | `POST`, `GET` (`?clientId`, `?planId`), `GET /:id`, `PATCH /:id/cancel` | Qualquer tipo, só na própria empresa |
+| Client plans | `POST`, `GET` (`?clientId`, `?planId`, `?status`), `GET /:id`, `PATCH /:id/cancel` | Qualquer tipo, só na própria empresa |
 | Payments | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`) | Qualquer tipo, só na própria empresa |
 | Business hours | CRUD + `GET` (`?weekDay`) | Qualquer tipo, só na própria empresa |
 | Notifications | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read` | Qualquer tipo, só na própria empresa |
@@ -383,3 +383,9 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Custo por requisição:** cada requisição autenticada faz 2 consultas extras (usuário e empresa), que são o preço da invalidação imediata de tokens.
 - **Warning de lint:** há um warning antigo em `test/app.e2e-spec.ts`, fora do escopo do que foi feito.
 - **Documentos de acompanhamento:** `progress.md` e `journal.md` não foram criados. O `CLAUDE.md` exige confirmação antes de atualizá-los.
+
+## 2.29 Contratações: dados relacionados e filtro de status
+
+- Respostas de `/client-plans` incluem `client`, `plan` e, por recorrência, `service`, `professional`, `days` (HH:MM) e `isActive`, mantendo os ids planos.
+- `GET /client-plans?status=active|cancelled|ended` ("hoje" no fuso da empresa); ordem por `createdAt` decrescente, com `id` como desempate.
+- Swagger: `src/modules/client-plan/dto/client-plan-response.dto.ts`.

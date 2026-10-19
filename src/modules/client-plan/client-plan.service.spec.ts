@@ -95,7 +95,10 @@ describe("ClientPlanService", () => {
     planServiceMock.findOne.mockResolvedValue(plan);
     companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
     prismaMock.clientPlan.create.mockResolvedValue({ id: "client-plan-1" });
-    prismaMock.clientPlan.findFirst.mockResolvedValue({ id: "client-plan-1" });
+    prismaMock.clientPlan.findFirst.mockResolvedValue({
+      id: "client-plan-1",
+      recurringAppointments: [],
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -330,6 +333,7 @@ describe("ClientPlanService", () => {
       billingType: "MONTHLY",
       endDate: new Date("2027-01-08"),
       cancelledAt: null,
+      recurringAppointments: [],
     };
 
     beforeEach(() => {
@@ -436,6 +440,83 @@ describe("ClientPlanService", () => {
         }),
       );
     });
+
+    it("deve devolver o cliente, o plano e as agendas com serviço, profissional e dias em HH:MM", async () => {
+      prismaMock.clientPlan.findFirst.mockResolvedValueOnce({
+        id: "client-plan-1",
+        client: { id: "c1", name: "Ana", photoUrl: null },
+        plan: { id: "p1", name: "Pacote" },
+        recurringAppointments: [
+          {
+            id: "r1",
+            serviceId: "s1",
+            professionalId: "pr1",
+            isActive: true,
+            service: { id: "s1", name: "Corte", color: "#fff", duration: 30 },
+            professional: { id: "pr1", name: "Bia", photoUrl: null },
+            days: [
+              {
+                weekDay: 1,
+                startTime: new Date("1970-01-01T09:00:00.000Z"),
+                endTime: new Date("1970-01-01T09:30:00.000Z"),
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await clientPlanService.findOne(
+        "client-plan-1",
+        COMPANY_ID,
+      );
+
+      expect(result.client.name).toBe("Ana");
+      expect(result.plan.name).toBe("Pacote");
+      expect(result.recurringAppointments[0].days).toEqual([
+        { weekDay: 1, startTime: "09:00", endTime: "09:30" },
+      ]);
+      expect(result.recurringAppointments[0].service.name).toBe("Corte");
+    });
+
+    it("deve ordenar da contratação mais recente para a mais antiga e não buscar o fuso sem filtro", async () => {
+      prismaMock.clientPlan.findMany.mockResolvedValue([]);
+      prismaMock.clientPlan.count.mockResolvedValue(0);
+
+      await clientPlanService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
+
+      expect(prismaMock.clientPlan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        }),
+      );
+      expect(companyServiceMock.getTimeZone).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        "active",
+        { cancelledAt: null, endDate: { gte: new Date("2026-10-09") } },
+      ],
+      ["ended", { cancelledAt: null, endDate: { lt: new Date("2026-10-09") } }],
+      ["cancelled", { cancelledAt: { not: null } }],
+    ] as const)(
+      "deve filtrar por status %s com 'hoje' no fuso da empresa",
+      async (status, expected) => {
+        prismaMock.clientPlan.findMany.mockResolvedValue([]);
+        prismaMock.clientPlan.count.mockResolvedValue(0);
+
+        await clientPlanService.findAll(
+          { page: 1, limit: 10, status },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.clientPlan.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { companyId: COMPANY_ID, ...expected },
+          }),
+        );
+      },
+    );
 
     it("deve lançar NotFoundException para contratação de outra empresa", async () => {
       prismaMock.clientPlan.findFirst.mockResolvedValueOnce(null);

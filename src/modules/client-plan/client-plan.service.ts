@@ -7,12 +7,14 @@ import {
 import { Prisma } from "../../../generated/prisma/client";
 import { PlanBillingType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { formatTimeOfDay } from "../../common/time/time-of-day";
 import { toZonedParts } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import { CompanyService } from "../company/company.service";
 import { PaymentService } from "../payment/payment.service";
 import { PlanResponse, PlanService } from "../plan/plan.service";
+import { RecurringDayDto } from "../recurring-appointment/dto/recurring-day.dto";
 import { RecurringAppointmentService } from "../recurring-appointment/recurring-appointment.service";
 import {
   calculateDueDates,
@@ -21,21 +23,54 @@ import {
 } from "./client-plan.calculations";
 import { ClientPlanScheduleDto } from "./dto/client-plan-schedule.dto";
 import { CreateClientPlanDto } from "./dto/create-client-plan.dto";
-import { FindClientPlansQueryDto } from "./dto/find-client-plans-query.dto";
+import {
+  ClientPlanStatus,
+  FindClientPlansQueryDto,
+} from "./dto/find-client-plans-query.dto";
 
-// A contratação é devolvida com um resumo das agendas geradas por serviço.
-const withSchedules = {
+/**
+ * A contratação é devolvida com os dados relacionados que as telas desenham sem
+ * novas chamadas (só o necessário) e com a agenda de cada serviço. As relações
+ * são lidas pela chave, sem filtrar exclusão lógica nem inatividade: pessoa,
+ * plano ou serviço excluídos ou inativados depois continuam com o nome.
+ */
+const withDetails = {
   include: {
+    client: { select: { id: true, name: true, photoUrl: true } },
+    plan: { select: { id: true, name: true } },
     recurringAppointments: {
-      select: { id: true, serviceId: true, professionalId: true },
+      select: {
+        id: true,
+        serviceId: true,
+        professionalId: true,
+        isActive: true,
+        service: {
+          select: { id: true, name: true, color: true, duration: true },
+        },
+        professional: { select: { id: true, name: true, photoUrl: true } },
+        // Dias da semana na ordem natural (segunda a domingo), depois por horário.
+        days: {
+          select: { weekDay: true, startTime: true, endTime: true },
+          orderBy: [{ weekDay: "asc" }, { startTime: "asc" }],
+        },
+      },
       orderBy: { createdAt: "asc" },
     },
   },
 } satisfies Prisma.ClientPlanDefaultArgs;
 
-export type ClientPlanResponse = Prisma.ClientPlanGetPayload<
-  typeof withSchedules
->;
+type ClientPlanRow = Prisma.ClientPlanGetPayload<typeof withDetails>;
+
+// Como a API devolve: os horários dos dias saem como "HH:MM", como nas recorrências.
+export type ClientPlanResponse = Omit<
+  ClientPlanRow,
+  "recurringAppointments"
+> & {
+  recurringAppointments: (Omit<
+    ClientPlanRow["recurringAppointments"][number],
+    "days"
+  > & { days: RecurringDayDto[] })[];
+};
 
 /**
  * Contratações pertencem à empresa do usuário autenticado; as de outras empresas
@@ -176,36 +211,48 @@ export class ClientPlanService {
   }
 
   async findAll(
-    { page, limit, clientId, planId }: FindClientPlansQueryDto,
+    { page, limit, clientId, planId, status }: FindClientPlansQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<ClientPlanResponse>> {
-    const where: Prisma.ClientPlanWhereInput = { companyId, clientId, planId };
+    const where: Prisma.ClientPlanWhereInput = {
+      companyId,
+      clientId,
+      planId,
+      ...(await this.statusFilter(status, companyId)),
+    };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.clientPlan.findMany({
         where,
-        ...withSchedules,
-        orderBy: { startDate: "desc" },
+        ...withDetails,
+        // Da contratação mais recente para a mais antiga. O id desempata
+        // contratações criadas no mesmo instante e mantém a paginação estável.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.clientPlan.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: items.map((item) => this.toResponse(item)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async findOne(id: string, companyId: string): Promise<ClientPlanResponse> {
     const clientPlan = await this.prisma.clientPlan.findFirst({
       where: { id, companyId },
-      ...withSchedules,
+      ...withDetails,
     });
 
     if (!clientPlan) {
       throw new NotFoundException("Contratação de plano não encontrada");
     }
 
-    return clientPlan;
+    return this.toResponse(clientPlan);
   }
 
   /**
@@ -278,6 +325,48 @@ export class ClientPlanService {
     }
 
     return startDate;
+  }
+
+  /**
+   * Situação da contratação, com "hoje" no fuso da empresa: ativa é a não
+   * cancelada que ainda não terminou (inclui as que vão começar); encerrada é a
+   * não cancelada cuja data final já passou. Sem o filtro, nem consulta o fuso.
+   */
+  private async statusFilter(
+    status: ClientPlanStatus | undefined,
+    companyId: string,
+  ): Promise<Prisma.ClientPlanWhereInput> {
+    if (!status) {
+      return {};
+    }
+    if (status === "cancelled") {
+      return { cancelledAt: { not: null } };
+    }
+
+    const today = this.todayIn(
+      await this.companyService.getTimeZone(companyId),
+    );
+
+    return status === "active"
+      ? { cancelledAt: null, endDate: { gte: today } }
+      : { cancelledAt: null, endDate: { lt: today } };
+  }
+
+  // Os horários dos dias saem como "HH:MM", como nas recorrências.
+  private toResponse(row: ClientPlanRow): ClientPlanResponse {
+    return {
+      ...row,
+      recurringAppointments: row.recurringAppointments.map(
+        ({ days, ...recurring }) => ({
+          ...recurring,
+          days: days.map((day) => ({
+            weekDay: day.weekDay,
+            startTime: formatTimeOfDay(day.startTime),
+            endTime: formatTimeOfDay(day.endTime),
+          })),
+        }),
+      ),
+    };
   }
 
   // Data de hoje (pura, sem hora) no calendário da empresa.
