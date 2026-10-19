@@ -284,7 +284,9 @@
 - O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
 - `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
-- O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa.
+- O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa, sem diferenciar maiúsculas nem acentos ("PIX" e "Pix" são o mesmo método).
+- A exclusão do método de pagamento é lógica (inativação). A listagem (`GET /payment-methods`) traz ativos e inativos; com `isActive=true`, só os ativos (ex.: escolher o método na baixa de um pagamento). Consultar, alterar, excluir e usar na baixa valem só para ativos.
+- Um método inativado pode ser reativado por `PATCH /payment-methods/:id/restore` (limpa o `deletedAt`). Reativar um método já ativo responde 409; se o nome estiver em uso por outro método ativo da empresa, também responde 409.
 - Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
 - Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
 - Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.

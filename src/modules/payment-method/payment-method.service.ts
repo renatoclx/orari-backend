@@ -20,7 +20,8 @@ const omitSearchColumn = { normalizedName: true } as const;
 /**
  * Métodos de pagamento pertencem à empresa do usuário autenticado; os de outras
  * empresas se comportam como inexistentes (404). O nome é único entre os métodos
- * não excluídos da mesma empresa.
+ * não excluídos da mesma empresa, sem diferenciar maiúsculas nem acentos (o
+ * índice único usa o normalizedName).
  */
 @Injectable()
 export class PaymentMethodService {
@@ -45,12 +46,14 @@ export class PaymentMethodService {
   }
 
   async findAll(
-    { page, limit, name }: FindPaymentMethodsQueryDto,
+    { page, limit, name, isActive }: FindPaymentMethodsQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<PublicPaymentMethod>> {
     const where: Prisma.PaymentMethodWhereInput = {
       companyId,
-      deletedAt: null,
+      // Sem filtro, ativos e inativos (para reativar); com filtro, só um dos dois.
+      deletedAt:
+        isActive === undefined ? undefined : isActive ? null : { not: null },
       normalizedName: name ? { contains: normalizeForSearch(name) } : undefined,
     };
 
@@ -103,6 +106,36 @@ export class PaymentMethodService {
       });
     } catch (error) {
       throw this.mapUniqueViolation(error);
+    }
+  }
+
+  // Reativa um método inativado (limpa o deletedAt).
+  async restore(id: string, companyId: string): Promise<PublicPaymentMethod> {
+    const paymentMethod = await this.prisma.paymentMethod.findFirst({
+      where: { id, companyId },
+      select: { deletedAt: true },
+    });
+
+    if (!paymentMethod) {
+      throw new NotFoundException("Método de pagamento não encontrado");
+    }
+    if (!paymentMethod.deletedAt) {
+      throw new ConflictException("O método de pagamento já está ativo");
+    }
+
+    try {
+      return await this.prisma.paymentMethod.update({
+        where: { id },
+        data: { deletedAt: null, updatedAt: new Date() },
+        omit: omitSearchColumn,
+      });
+    } catch (error) {
+      // O nome é único só entre os ativos: outro método pode ter assumido o dele.
+      throw isUniqueConstraintViolation(error)
+        ? new ConflictException(
+            "Não é possível reativar: já existe um método de pagamento ativo com este nome",
+          )
+        : error;
     }
   }
 
