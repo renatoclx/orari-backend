@@ -231,6 +231,56 @@ describe("RecurringAppointmentService", () => {
       expect(generatedOccurrences().at(-1)).toBe("2026-10-20T17:00:00.000Z");
     });
 
+    it("não deve gerar ocorrência antes da data de início quando já é noite no fuso da empresa", async () => {
+      // 22:00 de quarta (21/10) em São Paulo já é 01:00Z de quinta (22/10): a data
+      // pura de início (22/10 à meia-noite UTC) não pode ser lida como "já começou".
+      vi.setSystemTime(new Date("2026-10-22T01:00:00.000Z"));
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+      const startDate = new Date("2026-10-22");
+      const endDate = new Date("2026-10-29");
+      prismaMock.recurringAppointment.create.mockResolvedValueOnce({
+        ...stored,
+        startDate,
+        endDate,
+      });
+
+      await recurringService.create(
+        {
+          ...dto,
+          startDate,
+          endDate,
+          days: [
+            { weekDay: "WEDNESDAY", startTime: "22:30", endTime: "23:30" },
+            { weekDay: "THURSDAY", startTime: "10:00", endTime: "11:00" },
+          ],
+        },
+        COMPANY_ID,
+      );
+
+      // Quarta 21/10 às 22:30 local (01:30Z) ainda está no futuro, mas é anterior
+      // ao início e não entra. A primeira é a quinta 22/10 às 10:00 local.
+      expect(generatedOccurrences()).toEqual([
+        "2026-10-22T13:00:00.000Z",
+        "2026-10-29T01:30:00.000Z",
+        "2026-10-29T13:00:00.000Z",
+      ]);
+    });
+
+    it("deve começar hoje, e não na data de início, quando ela já passou", async () => {
+      // Início em 01/10 (passado): gera a partir de hoje (30/09 12:00Z, em UTC).
+      const startDate = new Date("2026-09-01");
+      const endDate = new Date("2026-10-07");
+      prismaMock.recurringAppointment.create.mockResolvedValueOnce({
+        ...stored,
+        startDate,
+        endDate,
+      });
+
+      await recurringService.create({ ...dto, startDate, endDate }, COMPANY_ID);
+
+      expect(generatedOccurrences()[0]).toBe("2026-10-06T14:00:00.000Z");
+    });
+
     it("deve gerar os horários no relógio da empresa", async () => {
       // 14:00 em São Paulo (UTC-3) equivale a 17:00 UTC.
       companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
@@ -269,6 +319,19 @@ describe("RecurringAppointmentService", () => {
           duration: 60,
         },
       });
+    });
+
+    it("deve ordenar a listagem por início e desempatar pelo id (paginação estável)", async () => {
+      prismaMock.recurringAppointment.findMany.mockResolvedValue([stored]);
+      prismaMock.recurringAppointment.count.mockResolvedValue(1);
+
+      await recurringService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
+
+      expect(prismaMock.recurringAppointment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ startDate: "asc" }, { id: "asc" }],
+        }),
+      );
     });
 
     it("deve pedir as relações no create, no detalhe, na listagem e na edição", async () => {

@@ -224,6 +224,20 @@ describe("PaymentService", () => {
       },
     );
 
+    it("deve recusar paidAt no futuro na criação, sem gravar nada", async () => {
+      await expect(
+        paymentService.create(
+          {
+            ...dto,
+            status: "PAID",
+            paidAt: new Date("2026-10-11T00:00:00.000Z"),
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.create).not.toHaveBeenCalled();
+    });
+
     it("deve exigir paidAt quando o status é PAID", async () => {
       await expect(
         paymentService.create({ ...dto, status: "PAID" }, COMPANY_ID),

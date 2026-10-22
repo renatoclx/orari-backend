@@ -195,10 +195,15 @@ export class ClientPlanService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.clientPlan.update({
-        where: { id },
+      // Só cancela se ainda não estiver cancelada: dois cancelamentos ao mesmo
+      // tempo passam pela checagem acima, mas apenas o primeiro altera a linha.
+      const { count } = await tx.clientPlan.updateMany({
+        where: { id, companyId, cancelledAt: null },
         data: { cancelledAt: new Date(), updatedAt: new Date() },
       });
+      if (count === 0) {
+        throw new BadRequestException("A contratação já está cancelada");
+      }
 
       await this.recurringAppointmentService.endForClientPlan(
         tx,

@@ -28,6 +28,7 @@ describe("ClientPlanService", () => {
     clientPlan: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
@@ -414,13 +415,32 @@ describe("ClientPlanService", () => {
 
     beforeEach(() => {
       prismaMock.clientPlan.findFirst.mockResolvedValue(active);
+      prismaMock.clientPlan.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it("deve recusar e não encerrar nada quando outro cancelamento chegou antes", async () => {
+      // As duas requisições leram cancelledAt = null; a segunda não altera linha.
+      prismaMock.clientPlan.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        clientPlanService.cancel("client-plan-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(recurringServiceMock.endForClientPlan).not.toHaveBeenCalled();
+      expect(
+        paymentServiceMock.cancelUpcomingForClientPlan,
+      ).not.toHaveBeenCalled();
     });
 
     it("mensal: registra o cancelamento, encerra as agendas e cancela as parcelas a vencer", async () => {
       await clientPlanService.cancel("client-plan-1", COMPANY_ID);
 
-      expect(prismaMock.clientPlan.update).toHaveBeenCalledWith({
-        where: { id: "client-plan-1" },
+      // Só cancela se ainda não estiver cancelada, e só na empresa do usuário.
+      expect(prismaMock.clientPlan.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "client-plan-1",
+          companyId: COMPANY_ID,
+          cancelledAt: null,
+        },
         data: { cancelledAt: anyDate, updatedAt: anyDate },
       });
       expect(recurringServiceMock.endForClientPlan).toHaveBeenCalledWith(

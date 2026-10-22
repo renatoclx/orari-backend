@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from "@nestjs/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
+import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
@@ -803,6 +804,8 @@ describe("AppointmentService", () => {
         );
         expect(prismaMock.appointment.update).toHaveBeenCalledWith(
           expect.objectContaining({
+            // O status lido vai no filtro: protege de uma mudança no meio do caminho.
+            where: { id: "appointment-1", status },
             data: expect.objectContaining({ status: "CANCELLED" }) as unknown,
           }),
         );
@@ -817,6 +820,22 @@ describe("AppointmentService", () => {
         });
       },
     );
+
+    it("deve recusar com 409, sem cancelar o pagamento, se o status mudou entre a leitura e a gravação", async () => {
+      // O job de status iniciou o atendimento depois da leitura: o filtro por
+      // status não encontra a linha e a operação inteira é desfeita.
+      prismaMock.appointment.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Record not found", {
+          code: "P2025",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        cancel({ status: "SCHEDULED", startAt: future }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
 
     it.each([
       ["IN_PROGRESS", "Agendamento que já iniciou não pode ser cancelado"],
