@@ -140,7 +140,8 @@ export class PaymentService {
     companyId: string,
   ): Promise<PaymentResponse> {
     // Ambos validam empresa e existência, lançando 404 quando não pertencem a ela.
-    const appointment = await this.appointmentService.findOne(
+    // O detalhe traz a origem do agendamento, usada na checagem do pacote abaixo.
+    const appointment = await this.appointmentService.findDetail(
       dto.appointmentId,
       companyId,
     );
@@ -149,6 +150,13 @@ export class PaymentService {
     if (appointment.status === AppointmentStatus.CANCELLED) {
       throw new ConflictException(
         "Agendamento cancelado não pode receber pagamento",
+      );
+    }
+    // Sessão de pacote já é cobrada pela contratação: um pagamento próprio
+    // cobraria o cliente duas vezes (e travaria a sessão depois de concluída).
+    if (appointment.recurringAppointment?.clientPlanId) {
+      throw new ConflictException(
+        "Sessão de pacote não recebe pagamento próprio: ela é cobrada pela contratação",
       );
     }
     if (dto.paymentMethodId) {

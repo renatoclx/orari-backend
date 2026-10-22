@@ -45,7 +45,7 @@ describe("PaymentService", () => {
       updateMany: vi.fn(),
     },
   };
-  const appointmentServiceMock = { findOne: vi.fn() };
+  const appointmentServiceMock = { findDetail: vi.fn() };
   const paymentMethodServiceMock = { findOne: vi.fn() };
   const serviceServiceMock = { findOne: vi.fn() };
   // "Hoje" do atraso: os testes usam UTC e um relógio fixo.
@@ -70,7 +70,7 @@ describe("PaymentService", () => {
     companyServiceMock.getTimeZone.mockResolvedValue("UTC");
     // A edição devolve o pagamento gravado, usado para calcular o isOverdue.
     prismaMock.payment.update.mockResolvedValue(payment);
-    appointmentServiceMock.findOne.mockResolvedValue({
+    appointmentServiceMock.findDetail.mockResolvedValue({
       id: "appointment-1",
       serviceId: "service-1",
     });
@@ -99,7 +99,7 @@ describe("PaymentService", () => {
 
       await paymentService.create(dto, COMPANY_ID);
 
-      expect(appointmentServiceMock.findOne).toHaveBeenCalledWith(
+      expect(appointmentServiceMock.findDetail).toHaveBeenCalledWith(
         "appointment-1",
         COMPANY_ID,
       );
@@ -152,7 +152,7 @@ describe("PaymentService", () => {
     });
 
     it("deve recusar agendamento de outra empresa", async () => {
-      appointmentServiceMock.findOne.mockRejectedValueOnce(
+      appointmentServiceMock.findDetail.mockRejectedValueOnce(
         new NotFoundException(),
       );
 
@@ -163,7 +163,7 @@ describe("PaymentService", () => {
     });
 
     it("deve recusar pagamento para agendamento cancelado, sem gravar nada", async () => {
-      appointmentServiceMock.findOne.mockResolvedValueOnce({
+      appointmentServiceMock.findDetail.mockResolvedValueOnce({
         id: "appointment-1",
         serviceId: "service-1",
         status: "CANCELLED",
@@ -176,10 +176,39 @@ describe("PaymentService", () => {
       expect(prismaMock.payment.create).not.toHaveBeenCalled();
     });
 
+    it("deve recusar pagamento para sessão de pacote, sem gravar nada", async () => {
+      appointmentServiceMock.findDetail.mockResolvedValueOnce({
+        id: "appointment-1",
+        serviceId: "service-1",
+        status: "SCHEDULED",
+        recurringAppointment: { id: "recurring-1", clientPlanId: "plan-1" },
+      });
+
+      await expect(
+        paymentService.create(dto, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.payment.create).not.toHaveBeenCalled();
+    });
+
+    // Recorrência avulsa: se o pagamento dela foi excluído, um novo é permitido.
+    it("deve aceitar pagamento para agendamento de recorrência avulsa", async () => {
+      appointmentServiceMock.findDetail.mockResolvedValueOnce({
+        id: "appointment-1",
+        serviceId: "service-1",
+        status: "SCHEDULED",
+        recurringAppointment: { id: "recurring-1", clientPlanId: null },
+      });
+      prismaMock.payment.create.mockResolvedValue(payment);
+
+      await expect(
+        paymentService.create(dto, COMPANY_ID),
+      ).resolves.toBeDefined();
+    });
+
     it.each(["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "NO_SHOW"])(
       "deve aceitar pagamento para agendamento %s",
       async (status) => {
-        appointmentServiceMock.findOne.mockResolvedValueOnce({
+        appointmentServiceMock.findDetail.mockResolvedValueOnce({
           id: "appointment-1",
           serviceId: "service-1",
           status,

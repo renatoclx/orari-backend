@@ -65,3 +65,96 @@ assinados. Como o resto do código só conhece `save` e `remove`, a troca fica
 concentrada nesse service.
 
 **Registrado em:** 2026-10-13.
+
+---
+
+## Agenda sem trava contra marcações simultâneas
+
+**Onde:** `AppointmentService.ensureSlotIsFree` (criação, edição, recorrência e
+contratação).
+
+**O que é:** a conferência de horário livre e a gravação são passos separados.
+Duas marcações do mesmo profissional ou cliente, no mesmo horário e no mesmo
+instante, passam pela conferência e são gravadas.
+
+**Impacto:** raro com poucos usuários por empresa; o resultado aparece na agenda
+e é corrigido à mão. Fica mais provável com agendamento online pelo cliente ou
+com mais volume.
+
+**Como resolver:** restrição de sobreposição no PostgreSQL (`EXCLUDE USING gist`,
+extensão `btree_gist`) por profissional e por cliente, ignorando cancelados, com o
+erro convertido em 409. Conferir antes se já existem sobreposições gravadas.
+
+**Registrado em:** 2026-10-22.
+
+---
+
+## Configuração de produção
+
+**Onde:** `main.ts` e variáveis de ambiente.
+
+**O que é:** sem `CORS_ORIGIN`, qualquer origem é aceita; o Swagger fica público
+em `/docs`; não há headers de segurança (`helmet`); as variáveis de ambiente não
+são validadas na subida (um `JWT_SECRET` fraco é aceito); o access token dura 1
+dia; sem `trust proxy`, atrás de um proxy todos os clientes aparecem com o mesmo
+IP e dividem o limite de tentativas do login.
+
+**Impacto:** nenhum no desenvolvimento; obrigatório antes do primeiro deploy.
+
+**Como resolver:** definir `CORS_ORIGIN`, restringir ou desligar o Swagger em
+produção, adicionar `helmet`, validar as variáveis na subida, reduzir
+`JWT_EXPIRES_IN` (ex.: 15m) e configurar `trust proxy` conforme o proxy usado.
+
+**Registrado em:** 2026-10-22.
+
+---
+
+## Vulnerabilidade moderada no Swagger
+
+**Onde:** `@nestjs/swagger` (dependência `js-yaml`).
+
+**O que é:** o `npm audit` aponta 2 vulnerabilidades moderadas, corrigidas só no
+`@nestjs/swagger` 12 (versão major).
+
+**Impacto:** baixo: o `js-yaml` é usado ao gerar a documentação, não processa
+dados enviados por usuários.
+
+**Como resolver:** atualizar para o `@nestjs/swagger` 12 numa branch própria e
+conferir a documentação gerada.
+
+**Registrado em:** 2026-10-22.
+
+---
+
+## Regras pendentes de decisão
+
+**O que é:** comportamentos que funcionam, mas sem regra definida:
+
+- **Excluir pessoa com agenda futura:** excluir um cliente ou profissional com
+  agendamentos futuros, recorrência ou contratação ativos não mexe na agenda.
+  Opções: recusar (409) ou cancelar o que é futuro.
+- **Pagamento pago:** qualquer tipo de usuário pode excluir ou alterar o valor de
+  um pagamento `PAID`, sem registro de quem fez. Opções: restringir a `ADMIN` ou
+  impedir a exclusão de pagamento pago.
+- **Notificações:** o módulo lista e marca como lida, mas nada cria notificações;
+  a rota responde sempre vazia.
+
+**Registrado em:** 2026-10-22.
+
+---
+
+## Legibilidade
+
+- **"Hoje no fuso da empresa" repetido:** `ClientPlanService.todayIn`,
+  `PaymentService.toLocalDate` e o cálculo do dia da semana em
+  `RecurringAppointmentService` repetem o que poderia ser uma função em
+  `common/time/time-zone.ts`.
+- **Comentários de tutorial** em `appointment-status.job.ts` (ex.: "lte: less
+  than or equal"): explicam a ferramenta, não a decisão.
+- **`payment.service.ts` extenso:** mistura cadastro, cobranças geradas, baixas e
+  comandas; as comandas poderiam ir para um service próprio.
+- **Erros do Prisma sem tradução:** registro removido no meio da operação ou chave
+  estrangeira inválida respondem 500; um filtro global de exceções os
+  converteria em 404 ou 409.
+
+**Registrado em:** 2026-10-22.
