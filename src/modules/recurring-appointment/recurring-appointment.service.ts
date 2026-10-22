@@ -264,7 +264,9 @@ export class RecurringAppointmentService {
       this.prisma.recurringAppointment.findMany({
         where,
         ...withDetails,
-        orderBy: { startDate: "asc" },
+        // O id desempata recorrências com o mesmo início: sem ele, a paginação
+        // pode repetir ou pular itens entre uma página e outra.
+        orderBy: [{ startDate: "asc" }, { id: "asc" }],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -606,7 +608,7 @@ export class RecurringAppointmentService {
    *
    * Gera do maior valor entre o início da recorrência e hoje (não se cria
    * histórico) até a data final. Cada ocorrência começa no horário reservado do
-   * dia e termina conforme a duração do serviço.
+   * dia e termina conforme a duração do serviço. `from` é o instante atual.
    */
   private buildOccurrences(
     days: RecurringDayDto[],
@@ -616,8 +618,6 @@ export class RecurringAppointmentService {
     timeZone: string,
     from: Date,
   ): AppointmentOccurrence[] {
-    const now = new Date();
-
     /*
      * O calendário percorrido é o da empresa: "toda terça às 14h" é terça no
      * relógio dela, e cada horário vira um instante UTC no fim.
@@ -626,11 +626,15 @@ export class RecurringAppointmentService {
      * calendário, sem conversão de fuso — convertê-las deslocaria o dia (em
      * UTC-3, "2026-12-15" viraria 14/12 às 21h e perderia o último dia).
      * `from` é um instante, e por isso é lido no fuso da empresa.
+     *
+     * O início é o maior dos dois como dia de calendário. Comparar a data pura
+     * com o instante não serve: à noite, quando em UTC já é o dia seguinte, a
+     * meia-noite UTC da data de início ficaria "no passado" e a geração
+     * começaria no dia anterior ao contratado.
      */
-    const cursor =
-      startDate > from
-        ? this.toDateParts(startDate)
-        : toZonedParts(from, timeZone);
+    const start = this.toDateParts(startDate);
+    const today = toZonedParts(from, timeZone);
+    const cursor = this.isBeforeOrSameDay(today, start) ? start : today;
 
     // A geração termina na data final, que é obrigatória (não há mais horizonte).
     const limit = this.toDateParts(endDate);
@@ -644,7 +648,7 @@ export class RecurringAppointmentService {
         const startAt = zonedToUtc({ ...cursor, hours, minutes }, timeZone);
 
         // Uma ocorrência que já passou não é criada.
-        if (startAt > now) {
+        if (startAt > from) {
           occurrences.push({
             startAt,
             endAt: new Date(startAt.getTime() + serviceDuration * 60_000),
