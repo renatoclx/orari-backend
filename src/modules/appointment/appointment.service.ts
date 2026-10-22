@@ -189,7 +189,8 @@ export class AppointmentService {
 
   /**
    * Detalhe devolvido pela API, com cliente, profissional e serviço. As
-   * validações internas de outros módulos usam o findOne, sem esses JOINs.
+   * validações internas de outros módulos usam o findOne, sem esses JOINs,
+   * a não ser que precisem da origem (ex.: o pagamento, para saber se é pacote).
    */
   async findDetail(
     id: string,

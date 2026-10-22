@@ -293,6 +293,7 @@
 - Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
 - Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
 - Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.
+- Não é possível registrar pagamento para uma sessão de pacote (409): ela já é cobrada pela contratação. Agendamento de recorrência avulsa continua aceitando um novo pagamento quando o anterior foi excluído.
 - `CANCELLED` é o estado final do pagamento: um pagamento cancelado não volta a `PENDING` nem vai para `PAID` (409). Repetir `CANCELLED` é aceito, sem efeito, e os demais campos (ex.: valor) continuam editáveis.
   - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
   - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.
