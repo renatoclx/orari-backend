@@ -404,3 +404,9 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 
 - `GET /payments/checkouts` (comandas do dia por cliente, paginadas por cliente, `search` pelo nome) e `PATCH /payments/settle` (baixa de pagamentos escolhidos do mesmo cliente, numa transação), declaradas antes de `:id`.
 - Os clientes do dia e a página são resolvidos primeiro (nome ordenado no banco); os pagamentos só são carregados para os clientes da página.
+
+## 2.32 Tela de Pagamentos: listagem, resumo e baixa
+
+- `GET /payments` passa a trazer `client`, `paymentMethod`, `appointment.recurringAppointmentId` e `clientPlan.billingType`, sem mudar os campos atuais nem a ordem.
+- `GET /payments/summary`: três `aggregate` numa transação (atrasado, a vencer, pago), sem carregar os pagamentos; declarada antes de `:id`.
+- `paidAt` no futuro é recusado (400) em `PATCH /payments/settle` e na baixa em lote da recorrência.

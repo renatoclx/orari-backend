@@ -17,6 +17,7 @@ import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { FindCheckoutsQueryDto } from "./dto/find-checkouts-query.dto";
 import { FindPaymentsQueryDto } from "./dto/find-payments-query.dto";
 import { SettleCheckoutDto } from "./dto/settle-checkout.dto";
+import { SummaryPaymentsQueryDto } from "./dto/summary-payments-query.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
 import { PaymentService } from "./payment.service";
 
@@ -50,6 +51,15 @@ export class PaymentController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.paymentService.findCheckouts(query, currentUser.companyId);
+  }
+
+  // Totais da tela de Pagamentos (atrasado, a vencer, pago). Antes de ":id" pelo mesmo motivo.
+  @Get("summary")
+  summary(
+    @Query() query: SummaryPaymentsQueryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.paymentService.summary(query, currentUser.companyId);
   }
 
   // Baixa dos pagamentos escolhidos de um cliente. Antes de ":id" pelo mesmo motivo.
