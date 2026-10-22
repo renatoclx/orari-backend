@@ -1,0 +1,17 @@
+# Fora da imagem: dependências e build (refeitos lá dentro), segredos e o que não roda em produção.
+node_modules
+dist
+generated
+coverage
+uploads
+.git
+.gitignore
+.env
+.env.*
+!.env.production.example
+docs
+prompts
+test
+*.md
+.vscode
+.claude

@@ -79,8 +79,9 @@ Exemplo:
 - Sempre utilizar request.user.
 - **Limite de tentativas** (`@nestjs/throttler`, por IP): `POST /auth/login`
   aceita 5 tentativas por minuto e `POST /auth/refresh`, 20; acima disso, 429.
-  A contagem fica em memória, por instância da API. Em produção atrás de proxy,
-  configurar `trust proxy` para que o IP seja o do cliente, e não o do proxy.
+  A contagem fica em memória, por instância da API. Atrás de proxy, definir
+  `TRUST_PROXY` (número de proxies à frente da API) para que o IP seja o do
+  cliente e não o do proxy; sem a variável, o `X-Forwarded-For` não é confiado.
 - O login compara a senha mesmo quando o e-mail não existe (com um hash fixo),
   para o tempo de resposta não revelar quais e-mails têm conta.
 
@@ -102,3 +103,18 @@ Exemplo:
 - O access token em si não é invalidado (não há blacklist dele): continua
   válido até sua própria expiração (`JWT_EXPIRES_IN`).
 - O cliente sempre remove ambos os tokens localmente após o logout.
+
+## Configuração de produção
+
+- A API valida as variáveis de ambiente na subida (`src/config/env.validation.ts`)
+  e se recusa a iniciar, listando o que está errado. Sempre exige `DATABASE_URL`,
+  `JWT_SECRET` e as durações `JWT_EXPIRES_IN` e `JWT_REFRESH_EXPIRES_IN`.
+- Com `NODE_ENV=production`, exige também `JWT_SECRET` com ao menos 32
+  caracteres e diferente do valor de exemplo, e `CORS_ORIGIN` com a lista de
+  origens permitidas.
+- Headers de segurança com o `helmet`; os arquivos de `/uploads` seguem
+  acessíveis de outra origem (o front os exibe).
+- O Swagger (`/docs`) fica desligado em produção, a menos que
+  `SWAGGER_ENABLED=true`.
+- Sugestão para o access token: `JWT_EXPIRES_IN=15m`, com renovação pelo refresh
+  token.

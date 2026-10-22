@@ -1,0 +1,15 @@
+# Caddy: recebe as requisições de fora, cuida do HTTPS (certificado automático)
+# e repassa para a API.
+#
+# API_DOMAIN vem do .env.production (ex.: api.orariapp.com.br). Com ":80", serve
+# só HTTP, útil para o primeiro teste por IP, antes de o domínio existir.
+{$API_DOMAIN::80} {
+	encode gzip
+
+	# Fotos e logos têm até 2 MB; o resto do tráfego é JSON pequeno.
+	request_body {
+		max_size 5MB
+	}
+
+	reverse_proxy api:3333
+}

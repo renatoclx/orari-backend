@@ -387,7 +387,7 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Extensões:** outros ambientes precisam permitir `pg_trgm` (e `unaccent`, usada durante a migration).
 - **Custo por requisição:** cada requisição autenticada faz 2 consultas extras (usuário e empresa), que são o preço da invalidação imediata de tokens.
 - **Warning de lint:** há um warning antigo em `test/app.e2e-spec.ts`, fora do escopo do que foi feito.
-- **Documentos de acompanhamento:** `progress.md` e `journal.md` não foram criados. O `CLAUDE.md` exige confirmação antes de atualizá-los.
+- **Documentos de acompanhamento:** `progress.md` (estado atual) e `journal.md` (decisões e motivos) foram criados em 2026-10-22. O `CLAUDE.md` continua exigindo confirmação antes de atualizá-los.
 
 ## 2.29 Contratações: dados relacionados e filtro de status
 
@@ -424,3 +424,9 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Listagem de recorrências:** desempate por `id`, para a paginação ser estável.
 - **Comandas:** os dados são agrupados uma vez por cliente, em vez de filtrar as listas inteiras a cada cliente.
 - `POST /payments` também recusa `paidAt` no futuro.
+
+## 2.36 Configuração de produção
+
+- `src/config/env.validation.ts`: a API valida as variáveis na subida e se recusa a iniciar listando o que está errado. Em `NODE_ENV=production` exige `JWT_SECRET` forte (32+ caracteres, diferente do exemplo) e `CORS_ORIGIN`.
+- `src/app.setup.ts` (extraído do `main.ts` para ser testável): `helmet` (com `Cross-Origin-Resource-Policy: cross-origin` para as fotos de `/uploads`), CORS por lista, `ValidationPipe` global, `trust proxy` por `TRUST_PROXY` e Swagger desligado em produção (`SWAGGER_ENABLED` força).
+- Variáveis novas: `NODE_ENV`, `TRUST_PROXY`, `SWAGGER_ENABLED` (ver `.env.example` e `README.md`).
