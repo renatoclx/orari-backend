@@ -89,26 +89,6 @@ erro convertido em 409. Conferir antes se já existem sobreposições gravadas.
 
 ---
 
-## Configuração de produção
-
-**Onde:** `main.ts` e variáveis de ambiente.
-
-**O que é:** sem `CORS_ORIGIN`, qualquer origem é aceita; o Swagger fica público
-em `/docs`; não há headers de segurança (`helmet`); as variáveis de ambiente não
-são validadas na subida (um `JWT_SECRET` fraco é aceito); o access token dura 1
-dia; sem `trust proxy`, atrás de um proxy todos os clientes aparecem com o mesmo
-IP e dividem o limite de tentativas do login.
-
-**Impacto:** nenhum no desenvolvimento; obrigatório antes do primeiro deploy.
-
-**Como resolver:** definir `CORS_ORIGIN`, restringir ou desligar o Swagger em
-produção, adicionar `helmet`, validar as variáveis na subida, reduzir
-`JWT_EXPIRES_IN` (ex.: 15m) e configurar `trust proxy` conforme o proxy usado.
-
-**Registrado em:** 2026-10-22.
-
----
-
 ## Vulnerabilidade moderada no Swagger
 
 **Onde:** `@nestjs/swagger` (dependência `js-yaml`).

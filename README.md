@@ -48,17 +48,20 @@ API sobe em `http://localhost:3333` (ou a `PORT` configurada).
 
 ## Variáveis de ambiente (`.env`)
 
-| Variável                                                                                                          | Obrigatória  | Descrição                                                                            |
-| ----------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------ |
-| `PORT`                                                                                                            | sim          | Porta da API                                                                         |
-| `DATABASE_URL`                                                                                                    | sim          | Connection string do PostgreSQL                                                      |
-| `JWT_SECRET`                                                                                                      | sim          | Segredo de assinatura do JWT                                                         |
-| `JWT_EXPIRES_IN`                                                                                                  | sim          | Validade do access token (ex.: `1d`)                                                 |
-| `JWT_REFRESH_EXPIRES_IN`                                                                                          | sim          | Validade do refresh token (ex.: `7d`)                                                |
-| `CORS_ORIGIN`                                                                                                     | não          | Origens permitidas no CORS, separadas por vírgula. Sem valor, libera qualquer origem |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`                                           | sim (Docker) | Credenciais do container do `docker-compose.yml`                                     |
-| `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não          | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara)                    |
-| `SEED_SUPER_ADMIN_NAME` / `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`                                  | não          | SUPER_ADMIN inicial criado pelo seed. Sem todas as `SEED_*`, o seed pula essa etapa  |
+| Variável                                                                                                          | Obrigatória  | Descrição                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
+| `PORT`                                                                                                            | sim          | Porta da API                                                                                          |
+| `DATABASE_URL`                                                                                                    | sim          | Connection string do PostgreSQL                                                                       |
+| `JWT_SECRET`                                                                                                      | sim          | Segredo de assinatura do JWT                                                                          |
+| `JWT_EXPIRES_IN`                                                                                                  | sim          | Validade do access token (ex.: `1d`)                                                                  |
+| `JWT_REFRESH_EXPIRES_IN`                                                                                          | sim          | Validade do refresh token (ex.: `7d`)                                                                 |
+| `CORS_ORIGIN`                                                                                                     | produção     | Origens permitidas no CORS, separadas por vírgula. Fora de produção, sem valor libera qualquer origem |
+| `NODE_ENV`                                                                                                        | não          | `production` ativa as regras rígidas (segredo forte, `CORS_ORIGIN`) e desliga o Swagger               |
+| `TRUST_PROXY`                                                                                                     | não          | Número de proxies à frente da API (para o limite de tentativas usar o IP do cliente)                  |
+| `SWAGGER_ENABLED`                                                                                                 | não          | `true`/`false` força a documentação em `/docs` (padrão: ligada, exceto em produção)                   |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`                                           | sim (Docker) | Credenciais do container do `docker-compose.yml`                                                      |
+| `SEED_COMPANY_CORPORATE_REASON` / `SEED_COMPANY_CNPJ` / `SEED_COMPANY_SUBDOMAIN` / `SEED_COMPANY_FOUNDATION_DATE` | não          | Empresa da plataforma criada pelo seed (CNPJ válido, sem máscara)                                     |
+| `SEED_SUPER_ADMIN_NAME` / `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`                                  | não          | SUPER_ADMIN inicial criado pelo seed. Sem todas as `SEED_*`, o seed pula essa etapa                   |
 
 Veja `.env.example` para os valores de referência.
 
