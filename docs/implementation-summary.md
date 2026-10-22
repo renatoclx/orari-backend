@@ -416,3 +416,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 
 - `GET /payments/checkouts` passa a partir das visitas: o cliente tem comanda se tem atendimento hoje (`SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED`) ou pagamento `PAID` hoje. Os clientes saem de uma só consulta em `People` com filtro por relação, ordenada e paginada no banco.
 - Resposta por cliente: `appointments` (com `payment` ou `null`), `previousPayments` e `todayPending`, `previousPending` e `paidToday`. `PATCH /payments/settle` não mudou.
+
+## 2.35 Correções da revisão de código
+
+- **Início da recorrência e da contratação:** a geração de agendamentos começa no maior dia entre o início contratado e hoje, comparados como dias de calendário no fuso da empresa; à noite não começa mais no dia anterior ao contratado.
+- **Concorrência:** o cancelamento da contratação só altera a linha se ela ainda não estiver cancelada, e o cancelamento do agendamento só vale se o status lido ainda for o atual (senão 409).
+- **Listagem de recorrências:** desempate por `id`, para a paginação ser estável.
+- **Comandas:** os dados são agrupados uma vez por cliente, em vez de filtrar as listas inteiras a cada cliente.
+- `POST /payments` também recusa `paidAt` no futuro.
