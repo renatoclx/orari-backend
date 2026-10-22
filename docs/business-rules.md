@@ -40,6 +40,8 @@
 - A senha deve ter entre 8 e 72 caracteres e ser confirmada no cadastro e na redefinição.
 - A senha é armazenada apenas como hash (bcrypt) e nunca é retornada pela API.
 - A senha não é alterada pela edição do usuário: SUPER_ADMIN ou ADMIN a redefinem por rota própria, sem precisar da senha atual, respeitando o alcance de cada um.
+- Redefinir a senha encerra as sessões do usuário: os refresh tokens dele deixam de valer. O mesmo acontece ao inativar ou reativar o usuário.
+- O login aceita até 5 tentativas por minuto do mesmo IP, e a renovação do token, até 20; acima disso, a API responde 429.
 
 ## Pessoas
 
@@ -299,6 +301,13 @@
 - Agendamentos gerados por recorrência já nascem com pagamento `PENDING`, com vencimento na data do agendamento, e não geram novo pagamento ao serem concluídos (ver Agendamentos recorrentes).
 - Agendamentos gerados por contratação de plano não geram pagamento por agendamento: os pagamentos pertencem à contratação (ver Planos).
   - Esses pagamentos deverão ser registrados como `PENDING`, onde deverá ser alterado manualmente para `PAID` quando este for pago;
+
+### Comandas do dia (Financeiro)
+
+- `GET /payments/checkouts` lista as comandas do dia, uma por cliente (o cliente vem do agendamento ou da contratação). "Dia" é hoje no fuso da empresa.
+- Entram: pagamentos `PENDING` com vencimento hoje; pagamentos `PENDING` sem vencimento de contratação integral; e pagamentos `PAID` com `paidAt` dentro de hoje (a comanda paga continua na lista). Atrasados, futuros, excluídos e `CANCELLED` nunca entram.
+- Cada comanda traz `total` (soma de todos os pagamentos dela) e `pendingTotal` (soma dos `PENDING`). A paginação é por cliente, em ordem alfabética, e `search` filtra pelo nome do cliente sem diferenciar acentos nem maiúsculas.
+- `PATCH /payments/settle` dá baixa nos pagamentos escolhidos (`paymentIds`, ao menos um, sem repetir), com um `paymentMethodId` e `paidAt` opcional (padrão: o momento da requisição), tudo numa só transação. Todos precisam ser da empresa, não excluídos, `PENDING` e do mesmo cliente: inexistente (pagamento ou método) responde 404, algum fora de `PENDING` responde 409 e clientes diferentes respondem 400. O método precisa existir (não excluído) na empresa.
 
 ## Estados e cidades
 

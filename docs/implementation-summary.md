@@ -399,3 +399,8 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 
 - `PlanItem.sessionsPerWeek` (1 a 7, migração `20261019120000_plan_item_sessions_per_week`, itens existentes ficam com 1). `serviceIds` foi removido de `POST`/`PATCH /plans`, que agora recebem `services: [{ serviceId, sessionsPerWeek }]`; a resposta devolve `sessionsPerWeek` em cada serviço.
 - `POST /client-plans` exige que a agenda de cada serviço tenha exatamente `sessionsPerWeek` dias; a contratação não guarda a frequência, pois as recorrências já guardam os dias.
+
+## 2.31 Comandas do dia e baixa por seleção
+
+- `GET /payments/checkouts` (comandas do dia por cliente, paginadas por cliente, `search` pelo nome) e `PATCH /payments/settle` (baixa de pagamentos escolhidos do mesmo cliente, numa transação), declaradas antes de `:id`.
+- Os clientes do dia e a página são resolvidos primeiro (nome ordenado no banco); os pagamentos só são carregados para os clientes da página.

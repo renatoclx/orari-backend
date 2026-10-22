@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import type { StringValue } from "ms";
 import { CompanyModule } from "../company/company.module";
@@ -11,12 +12,18 @@ import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
+import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
 
 @Module({
   imports: [
     UserModule,
     CompanyModule,
     PassportModule,
+    // Limite de tentativas das rotas públicas de credencial (ver AuthController).
+    // Fica em memória, por instância da API: com mais de uma instância, o limite
+    // vale para cada uma, e a contagem compartilhada exigiria um armazenamento
+    // comum (ex.: Redis).
+    ThrottlerModule.forRoot([{ name: AUTH_THROTTLER, ...LOGIN_LIMIT }]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -301,7 +301,7 @@ async function main() {
     companyId,
   );
 
-  // Recorrente: terças e quintas às 14h, por 60 dias (limite de uma recorrência avulsa).
+  // Recorrente: terças e quintas às 14h, por 60 dias.
   const recurringStart = new Date();
   const recurringAppointment = await recurring.create(
     {

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from "@nestjs/testing";
+import { ThrottlerGuard } from "@nestjs/throttler";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
@@ -19,7 +20,12 @@ describe("AuthController", () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [{ provide: AuthService, useValue: authServiceMock }],
-    }).compile();
+    })
+      // O limite de tentativas não é o assunto destes testes, que só conferem a
+      // delegação ao AuthService.
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     authController = module.get<AuthController>(AuthController);
   });

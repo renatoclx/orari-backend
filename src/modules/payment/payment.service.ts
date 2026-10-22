@@ -9,9 +9,11 @@ import { Payment, Prisma } from "../../../generated/prisma/client";
 import {
   AppointmentStatus,
   PaymentStatus,
+  PlanBillingType,
 } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
-import { toZonedParts } from "../../common/time/time-zone";
+import { normalizeForSearch } from "../../common/text/normalize-for-search";
+import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -22,7 +24,9 @@ import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
+import { FindCheckoutsQueryDto } from "./dto/find-checkouts-query.dto";
 import { FindPaymentsQueryDto } from "./dto/find-payments-query.dto";
+import { SettleCheckoutDto } from "./dto/settle-checkout.dto";
 import { SettlePaymentsDto } from "./dto/settle-payments.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
 
@@ -81,6 +85,39 @@ const withOrigin = {
 
 export type PaymentListItem = PaymentResponse &
   Prisma.PaymentGetPayload<{ include: typeof withOrigin }>;
+
+// Pagamento dentro da comanda: a origem inclui a modalidade do plano.
+const checkoutPaymentInclude = {
+  paymentMethod: { select: { id: true, name: true } },
+  appointment: {
+    select: {
+      id: true,
+      clientId: true,
+      startAt: true,
+      service: { select: { id: true, name: true } },
+    },
+  },
+  clientPlan: {
+    select: {
+      id: true,
+      clientId: true,
+      billingType: true,
+      plan: { select: { id: true, name: true } },
+    },
+  },
+} satisfies Prisma.PaymentInclude;
+
+export type CheckoutPayment = Prisma.PaymentGetPayload<{
+  include: typeof checkoutPaymentInclude;
+}>;
+
+// Comanda: tudo o que o cliente movimenta no dia.
+export interface Checkout {
+  client: { id: string; name: string };
+  total: Decimal;
+  pendingTotal: Decimal;
+  payments: CheckoutPayment[];
+}
 
 // Um pagamento de contratação de plano: valor e vencimento já calculados.
 export interface ClientPlanCharge {
@@ -474,6 +511,211 @@ export class PaymentService {
     });
 
     return count;
+  }
+
+  /**
+   * Comandas do dia, uma por cliente. "Dia" é hoje no fuso da empresa. Entram os
+   * pagamentos PENDING que vencem hoje, os de contratação integral PENDING sem
+   * vencimento e os PAID hoje (a comanda paga continua na lista). Atrasados e
+   * futuros ficam de fora; excluídos e CANCELLED nunca entram.
+   *
+   * A paginação é por cliente: primeiro se acham os clientes com movimento
+   * (já filtrados e ordenados pelo nome, no banco) e só então se carregam os
+   * pagamentos dos clientes da página.
+   */
+  async findCheckouts(
+    { page, limit, search }: FindCheckoutsQueryDto,
+    companyId: string,
+  ): Promise<PaginatedResult<Checkout>> {
+    const dayWhere = await this.checkoutWhere(companyId);
+
+    // Só ids: o cliente vem do agendamento ou da contratação.
+    const inDay = await this.prisma.payment.findMany({
+      where: dayWhere,
+      select: {
+        appointment: { select: { clientId: true } },
+        clientPlan: { select: { clientId: true } },
+      },
+    });
+    const clientIds = [
+      ...new Set(
+        inDay.map(
+          (payment) =>
+            (payment.appointment?.clientId ?? payment.clientPlan?.clientId)!,
+        ),
+      ),
+    ];
+
+    const clientsWhere: Prisma.PeopleWhereInput = {
+      companyId,
+      id: { in: clientIds },
+      normalizedName: search
+        ? { contains: normalizeForSearch(search) }
+        : undefined,
+    };
+    // Pessoa excluída continua aparecendo: a comanda ainda tem o que cobrar.
+    const [clients, total] = await this.prisma.$transaction([
+      this.prisma.people.findMany({
+        where: clientsWhere,
+        select: { id: true, name: true },
+        orderBy: [{ normalizedName: "asc" }, { id: "asc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.people.count({ where: clientsWhere }),
+    ]);
+
+    const pageIds = clients.map((client) => client.id);
+    const payments =
+      pageIds.length === 0
+        ? []
+        : await this.prisma.payment.findMany({
+            where: {
+              AND: [
+                dayWhere,
+                {
+                  OR: [
+                    { appointment: { clientId: { in: pageIds } } },
+                    { clientPlan: { clientId: { in: pageIds } } },
+                  ],
+                },
+              ],
+            },
+            include: checkoutPaymentInclude,
+            orderBy: [
+              { dueDate: { sort: "asc", nulls: "last" } },
+              { createdAt: "asc" },
+            ],
+          });
+
+    const items = clients.map((client) => {
+      const own = payments.filter(
+        (payment) =>
+          (payment.appointment?.clientId ?? payment.clientPlan?.clientId) ===
+          client.id,
+      );
+
+      return {
+        client,
+        total: this.sum(own),
+        pendingTotal: this.sum(
+          own.filter((payment) => payment.status === PaymentStatus.PENDING),
+        ),
+        payments: own,
+      };
+    });
+
+    return { items, total, page, limit };
+  }
+
+  /**
+   * Baixa dos pagamentos escolhidos, todos do mesmo cliente, com o mesmo método
+   * e a mesma data. Tudo ou nada: a conferência e a gravação rodam numa só
+   * transação. Erros: 404 (pagamento ou método inexistente na empresa), 409
+   * (algum não está PENDING) e 400 (clientes diferentes).
+   */
+  async settle(
+    { paymentIds, paymentMethodId, paidAt }: SettleCheckoutDto,
+    companyId: string,
+  ): Promise<{ settled: number }> {
+    return this.prisma.$transaction(async (tx) => {
+      const payments = await tx.payment.findMany({
+        where: { id: { in: paymentIds }, deletedAt: null, companyId },
+        select: {
+          status: true,
+          appointment: { select: { clientId: true } },
+          clientPlan: { select: { clientId: true } },
+        },
+      });
+      if (payments.length !== paymentIds.length) {
+        throw new NotFoundException("Pagamento não encontrado");
+      }
+      await this.paymentMethodService.findOne(paymentMethodId, companyId);
+
+      if (
+        payments.some((payment) => payment.status !== PaymentStatus.PENDING)
+      ) {
+        throw new ConflictException(
+          "Só é possível dar baixa em pagamentos pendentes",
+        );
+      }
+      const clients = new Set(
+        payments.map(
+          (payment) =>
+            payment.appointment?.clientId ?? payment.clientPlan?.clientId,
+        ),
+      );
+      if (clients.size > 1) {
+        throw new BadRequestException(
+          "Os pagamentos precisam ser do mesmo cliente",
+        );
+      }
+
+      const now = new Date();
+      // O status no filtro protege de uma baixa concorrente entre a leitura e a gravação.
+      const { count } = await tx.payment.updateMany({
+        where: {
+          id: { in: paymentIds },
+          status: PaymentStatus.PENDING,
+          deletedAt: null,
+          companyId,
+        },
+        data: {
+          status: PaymentStatus.PAID,
+          paymentMethodId,
+          paidAt: paidAt ?? now,
+          updatedAt: now,
+        },
+      });
+      if (count !== paymentIds.length) {
+        throw new ConflictException(
+          "Só é possível dar baixa em pagamentos pendentes",
+        );
+      }
+
+      return { settled: count };
+    });
+  }
+
+  // Filtro da comanda do dia (ver findCheckouts).
+  private async checkoutWhere(
+    companyId: string,
+  ): Promise<Prisma.PaymentWhereInput> {
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const now = new Date();
+    const today = this.toLocalDate(now, timeZone);
+    // Intervalo do dia local em instantes UTC, para comparar com o paidAt.
+    const dayStart = (day: number) =>
+      zonedToUtc(
+        {
+          year: today.getUTCFullYear(),
+          month: today.getUTCMonth() + 1,
+          day,
+          hours: 0,
+          minutes: 0,
+        },
+        timeZone,
+      );
+    const start = dayStart(today.getUTCDate());
+    const end = dayStart(today.getUTCDate() + 1);
+
+    return {
+      ...ownedByCompany(companyId),
+      deletedAt: null,
+      OR: [
+        { status: PaymentStatus.PENDING, dueDate: today },
+        {
+          status: PaymentStatus.PENDING,
+          dueDate: null,
+          clientPlan: { billingType: PlanBillingType.INTEGRAL },
+        },
+        { status: PaymentStatus.PAID, paidAt: { gte: start, lt: end } },
+      ],
+    };
+  }
+
+  private sum(payments: { amount: Decimal }[]): Decimal {
+    return payments.reduce((acc, p) => acc.plus(p.amount), new Decimal(0));
   }
 
   // Hoje no calendário da empresa: é a referência do atraso.

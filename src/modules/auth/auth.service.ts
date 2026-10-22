@@ -12,6 +12,15 @@ import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { JwtPayload } from "./jwt-payload.interface";
 
+/**
+ * Hash bcrypt de um texto qualquer, com o mesmo custo das senhas. Quando o
+ * e-mail não existe, a senha é comparada com ele para o login levar o mesmo
+ * tempo nos dois casos: sem isso, a resposta mais rápida revelaria quais
+ * e-mails têm conta.
+ */
+const TIMING_PLACEHOLDER_HASH =
+  "$2b$10$XmRU9YoHggPHKfhUuaInaOJmQbcemEM0nCmq9lkAKJq6Wd6tLdsnq";
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -46,13 +55,13 @@ export class AuthService {
   async login(dto: LoginDto): Promise<AuthTokens> {
     const user = await this.userService.findByEmailWithPassword(dto.email);
 
-    if (!user) {
-      throw new UnauthorizedException("Credenciais inválidas");
-    }
-
-    // Verifica se o password enviado corresponde ao bcrypt já registrado.
-    const passwordMatches = await bcrypt.compare(dto.password, user.password);
-    if (!passwordMatches) {
+    // Verifica se o password enviado corresponde ao bcrypt já registrado. A
+    // comparação roda mesmo sem usuário (ver TIMING_PLACEHOLDER_HASH).
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user?.password ?? TIMING_PLACEHOLDER_HASH,
+    );
+    if (!user || !passwordMatches) {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
@@ -91,29 +100,29 @@ export class AuthService {
 
   /**
    * Troca um refresh token válido por um novo par de tokens. O refresh token
-   * usado é revogado nesse momento (rotação): só serve uma vez, o que permite
-   * detectar reuso de um token vazado.
+   * usado é revogado nesse momento (rotação): cada token serve uma única vez.
    */
   async refresh(dto: RefreshTokenDto): Promise<AuthTokens> {
     const tokenHash = this.hashToken(dto.refreshToken);
     const now = new Date();
 
-    const stored = await this.prisma.refreshToken.findUnique({
-      where: { tokenHash },
+    // Conferir e revogar no mesmo comando: com duas requisições usando o mesmo
+    // token ao mesmo tempo, só a primeira encontra o token ainda válido. Ler e
+    // revogar em passos separados deixaria as duas passarem. Revogado já aqui,
+    // o token não é reaproveitado mesmo que as checagens abaixo falhem.
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null, expiresAt: { gt: now } },
+      data: { revokedAt: now },
     });
-
-    if (!stored || stored.revokedAt || stored.expiresAt <= now) {
+    if (count === 0) {
       throw new UnauthorizedException("Refresh token inválido");
     }
 
-    // Revogado já aqui: mesmo que as checagens abaixo falhem, o token não pode
-    // ser reaproveitado.
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
-      data: { revokedAt: now },
+    const { userId } = await this.prisma.refreshToken.findUniqueOrThrow({
+      where: { tokenHash },
+      select: { userId: true },
     });
-
-    const user = await this.userService.findActiveById(stored.userId);
+    const user = await this.userService.findActiveById(userId);
     if (!user || !(await this.companyService.isActive(user.companyId))) {
       throw new UnauthorizedException("Refresh token inválido");
     }

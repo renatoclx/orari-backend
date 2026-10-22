@@ -180,15 +180,20 @@ export class UserService {
     currentUser: AuthenticatedUser,
   ): Promise<PublicUser> {
     await this.findOne(id, currentUser);
+    const password = await this.hashPassword(dto.newPassword);
 
-    return this.prisma.user.update({
-      where: { id },
-      data: {
-        password: await this.hashPassword(dto.newPassword),
-        updatedAt: new Date(),
-      },
-      omit: omitPassword,
-    });
+    // Trocar a senha encerra as sessões abertas: se a conta foi invadida, quem
+    // tem um refresh token antigo não consegue mais renová-lo.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { password, updatedAt: new Date() },
+        omit: omitPassword,
+      }),
+      this.revokeSessions(id),
+    ]);
+
+    return updated;
   }
 
   // Reativa um usuário inativado (limpa o deletedAt).
@@ -212,11 +217,19 @@ export class UserService {
     }
 
     try {
-      return await this.prisma.user.update({
-        where: { id },
-        data: { deletedAt: null, updatedAt: new Date() },
-        omit: omitPassword,
-      });
+      // A reativação começa sem sessões: um refresh token emitido antes da
+      // inativação não volta a valer (a inativação já os revoga; isto cobre os
+      // usuários inativados antes dessa regra).
+      const [restored] = await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id },
+          data: { deletedAt: null, updatedAt: new Date() },
+          omit: omitPassword,
+        }),
+        this.revokeSessions(id),
+      ]);
+
+      return restored;
     } catch (error) {
       // O e-mail é único só entre ativos: outro usuário pode ter assumido o dele.
       throw isUniqueConstraintViolation(error)
@@ -235,9 +248,27 @@ export class UserService {
     await this.findOne(id, currentUser);
 
     const now = new Date();
-    await this.prisma.user.update({
-      where: { id },
-      data: { deletedAt: now, updatedAt: now },
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { deletedAt: now, updatedAt: now },
+      }),
+      this.revokeSessions(id),
+    ]);
+  }
+
+  /**
+   * Encerra as sessões do usuário revogando os refresh tokens ainda válidos. O
+   * access token em uso continua valendo até expirar, exceto para usuário
+   * inativado, que o JwtStrategy já recusa na hora.
+   *
+   * Grava a tabela de tokens direto pelo Prisma: o AuthModule depende do
+   * UserModule, e usar o AuthService aqui criaria dependência circular.
+   */
+  private revokeSessions(userId: string) {
+    return this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
   }
 

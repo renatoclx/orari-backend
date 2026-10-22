@@ -25,13 +25,18 @@
 - **Rotação:** cada refresh token só pode ser usado uma vez. A cada
   `POST /auth/refresh`, o token apresentado é revogado e um novo par
   (access + refresh) é emitido. Um token já revogado ou expirado é
-  recusado (401).
+  recusado (401). A conferência e a revogação acontecem num só comando no
+  banco: duas renovações simultâneas com o mesmo token não geram dois pares;
+  só a primeira é aceita.
 - **Múltiplas sessões:** cada login gera um refresh token independente
   (tabela `RefreshToken`), permitindo o mesmo usuário autenticado em mais
   de um dispositivo ao mesmo tempo; revogar um não afeta os demais.
 - As mesmas checagens do login valem no refresh: usuário precisa continuar
   ativo e a empresa, ativa — caso contrário, o token é revogado e a troca é
   recusada.
+- **Fim das sessões:** redefinir a senha, inativar ou reativar um usuário
+  revoga todos os refresh tokens dele. O access token em uso vale até
+  expirar, exceto o de usuário inativado, que o `JwtStrategy` recusa na hora.
 
 ## Tokens
 
@@ -72,6 +77,12 @@ Exemplo:
 
 - Nunca confiar em dados enviados pelo cliente.
 - Sempre utilizar request.user.
+- **Limite de tentativas** (`@nestjs/throttler`, por IP): `POST /auth/login`
+  aceita 5 tentativas por minuto e `POST /auth/refresh`, 20; acima disso, 429.
+  A contagem fica em memória, por instância da API. Em produção atrás de proxy,
+  configurar `trust proxy` para que o IP seja o do cliente, e não o do proxy.
+- O login compara a senha mesmo quando o e-mail não existe (com um hash fixo),
+  para o tempo de resposta não revelar quais e-mails têm conta.
 
 ## Autorização
 
