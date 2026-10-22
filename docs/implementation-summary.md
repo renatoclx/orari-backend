@@ -403,10 +403,16 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 2.31 Comandas do dia e baixa por seleção
 
 - `GET /payments/checkouts` (comandas do dia por cliente, paginadas por cliente, `search` pelo nome) e `PATCH /payments/settle` (baixa de pagamentos escolhidos do mesmo cliente, numa transação), declaradas antes de `:id`.
-- Os clientes do dia e a página são resolvidos primeiro (nome ordenado no banco); os pagamentos só são carregados para os clientes da página.
+- Os clientes do dia e a página são resolvidos primeiro (nome ordenado no banco); os dados só são carregados para os clientes da página.
+- **Reformulada (2.33):** a comanda parte das visitas do dia (atendimentos de hoje ou pagamento pago hoje), com `appointments`, `previousPayments` e totais por cliente.
 
 ## 2.32 Tela de Pagamentos: listagem, resumo e baixa
 
 - `GET /payments` passa a trazer `client`, `paymentMethod`, `appointment.recurringAppointmentId` e `clientPlan.billingType`, sem mudar os campos atuais nem a ordem.
 - `GET /payments/summary`: três `aggregate` numa transação (atrasado, a vencer, pago), sem carregar os pagamentos; declarada antes de `:id`.
 - `paidAt` no futuro é recusado (400) em `PATCH /payments/settle` e na baixa em lote da recorrência.
+
+## 2.33 Comandas a partir das visitas do dia
+
+- `GET /payments/checkouts` passa a partir das visitas: o cliente tem comanda se tem atendimento hoje (`SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED`) ou pagamento `PAID` hoje. Os clientes saem de uma só consulta em `People` com filtro por relação, ordenada e paginada no banco.
+- Resposta por cliente: `appointments` (com `payment` ou `null`), `previousPayments` e `todayPending`, `previousPending` e `paidToday`. `PATCH /payments/settle` não mudou.

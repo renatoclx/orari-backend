@@ -127,14 +127,34 @@ export interface PaymentSummary {
   paid: PaymentSummaryCard;
 }
 
-// Pagamento dentro da comanda: a origem inclui a modalidade do plano.
-const checkoutPaymentInclude = {
+// Atendimentos que dão comanda ao cliente no dia: cancelado e não comparecimento ficam de fora.
+const CHECKOUT_APPOINTMENT_STATUSES: AppointmentStatus[] = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS,
+  AppointmentStatus.COMPLETED,
+];
+
+// Atendimento do dia, com quem atende e a origem (sessão de pacote tem clientPlanId).
+const checkoutAppointmentSelect = {
+  id: true,
+  startAt: true,
+  status: true,
+  recurringAppointmentId: true,
+  service: { select: { id: true, name: true } },
+  professional: { select: { id: true, name: true } },
+  recurringAppointment: { select: { clientPlanId: true } },
+} satisfies Prisma.AppointmentSelect;
+
+// Pagamento anterior: a origem identifica o atendimento ou a contratação.
+const previousPaymentInclude = {
   paymentMethod: { select: { id: true, name: true } },
   appointment: {
     select: {
       id: true,
       clientId: true,
       startAt: true,
+      recurringAppointmentId: true,
       service: { select: { id: true, name: true } },
     },
   },
@@ -148,16 +168,46 @@ const checkoutPaymentInclude = {
   },
 } satisfies Prisma.PaymentInclude;
 
-export type CheckoutPayment = Prisma.PaymentGetPayload<{
-  include: typeof checkoutPaymentInclude;
+// Campos do pagamento que a comanda mostra, com o método quando pago.
+type CheckoutPaymentRow = Pick<
+  Payment,
+  "id" | "amount" | "dueDate" | "status" | "paidAt"
+> & { paymentMethod: { id: string; name: string } | null };
+type PreviousPaymentRow = Prisma.PaymentGetPayload<{
+  include: typeof previousPaymentInclude;
 }>;
 
-// Comanda: tudo o que o cliente movimenta no dia.
+export type CheckoutPayment = CheckoutPaymentRow & { isOverdue: boolean };
+
+export type CheckoutAppointment = Omit<
+  Prisma.AppointmentGetPayload<{ select: typeof checkoutAppointmentSelect }>,
+  "recurringAppointment"
+> & {
+  // Preenchido quando o atendimento é sessão de pacote (cobrada pela contratação).
+  clientPlanId: string | null;
+  // Pagamento do atendimento (não excluído nem cancelado); null se ainda não existe.
+  payment: CheckoutPayment | null;
+};
+
+export type CheckoutPreviousPayment = CheckoutPayment & {
+  appointment: Omit<
+    NonNullable<PreviousPaymentRow["appointment"]>,
+    "clientId"
+  > | null;
+  clientPlan: Omit<
+    NonNullable<PreviousPaymentRow["clientPlan"]>,
+    "clientId"
+  > | null;
+};
+
+// Comanda do dia de um cliente: os atendimentos de hoje, o que ficou para trás e os totais.
 export interface Checkout {
   client: { id: string; name: string };
-  total: Decimal;
-  pendingTotal: Decimal;
-  payments: CheckoutPayment[];
+  appointments: CheckoutAppointment[];
+  previousPayments: CheckoutPreviousPayment[];
+  todayPending: string;
+  previousPending: string;
+  paidToday: string;
 }
 
 // Um pagamento de contratação de plano: valor e vencimento já calculados.
@@ -626,44 +676,46 @@ export class PaymentService {
   }
 
   /**
-   * Comandas do dia, uma por cliente. "Dia" é hoje no fuso da empresa. Entram os
-   * pagamentos PENDING que vencem hoje, os de contratação integral PENDING sem
-   * vencimento e os PAID hoje (a comanda paga continua na lista). Atrasados e
-   * futuros ficam de fora; excluídos e CANCELLED nunca entram.
+   * Comandas do dia, uma por cliente, a partir das visitas. "Dia" é hoje no
+   * fuso da empresa. Tem comanda o cliente que:
+   * - tem um atendimento que começa hoje em SCHEDULED, CONFIRMED, IN_PROGRESS
+   *   ou COMPLETED (cancelado e não comparecimento ficam de fora); ou
+   * - tem um pagamento PAID com paidAt hoje (a comanda paga continua na lista).
+   * Cliente só com pendência, sem atendimento nem pagamento hoje, não entra.
+   * Pessoa inativada continua aparecendo.
    *
-   * A paginação é por cliente: primeiro se acham os clientes com movimento
-   * (já filtrados e ordenados pelo nome, no banco) e só então se carregam os
-   * pagamentos dos clientes da página.
+   * A paginação é por cliente: primeiro se resolvem os clientes (busca e ordem
+   * pelo nome, no banco) e só então se carregam os dados dos clientes da página.
+   * Pagamento cancelado ou excluído nunca entra em lista nem total.
    */
   async findCheckouts(
     { page, limit, search }: FindCheckoutsQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<Checkout>> {
-    const dayWhere = await this.checkoutWhere(companyId);
-
-    // Só ids: o cliente vem do agendamento ou da contratação.
-    const inDay = await this.prisma.payment.findMany({
-      where: dayWhere,
-      select: {
-        appointment: { select: { clientId: true } },
-        clientPlan: { select: { clientId: true } },
-      },
-    });
-    const clientIds = [
-      ...new Set(
-        inDay.map(
-          (payment) =>
-            (payment.appointment?.clientId ?? payment.clientPlan?.clientId)!,
-        ),
-      ),
-    ];
+    const { today, start, end } = await this.todayBounds(companyId);
+    const paidToday = {
+      deletedAt: null,
+      status: PaymentStatus.PAID,
+      paidAt: { gte: start, lt: end },
+    };
 
     const clientsWhere: Prisma.PeopleWhereInput = {
       companyId,
-      id: { in: clientIds },
       normalizedName: search
         ? { contains: normalizeForSearch(search) }
         : undefined,
+      OR: [
+        {
+          appointmentsAsClient: {
+            some: {
+              startAt: { gte: start, lt: end },
+              status: { in: CHECKOUT_APPOINTMENT_STATUSES },
+            },
+          },
+        },
+        { appointmentsAsClient: { some: { payment: { is: paidToday } } } },
+        { clientPlans: { some: { payments: { some: paidToday } } } },
+      ],
     };
     // Pessoa excluída continua aparecendo: a comanda ainda tem o que cobrar.
     const [clients, total] = await this.prisma.$transaction([
@@ -676,44 +728,114 @@ export class PaymentService {
       }),
       this.prisma.people.count({ where: clientsWhere }),
     ]);
-
+    if (clients.length === 0) {
+      return { items: [], total, page, limit };
+    }
     const pageIds = clients.map((client) => client.id);
-    const payments =
-      pageIds.length === 0
-        ? []
-        : await this.prisma.payment.findMany({
-            where: {
-              AND: [
-                dayWhere,
-                {
-                  OR: [
-                    { appointment: { clientId: { in: pageIds } } },
-                    { clientPlan: { clientId: { in: pageIds } } },
-                  ],
-                },
-              ],
-            },
-            include: checkoutPaymentInclude,
-            orderBy: [
-              { dueDate: { sort: "asc", nulls: "last" } },
-              { createdAt: "asc" },
-            ],
-          });
 
-    const items = clients.map((client) => {
-      const own = payments.filter(
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        companyId,
+        clientId: { in: pageIds },
+        startAt: { gte: start, lt: end },
+        status: { in: CHECKOUT_APPOINTMENT_STATUSES },
+      },
+      select: { ...checkoutAppointmentSelect, clientId: true },
+      orderBy: { startAt: "asc" },
+    });
+    const appointmentIds = appointments.map((appointment) => appointment.id);
+
+    // Dos atendimentos de hoje vem qualquer pagamento ativo; os demais entram
+    // pelas três regras de "anteriores".
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        ...ownedByCompany(companyId),
+        deletedAt: null,
+        status: { not: PaymentStatus.CANCELLED },
+        AND: [
+          {
+            OR: [
+              { appointment: { clientId: { in: pageIds } } },
+              { clientPlan: { clientId: { in: pageIds } } },
+            ],
+          },
+          {
+            OR: [
+              { appointmentId: { in: appointmentIds } },
+              { status: PaymentStatus.PENDING, dueDate: { lte: today } },
+              {
+                status: PaymentStatus.PENDING,
+                dueDate: null,
+                clientPlan: { billingType: PlanBillingType.INTEGRAL },
+              },
+              { status: PaymentStatus.PAID, paidAt: { gte: start, lt: end } },
+            ],
+          },
+        ],
+      },
+      include: previousPaymentInclude,
+      // Vencimento crescente, sem vencimento por último.
+      orderBy: [
+        { dueDate: { sort: "asc", nulls: "last" } },
+        { createdAt: "asc" },
+      ],
+    });
+    const byAppointment = new Map(
+      payments
+        .filter((payment) => payment.appointmentId !== null)
+        .map((payment) => [payment.appointmentId!, payment]),
+    );
+    const isToday = (paidAt: Date | null) =>
+      paidAt !== null && paidAt >= start && paidAt < end;
+
+    const items = clients.map((client): Checkout => {
+      const visits = appointments
+        .filter((appointment) => appointment.clientId === client.id)
+        .map((appointment): CheckoutAppointment => {
+          const payment = byAppointment.get(appointment.id);
+
+          return {
+            id: appointment.id,
+            startAt: appointment.startAt,
+            status: appointment.status,
+            service: appointment.service,
+            professional: appointment.professional,
+            recurringAppointmentId: appointment.recurringAppointmentId,
+            clientPlanId:
+              appointment.recurringAppointment?.clientPlanId ?? null,
+            payment: payment ? this.toCheckoutPayment(payment, today) : null,
+          };
+        });
+
+      const previous = payments.filter(
         (payment) =>
           (payment.appointment?.clientId ?? payment.clientPlan?.clientId) ===
-          client.id,
+            client.id &&
+          !(
+            payment.appointmentId &&
+            appointmentIds.includes(payment.appointmentId)
+          ),
       );
+      const visitPayments = visits.flatMap((visit) =>
+        visit.payment ? [visit.payment] : [],
+      );
+      const pending = (rows: { status: PaymentStatus; amount: Decimal }[]) =>
+        this.sum(rows.filter((row) => row.status === PaymentStatus.PENDING));
 
       return {
         client,
-        total: this.sum(own),
-        pendingTotal: this.sum(
-          own.filter((payment) => payment.status === PaymentStatus.PENDING),
+        appointments: visits,
+        previousPayments: previous.map((payment) =>
+          this.toPreviousPayment(payment, today),
         ),
-        payments: own,
+        todayPending: pending(visitPayments).toFixed(2),
+        previousPending: pending(previous).toFixed(2),
+        paidToday: this.sum(
+          [...visitPayments, ...previous].filter(
+            (payment) =>
+              payment.status === PaymentStatus.PAID && isToday(payment.paidAt),
+          ),
+        ).toFixed(2),
       };
     });
 
@@ -791,14 +913,14 @@ export class PaymentService {
     });
   }
 
-  // Filtro da comanda do dia (ver findCheckouts).
-  private async checkoutWhere(
-    companyId: string,
-  ): Promise<Prisma.PaymentWhereInput> {
+  /**
+   * "Hoje" no fuso da empresa: a data de calendário (para comparar com o
+   * vencimento) e o intervalo do dia em instantes UTC [start, end) (para
+   * comparar com o início do atendimento e com o paidAt).
+   */
+  private async todayBounds(companyId: string) {
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const now = new Date();
-    const today = this.toLocalDate(now, timeZone);
-    // Intervalo do dia local em instantes UTC, para comparar com o paidAt.
+    const today = this.toLocalDate(new Date(), timeZone);
     const dayStart = (day: number) =>
       zonedToUtc(
         {
@@ -810,21 +932,56 @@ export class PaymentService {
         },
         timeZone,
       );
-    const start = dayStart(today.getUTCDate());
-    const end = dayStart(today.getUTCDate() + 1);
 
     return {
-      ...ownedByCompany(companyId),
-      deletedAt: null,
-      OR: [
-        { status: PaymentStatus.PENDING, dueDate: today },
-        {
-          status: PaymentStatus.PENDING,
-          dueDate: null,
-          clientPlan: { billingType: PlanBillingType.INTEGRAL },
-        },
-        { status: PaymentStatus.PAID, paidAt: { gte: start, lt: end } },
-      ],
+      today,
+      start: dayStart(today.getUTCDate()),
+      end: dayStart(today.getUTCDate() + 1),
+    };
+  }
+
+  // Campos do pagamento na comanda, com o atraso calculado.
+  private toCheckoutPayment(
+    payment: CheckoutPaymentRow,
+    today: Date,
+  ): CheckoutPayment {
+    const { id, amount, dueDate, status, paidAt, paymentMethod } = payment;
+
+    return {
+      id,
+      amount,
+      dueDate,
+      status,
+      paidAt,
+      paymentMethod,
+      isOverdue: this.isOverdue(payment, today),
+    };
+  }
+
+  // Pagamento anterior: os campos da comanda mais a origem (sem o clientId interno).
+  private toPreviousPayment(
+    payment: PreviousPaymentRow,
+    today: Date,
+  ): CheckoutPreviousPayment {
+    const { appointment, clientPlan } = payment;
+
+    return {
+      ...this.toCheckoutPayment(payment, today),
+      appointment: appointment
+        ? {
+            id: appointment.id,
+            startAt: appointment.startAt,
+            recurringAppointmentId: appointment.recurringAppointmentId,
+            service: appointment.service,
+          }
+        : null,
+      clientPlan: clientPlan
+        ? {
+            id: clientPlan.id,
+            billingType: clientPlan.billingType,
+            plan: clientPlan.plan,
+          }
+        : null,
     };
   }
 
@@ -876,17 +1033,21 @@ export class PaymentService {
    * Atraso é derivado, não gravado: pendente com vencimento antes de hoje. O
    * status continua PENDING até a baixa (ver business-rules.md).
    */
+  private isOverdue(
+    { status, dueDate }: { status: PaymentStatus; dueDate: Date | null },
+    today: Date,
+  ): boolean {
+    return (
+      status === PaymentStatus.PENDING && dueDate !== null && dueDate < today
+    );
+  }
+
   // Genérico: a listagem passa o pagamento com a origem, e ela é mantida.
   private toResponse<T extends Payment>(
     payment: T,
     today: Date,
   ): T & { isOverdue: boolean } {
-    const isOverdue =
-      payment.status === PaymentStatus.PENDING &&
-      payment.dueDate !== null &&
-      payment.dueDate < today;
-
-    return { ...payment, isOverdue };
+    return { ...payment, isOverdue: this.isOverdue(payment, today) };
   }
 
   // Data pura (coluna `date`) do dia em que o instante cai no fuso da empresa.
