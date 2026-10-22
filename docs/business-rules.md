@@ -307,9 +307,11 @@
 
 ### Comandas do dia (Financeiro)
 
-- `GET /payments/checkouts` lista as comandas do dia, uma por cliente (o cliente vem do agendamento ou da contratação). "Dia" é hoje no fuso da empresa.
-- Entram: pagamentos `PENDING` com vencimento hoje; pagamentos `PENDING` sem vencimento de contratação integral; e pagamentos `PAID` com `paidAt` dentro de hoje (a comanda paga continua na lista). Atrasados, futuros, excluídos e `CANCELLED` nunca entram.
-- Cada comanda traz `total` (soma de todos os pagamentos dela) e `pendingTotal` (soma dos `PENDING`). A paginação é por cliente, em ordem alfabética, e `search` filtra pelo nome do cliente sem diferenciar acentos nem maiúsculas.
+- `GET /payments/checkouts` lista as comandas do dia, uma por cliente, a partir das visitas. "Dia" é hoje no fuso da empresa.
+- Tem comanda o cliente que tem um atendimento que começa hoje em `SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED` (cancelado e não comparecimento ficam de fora), ou que tem algum pagamento `PAID` com `paidAt` hoje (a comanda paga continua na lista). Cliente só com pendência, sem atendimento nem pagamento hoje, não entra. Pessoa inativada continua aparecendo.
+- A paginação é por cliente, em ordem alfabética, e `search` filtra pelo nome do cliente sem diferenciar acentos nem maiúsculas.
+- Cada comanda traz: `appointments` (os atendimentos de hoje, por horário, com serviço, profissional, `recurringAppointmentId`, `clientPlanId` quando é sessão de pacote e `payment`, que é o pagamento do atendimento ou `null` quando ainda não existe, como na sessão de pacote); `previousPayments` (pagamentos do cliente, de atendimento ou de contratação, que não são dos atendimentos listados: `PENDING` com vencimento até hoje, inclusive; `PENDING` de contratação integral sem vencimento; e `PAID` hoje, por vencimento crescente e sem vencimento por último, cada um com a origem); e os totais em texto com duas casas.
+- Totais: `todayPending` (pendentes dos atendimentos de hoje), `previousPending` (pendentes dos anteriores) e `paidToday` (pagos hoje, nas duas listas). Um atendimento de hoje já pago em outro dia aparece com o pagamento pago, mas não entra em nenhum total. Pagamentos `CANCELLED` e excluídos nunca entram em lista nem total.
 - `PATCH /payments/settle` dá baixa nos pagamentos escolhidos (`paymentIds`, ao menos um, sem repetir), com um `paymentMethodId` e `paidAt` opcional (padrão: o momento da requisição), tudo numa só transação. Todos precisam ser da empresa, não excluídos, `PENDING` e do mesmo cliente: inexistente (pagamento ou método) responde 404, algum fora de `PENDING` responde 409 e clientes diferentes respondem 400. O método precisa existir (não excluído) na empresa.
 
 ## Estados e cidades

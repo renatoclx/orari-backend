@@ -26,6 +26,7 @@ describe("PaymentService", () => {
   const prismaMock: Record<string, unknown> & {
     payment: Record<string, ReturnType<typeof vi.fn>>;
     people: Record<string, ReturnType<typeof vi.fn>>;
+    appointment: Record<string, ReturnType<typeof vi.fn>>;
   } = {
     // Aceita a forma em lote (array) e a interativa (função, que recebe o próprio mock).
     $transaction: vi.fn(
@@ -35,6 +36,7 @@ describe("PaymentService", () => {
           : Promise.all(operations),
     ),
     people: { findMany: vi.fn(), count: vi.fn() },
+    appointment: { findMany: vi.fn() },
     payment: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -1104,153 +1106,422 @@ describe("PaymentService", () => {
   describe("findCheckouts", () => {
     // Hoje: 10/10/2026 em UTC (relógio fixo do beforeEach).
     const today = new Date("2026-10-10");
-    const fromAppointment = (
-      id: string,
-      clientId: string,
-      amount: string,
-      status = "PENDING",
-    ) => ({
+    const dayStart = new Date("2026-10-10T00:00:00.000Z");
+    const dayEnd = new Date("2026-10-11T00:00:00.000Z");
+    const ana = { id: "c1", name: "Ana" };
+
+    const visit = (id: string, startAt: string, extra: object = {}) => ({
       id,
-      status,
-      amount: new Decimal(amount),
-      appointment: { id: `a-${id}`, clientId },
-      clientPlan: null,
+      clientId: "c1",
+      startAt: new Date(startAt),
+      status: "SCHEDULED",
+      recurringAppointmentId: null,
+      service: { id: "s1", name: "Corte" },
+      professional: { id: "pr1", name: "Bia" },
+      recurringAppointment: null,
+      ...extra,
     });
-    const fromPlan = (id: string, clientId: string, amount: string) => ({
+    const charge = (id: string, extra: object = {}) => ({
       id,
+      amount: new Decimal("100"),
+      dueDate: today,
       status: "PENDING",
-      amount: new Decimal(amount),
+      paidAt: null,
+      paymentMethod: null,
+      appointmentId: null,
       appointment: null,
-      clientPlan: { id: `cp-${id}`, clientId, billingType: "INTEGRAL" },
+      clientPlan: null,
+      ...extra,
     });
+    // Pagamento de um atendimento do cliente c1.
+    const ofVisit = (id: string, appointmentId: string, extra: object = {}) =>
+      charge(id, {
+        appointmentId,
+        appointment: {
+          id: appointmentId,
+          clientId: "c1",
+          startAt: new Date("2026-10-10T13:00:00.000Z"),
+          recurringAppointmentId: null,
+          service: { id: "s1", name: "Corte" },
+        },
+        ...extra,
+      });
+    // Pagamento de uma contratação do cliente c1.
+    const ofPlan = (id: string, billingType: string, extra: object = {}) =>
+      charge(id, {
+        clientPlan: {
+          id: "cp1",
+          clientId: "c1",
+          billingType,
+          plan: { id: "pl1", name: "Pacote" },
+        },
+        ...extra,
+      });
 
-    it("deve filtrar o dia: vencem hoje, integral sem vencimento e pagos hoje", async () => {
-      prismaMock.payment.findMany.mockResolvedValue([]);
-      prismaMock.people.findMany.mockResolvedValue([]);
-      prismaMock.people.count.mockResolvedValue(0);
+    const setup = ({
+      clients = [ana] as { id: string; name: string }[],
+      appointments = [] as object[],
+      payments = [] as object[],
+    } = {}) => {
+      prismaMock.people.findMany.mockResolvedValue(clients);
+      prismaMock.people.count.mockResolvedValue(clients.length);
+      prismaMock.appointment.findMany.mockResolvedValue(appointments);
+      prismaMock.payment.findMany.mockResolvedValue(payments);
+    };
+    const run = (query: object = {}) =>
+      paymentService.findCheckouts(
+        { page: 1, limit: 10, ...query },
+        COMPANY_ID,
+      );
+    const clientsWhere = () =>
+      (
+        prismaMock.people.findMany.mock.calls[0][0] as {
+          where: Record<string, unknown>;
+        }
+      ).where;
 
-      await paymentService.findCheckouts({ page: 1, limit: 10 }, COMPANY_ID);
+    describe("quem tem comanda", () => {
+      it("deve incluir quem tem atendimento hoje (ativo) ou pagamento pago hoje", async () => {
+        setup();
 
-      // Atrasado (dueDate < hoje), futuro, CANCELLED, excluído e pago ontem
-      // ficam de fora porque nenhuma das três regras os alcança.
-      expect(prismaMock.payment.findMany).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          where: {
-            companyId: COMPANY_ID,
-            deletedAt: null,
-            OR: [
-              { status: "PENDING", dueDate: today },
-              {
-                status: "PENDING",
-                dueDate: null,
-                clientPlan: { billingType: "INTEGRAL" },
-              },
-              {
-                status: "PAID",
-                paidAt: {
-                  gte: new Date("2026-10-10T00:00:00.000Z"),
-                  lt: new Date("2026-10-11T00:00:00.000Z"),
+        await run();
+
+        const paidToday = {
+          deletedAt: null,
+          status: "PAID",
+          paidAt: { gte: dayStart, lt: dayEnd },
+        };
+        expect(clientsWhere()).toEqual({
+          companyId: COMPANY_ID,
+          normalizedName: undefined,
+          OR: [
+            {
+              appointmentsAsClient: {
+                some: {
+                  startAt: { gte: dayStart, lt: dayEnd },
+                  // Cancelado e não compareceu ficam de fora.
+                  status: {
+                    in: ["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"],
+                  },
                 },
               },
-            ],
+            },
+            { appointmentsAsClient: { some: { payment: { is: paidToday } } } },
+            { clientPlans: { some: { payments: { some: paidToday } } } },
+          ],
+        });
+      });
+
+      it("não deve filtrar por exclusão da pessoa nem carregar dados sem clientes", async () => {
+        setup({ clients: [] });
+
+        const result = await run();
+
+        expect(result).toEqual({ items: [], total: 0, page: 1, limit: 10 });
+        expect(clientsWhere()).not.toHaveProperty("deletedAt");
+        expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
+        expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
+      });
+
+      it("deve buscar o nome sem acento nem maiúsculas e paginar por cliente", async () => {
+        setup();
+
+        await run({ page: 2, limit: 5, search: "JOSÉ" });
+
+        expect(clientsWhere()).toMatchObject({
+          normalizedName: { contains: "jose" },
+        });
+        expect(prismaMock.people.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            orderBy: [{ normalizedName: "asc" }, { id: "asc" }],
+            skip: 5,
+            take: 5,
+          }),
+        );
+      });
+
+      it("deve usar o dia no fuso da empresa", async () => {
+        // 01:00 UTC de 11/10 ainda é 10/10 em São Paulo (UTC-3).
+        vi.setSystemTime(new Date("2026-10-11T01:00:00.000Z"));
+        companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+        setup();
+
+        await run();
+
+        expect(prismaMock.appointment.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              startAt: {
+                gte: new Date("2026-10-10T03:00:00.000Z"),
+                lt: new Date("2026-10-11T03:00:00.000Z"),
+              },
+            }) as unknown,
+          }),
+        );
+      });
+    });
+
+    describe("atendimentos do dia", () => {
+      it("deve listar os atendimentos do cliente em ordem de startAt, com serviço e profissional", async () => {
+        setup({
+          appointments: [
+            visit("a1", "2026-10-10T13:00:00.000Z"),
+            visit("a2", "2026-10-10T15:00:00.000Z", { status: "COMPLETED" }),
+          ],
+        });
+
+        const { items } = await run();
+
+        expect(prismaMock.appointment.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ orderBy: { startAt: "asc" } }),
+        );
+        expect(items[0].appointments.map((a) => a.id)).toEqual(["a1", "a2"]);
+        expect(items[0].appointments[0]).toEqual({
+          id: "a1",
+          startAt: new Date("2026-10-10T13:00:00.000Z"),
+          status: "SCHEDULED",
+          service: { id: "s1", name: "Corte" },
+          professional: { id: "pr1", name: "Bia" },
+          recurringAppointmentId: null,
+          clientPlanId: null,
+          payment: null,
+        });
+      });
+
+      it("deve trazer o pagamento do atendimento com o método e o atraso", async () => {
+        setup({
+          appointments: [visit("a1", "2026-10-10T13:00:00.000Z")],
+          payments: [
+            ofVisit("p1", "a1", {
+              dueDate: new Date("2026-10-09"),
+              paymentMethod: { id: "m1", name: "Pix" },
+            }),
+          ],
+        });
+
+        const { items } = await run();
+
+        expect(items[0].appointments[0].payment).toEqual({
+          id: "p1",
+          amount: new Decimal("100"),
+          dueDate: new Date("2026-10-09"),
+          status: "PENDING",
+          paidAt: null,
+          paymentMethod: { id: "m1", name: "Pix" },
+          isOverdue: true,
+        });
+      });
+
+      it("deve deixar payment nulo no atendimento sem pagamento", async () => {
+        setup({ appointments: [visit("a1", "2026-10-10T13:00:00.000Z")] });
+
+        const { items } = await run();
+
+        expect(items[0].appointments[0].payment).toBeNull();
+      });
+
+      it("deve marcar a sessão de pacote com o clientPlanId, sem pagamento próprio", async () => {
+        setup({
+          appointments: [
+            visit("a1", "2026-10-10T13:00:00.000Z", {
+              recurringAppointmentId: "r1",
+              recurringAppointment: { clientPlanId: "cp1" },
+            }),
+          ],
+        });
+
+        const { items } = await run();
+
+        expect(items[0].appointments[0]).toMatchObject({
+          recurringAppointmentId: "r1",
+          clientPlanId: "cp1",
+          payment: null,
+        });
+      });
+
+      it("deve ignorar o pagamento cancelado ou excluído na consulta", async () => {
+        setup({ appointments: [visit("a1", "2026-10-10T13:00:00.000Z")] });
+
+        await run();
+
+        expect(prismaMock.payment.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              ...ownedByCompany,
+              deletedAt: null,
+              status: { not: "CANCELLED" },
+            }) as unknown,
+          }),
+        );
+      });
+    });
+
+    describe("pagamentos anteriores", () => {
+      it("deve consultar atrasado, vencendo hoje, integral sem vencimento e pago hoje (e deixar o futuro de fora)", async () => {
+        setup({ appointments: [visit("a1", "2026-10-10T13:00:00.000Z")] });
+
+        await run();
+
+        const [{ where }] = prismaMock.payment.findMany.mock.calls[0] as [
+          { where: { AND: [unknown, { OR: unknown[] }] } },
+        ];
+        expect(where.AND[1].OR).toEqual([
+          { appointmentId: { in: ["a1"] } },
+          // Até hoje, inclusive: cobre o atrasado e o que vence hoje; o futuro não entra.
+          { status: "PENDING", dueDate: { lte: today } },
+          {
+            status: "PENDING",
+            dueDate: null,
+            clientPlan: { billingType: "INTEGRAL" },
           },
-        }),
-      );
-    });
-
-    it("deve usar o dia no fuso da empresa", async () => {
-      // 01:00 UTC de 11/10 ainda é 10/10 em São Paulo (UTC-3).
-      vi.setSystemTime(new Date("2026-10-11T01:00:00.000Z"));
-      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
-      prismaMock.payment.findMany.mockResolvedValue([]);
-      prismaMock.people.findMany.mockResolvedValue([]);
-      prismaMock.people.count.mockResolvedValue(0);
-
-      await paymentService.findCheckouts({ page: 1, limit: 10 }, COMPANY_ID);
-
-      const [{ where }] = prismaMock.payment.findMany.mock.calls[0] as [
-        { where: { OR: Record<string, unknown>[] } },
-      ];
-      expect(where.OR[0].dueDate).toEqual(today);
-      expect(where.OR[2].paidAt).toEqual({
-        gte: new Date("2026-10-10T03:00:00.000Z"),
-        lt: new Date("2026-10-11T03:00:00.000Z"),
-      });
-    });
-
-    it("deve agrupar por cliente, somar os totais e paginar por cliente", async () => {
-      prismaMock.payment.findMany
-        .mockResolvedValueOnce([
-          fromAppointment("p1", "c1", "100"),
-          fromPlan("p2", "c1", "50.5"),
-          fromAppointment("p3", "c2", "30"),
-        ])
-        .mockResolvedValueOnce([
-          fromAppointment("p1", "c1", "100"),
-          fromPlan("p2", "c1", "50.5"),
-          fromAppointment("p4", "c1", "20", "PAID"),
+          { status: "PAID", paidAt: { gte: dayStart, lt: dayEnd } },
         ]);
-      prismaMock.people.findMany.mockResolvedValue([{ id: "c1", name: "Ana" }]);
-      prismaMock.people.count.mockResolvedValue(2);
-
-      const result = await paymentService.findCheckouts(
-        { page: 1, limit: 1 },
-        COMPANY_ID,
-      );
-
-      expect(prismaMock.people.findMany).toHaveBeenCalledWith({
-        where: {
-          companyId: COMPANY_ID,
-          id: { in: ["c1", "c2"] },
-          normalizedName: undefined,
-        },
-        select: { id: true, name: true },
-        orderBy: [{ normalizedName: "asc" }, { id: "asc" }],
-        skip: 0,
-        take: 1,
       });
-      expect(result.total).toBe(2);
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].client).toEqual({ id: "c1", name: "Ana" });
-      expect(result.items[0].total.toString()).toBe("170.5");
-      expect(result.items[0].pendingTotal.toString()).toBe("150.5");
-      expect(result.items[0].payments).toHaveLength(3);
+
+      it("deve listar os que não são dos atendimentos de hoje, com a origem", async () => {
+        setup({
+          appointments: [visit("a1", "2026-10-10T13:00:00.000Z")],
+          payments: [
+            ofVisit("p1", "a1"),
+            ofVisit("p2", "a0", { dueDate: new Date("2026-10-05") }),
+            ofPlan("p3", "INTEGRAL", { dueDate: null }),
+          ],
+        });
+
+        const { items } = await run();
+
+        expect(items[0].appointments[0].payment?.id).toBe("p1");
+        expect(items[0].previousPayments.map((p) => p.id)).toEqual([
+          "p2",
+          "p3",
+        ]);
+        expect(items[0].previousPayments[0]).toMatchObject({
+          isOverdue: true,
+          appointment: {
+            id: "a0",
+            startAt: new Date("2026-10-10T13:00:00.000Z"),
+            recurringAppointmentId: null,
+            service: { id: "s1", name: "Corte" },
+          },
+          clientPlan: null,
+        });
+        expect(items[0].previousPayments[0].appointment).not.toHaveProperty(
+          "clientId",
+        );
+        expect(items[0].previousPayments[1]).toMatchObject({
+          appointment: null,
+          clientPlan: {
+            id: "cp1",
+            billingType: "INTEGRAL",
+            plan: { id: "pl1", name: "Pacote" },
+          },
+        });
+      });
+
+      it("deve ordenar por vencimento, com os sem vencimento por último", async () => {
+        setup({ appointments: [visit("a1", "2026-10-10T13:00:00.000Z")] });
+
+        await run();
+
+        expect(prismaMock.payment.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            orderBy: [
+              { dueDate: { sort: "asc", nulls: "last" } },
+              { createdAt: "asc" },
+            ],
+          }),
+        );
+      });
     });
 
-    it("deve buscar o nome sem acento nem maiúsculas", async () => {
-      prismaMock.payment.findMany.mockResolvedValue([]);
-      prismaMock.people.findMany.mockResolvedValue([]);
-      prismaMock.people.count.mockResolvedValue(0);
+    describe("totais", () => {
+      it("deve somar os pendentes de hoje, os anteriores e o pago hoje, com duas casas", async () => {
+        const paidAt = new Date("2026-10-10T14:00:00.000Z");
+        setup({
+          appointments: [
+            visit("a1", "2026-10-10T13:00:00.000Z"),
+            visit("a2", "2026-10-10T15:00:00.000Z"),
+            visit("a3", "2026-10-10T17:00:00.000Z"),
+          ],
+          payments: [
+            ofVisit("p1", "a1", { amount: new Decimal("45.5") }),
+            ofVisit("p2", "a2", {
+              amount: new Decimal("30"),
+              status: "PAID",
+              paidAt,
+            }),
+            // Pago em outro dia: aparece no atendimento, mas não entra em nenhum total.
+            ofVisit("p3", "a3", {
+              amount: new Decimal("99"),
+              status: "PAID",
+              paidAt: new Date("2026-10-09T10:00:00.000Z"),
+            }),
+            ofVisit("p4", "a0", {
+              amount: new Decimal("20.25"),
+              dueDate: new Date("2026-10-01"),
+            }),
+            ofPlan("p5", "INTEGRAL", {
+              amount: new Decimal("200"),
+              dueDate: null,
+            }),
+            ofPlan("p6", "MONTHLY", {
+              amount: new Decimal("10"),
+              status: "PAID",
+              paidAt,
+            }),
+          ],
+        });
 
-      await paymentService.findCheckouts(
-        { page: 2, limit: 5, search: "JOSÉ" },
-        COMPANY_ID,
-      );
+        const { items } = await run();
 
-      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            normalizedName: { contains: "jose" },
-          }) as unknown,
-          skip: 5,
-          take: 5,
-        }),
-      );
-    });
+        expect(items[0].todayPending).toBe("45.50");
+        expect(items[0].previousPending).toBe("220.25");
+        // p2 (atendimento) + p6 (anterior), ambos pagos hoje.
+        expect(items[0].paidToday).toBe("40.00");
+        expect(items[0].appointments[2].payment?.status).toBe("PAID");
+      });
 
-    it("não deve buscar pagamentos quando a página não tem clientes", async () => {
-      prismaMock.payment.findMany.mockResolvedValue([]);
-      prismaMock.people.findMany.mockResolvedValue([]);
-      prismaMock.people.count.mockResolvedValue(0);
+      it("deve zerar os totais de um cliente sem pagamentos", async () => {
+        setup({ appointments: [visit("a1", "2026-10-10T13:00:00.000Z")] });
 
-      const result = await paymentService.findCheckouts(
-        { page: 1, limit: 10 },
-        COMPANY_ID,
-      );
+        const { items } = await run();
 
-      expect(result.items).toEqual([]);
-      expect(prismaMock.payment.findMany).toHaveBeenCalledTimes(1);
+        expect(items[0]).toMatchObject({
+          todayPending: "0.00",
+          previousPending: "0.00",
+          paidToday: "0.00",
+        });
+      });
+
+      it("deve manter cada cliente com os próprios atendimentos e pagamentos", async () => {
+        setup({
+          clients: [ana, { id: "c2", name: "Bia" }],
+          appointments: [
+            visit("a1", "2026-10-10T13:00:00.000Z"),
+            visit("a2", "2026-10-10T14:00:00.000Z", { clientId: "c2" }),
+          ],
+          payments: [
+            ofVisit("p1", "a1"),
+            charge("p2", {
+              appointmentId: "a2",
+              appointment: {
+                id: "a2",
+                clientId: "c2",
+                startAt: new Date("2026-10-10T14:00:00.000Z"),
+                recurringAppointmentId: null,
+                service: { id: "s1", name: "Corte" },
+              },
+            }),
+          ],
+        });
+
+        const { items } = await run();
+
+        expect(items.map((i) => i.client.id)).toEqual(["c1", "c2"]);
+        expect(items[0].appointments.map((a) => a.id)).toEqual(["a1"]);
+        expect(items[1].appointments.map((a) => a.id)).toEqual(["a2"]);
+        expect(items[1].appointments[0].payment?.id).toBe("p2");
+      });
     });
   });
 
