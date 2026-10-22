@@ -184,9 +184,9 @@ export class RecurringAppointmentService {
    * Cria a agenda de um serviço de um plano contratado, dentro da transação da
    * contratação: plano, agendas e pagamentos são gravados juntos ou nada é.
    *
-   * Diferente da recorrência avulsa: não há limite de 60 dias (o período é o da
-   * contratação) e não há pagamento por agendamento (a contratação é cobrada
-   * como um todo). As regras de agenda continuam as mesmas.
+   * Diferente da recorrência avulsa: o período é o da contratação e não há
+   * pagamento por agendamento (a contratação é cobrada como um todo). As regras
+   * de agenda continuam as mesmas.
    */
   async createForClientPlan(
     tx: Prisma.TransactionClient,
@@ -217,7 +217,7 @@ export class RecurringAppointmentService {
 
   /**
    * Cancelamento de uma contratação: encerra as recorrências dos serviços do
-   * plano e cancela os agendamentos futuros ainda em SCHEDULED, dentro da
+   * plano e cancela os agendamentos futuros ainda em SCHEDULED ou CONFIRMED, dentro da
    * transação da contratação. O PATCH comum não encerra recorrência de plano;
    * este é o único caminho.
    */

@@ -40,6 +40,8 @@
 - A senha deve ter entre 8 e 72 caracteres e ser confirmada no cadastro e na redefinição.
 - A senha é armazenada apenas como hash (bcrypt) e nunca é retornada pela API.
 - A senha não é alterada pela edição do usuário: SUPER_ADMIN ou ADMIN a redefinem por rota própria, sem precisar da senha atual, respeitando o alcance de cada um.
+- Redefinir a senha encerra as sessões do usuário: os refresh tokens dele deixam de valer. O mesmo acontece ao inativar ou reativar o usuário.
+- O login aceita até 5 tentativas por minuto do mesmo IP, e a renovação do token, até 20; acima disso, a API responde 429.
 
 ## Pessoas
 

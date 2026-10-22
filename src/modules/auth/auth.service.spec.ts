@@ -39,8 +39,7 @@ describe("AuthService", () => {
   };
   const prismaMock = {
     refreshToken: {
-      findUnique: vi.fn(),
-      update: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       create: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -50,7 +49,6 @@ describe("AuthService", () => {
     vi.clearAllMocks();
     configServiceMock.get.mockReturnValue("7d");
     prismaMock.refreshToken.create.mockResolvedValue({});
-    prismaMock.refreshToken.update.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -167,9 +165,15 @@ describe("AuthService", () => {
 
     it("deve lançar UnauthorizedException quando o usuário não existe", async () => {
       userServiceMock.findByEmailWithPassword.mockResolvedValue(null);
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
 
       await expect(authService.login(dto)).rejects.toThrow(
         UnauthorizedException,
+      );
+      // Compara mesmo sem usuário, para o tempo de resposta não revelar o e-mail.
+      expect(bcrypt.compare).toHaveBeenCalledWith(
+        dto.password,
+        expect.stringMatching(/^\$2b\$10\$/),
       );
       expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
       expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
@@ -206,30 +210,34 @@ describe("AuthService", () => {
       email: "test@example.com",
       companyId: "company-1",
     };
-    const storedToken = {
-      id: "token-1",
-      userId: user.id,
-      tokenHash: hash(rawToken),
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 60_000),
+    // Revogação condicionada: só um token ainda válido é encontrado.
+    const revokeWhere = {
+      where: {
+        tokenHash: hash(rawToken),
+        revokedAt: null,
+        expiresAt: { gt: anyDate },
+      },
+      data: { revokedAt: anyDate },
     };
 
+    beforeEach(() => {
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.refreshToken.findUniqueOrThrow.mockResolvedValue({
+        userId: user.id,
+      });
+    });
+
     it("deve rotacionar o refresh token e emitir um novo par quando válido", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue(storedToken);
       userServiceMock.findActiveById.mockResolvedValue(user);
       companyServiceMock.isActive.mockResolvedValue(true);
       jwtServiceMock.signAsync.mockResolvedValue("new-access-token");
 
       const result = await authService.refresh({ refreshToken: rawToken });
 
-      expect(prismaMock.refreshToken.findUnique).toHaveBeenCalledWith({
-        where: { tokenHash: hash(rawToken) },
-      });
       // O token usado é revogado antes de qualquer outra checagem (rotação).
-      expect(prismaMock.refreshToken.update).toHaveBeenCalledWith({
-        where: { id: storedToken.id },
-        data: { revokedAt: anyDate },
-      });
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
+        revokeWhere,
+      );
       expect(userServiceMock.findActiveById).toHaveBeenCalledWith(user.id);
       expect(result.accessToken).toBe("new-access-token");
       expect(result.refreshToken).not.toBe(rawToken);
@@ -242,59 +250,57 @@ describe("AuthService", () => {
       });
     });
 
-    it("deve lançar UnauthorizedException quando o token não existe", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue(null);
+    // Inexistente, já revogado, expirado ou usado ao mesmo tempo por outra
+    // requisição: em todos os casos a revogação condicionada não encontra nada.
+    it("deve lançar UnauthorizedException quando o token não está mais válido", async () => {
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
         authService.refresh({ refreshToken: rawToken }),
       ).rejects.toThrow(UnauthorizedException);
-      expect(prismaMock.refreshToken.update).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.findUniqueOrThrow).not.toHaveBeenCalled();
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
     });
 
-    it("deve lançar UnauthorizedException quando o token já foi revogado", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue({
-        ...storedToken,
-        revokedAt: new Date(),
-      });
+    it("deve aceitar só a primeira de duas renovações simultâneas com o mesmo token", async () => {
+      // O banco aplica a segunda revogação depois da primeira e não acha mais o token válido.
+      prismaMock.refreshToken.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      userServiceMock.findActiveById.mockResolvedValue(user);
+      companyServiceMock.isActive.mockResolvedValue(true);
+      jwtServiceMock.signAsync.mockResolvedValue("new-access-token");
 
-      await expect(
+      const results = await Promise.allSettled([
         authService.refresh({ refreshToken: rawToken }),
-      ).rejects.toThrow(UnauthorizedException);
-      expect(prismaMock.refreshToken.update).not.toHaveBeenCalled();
-    });
-
-    it("deve lançar UnauthorizedException quando o token expirou", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue({
-        ...storedToken,
-        expiresAt: new Date(Date.now() - 1000),
-      });
-
-      await expect(
         authService.refresh({ refreshToken: rawToken }),
-      ).rejects.toThrow(UnauthorizedException);
-      expect(prismaMock.refreshToken.update).not.toHaveBeenCalled();
+      ]);
+
+      expect(results.map((result) => result.status).sort()).toEqual([
+        "fulfilled",
+        "rejected",
+      ]);
+      expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
     });
 
     it("deve revogar o token mas recusar quando o usuário não está mais ativo", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue(storedToken);
       userServiceMock.findActiveById.mockResolvedValue(null);
 
       await expect(
         authService.refresh({ refreshToken: rawToken }),
       ).rejects.toThrow(UnauthorizedException);
-      expect(prismaMock.refreshToken.update).toHaveBeenCalled();
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalled();
       expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
     });
 
     it("deve revogar o token mas recusar quando a empresa está inativa", async () => {
-      prismaMock.refreshToken.findUnique.mockResolvedValue(storedToken);
       userServiceMock.findActiveById.mockResolvedValue(user);
       companyServiceMock.isActive.mockResolvedValue(false);
 
       await expect(
         authService.refresh({ refreshToken: rawToken }),
       ).rejects.toThrow(UnauthorizedException);
-      expect(prismaMock.refreshToken.update).toHaveBeenCalled();
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalled();
       expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
     });
   });

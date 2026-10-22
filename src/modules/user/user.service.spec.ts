@@ -57,7 +57,13 @@ describe("UserService", () => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    refreshToken: { updateMany: vi.fn() },
   };
+  // Revogação de todas as sessões do usuário-alvo.
+  const revokeSessionsOf = (userId: string) => ({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: anyDate },
+  });
   const companyServiceMock = { findActive: vi.fn() };
 
   const dto: CreateUserDto = {
@@ -362,6 +368,17 @@ describe("UserService", () => {
       });
     });
 
+    it("deve encerrar as sessões do usuário na mesma transação", async () => {
+      prismaMock.user.findFirst.mockResolvedValue(storedUser);
+
+      await userService.resetPassword("user-2", resetDto, adminUser);
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
+        revokeSessionsOf("user-2"),
+      );
+    });
+
     it("não deve redefinir a senha de usuário fora do alcance", async () => {
       prismaMock.user.findFirst.mockResolvedValue(null);
 
@@ -391,6 +408,10 @@ describe("UserService", () => {
         data: { deletedAt: null, updatedAt: anyDate },
         omit,
       });
+      // Tokens de antes da inativação não voltam a valer.
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
+        revokeSessionsOf("user-2"),
+      );
     });
 
     it("deve lançar NotFoundException para usuário fora do alcance", async () => {
@@ -436,6 +457,9 @@ describe("UserService", () => {
         where: { id: "user-2" },
         data: { deletedAt: anyDate, updatedAt: anyDate },
       });
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
+        revokeSessionsOf("user-2"),
+      );
     });
 
     it.each([adminUser, superAdminUser])(
@@ -446,6 +470,7 @@ describe("UserService", () => {
         ).rejects.toBeInstanceOf(ForbiddenException);
         expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
         expect(prismaMock.user.update).not.toHaveBeenCalled();
+        expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
       },
     );
   });

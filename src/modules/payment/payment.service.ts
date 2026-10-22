@@ -632,13 +632,18 @@ export class PaymentService {
       }
       await this.paymentMethodService.findOne(paymentMethodId, companyId);
 
-      if (payments.some((p) => p.status !== PaymentStatus.PENDING)) {
+      if (
+        payments.some((payment) => payment.status !== PaymentStatus.PENDING)
+      ) {
         throw new ConflictException(
           "Só é possível dar baixa em pagamentos pendentes",
         );
       }
       const clients = new Set(
-        payments.map((p) => p.appointment?.clientId ?? p.clientPlan?.clientId),
+        payments.map(
+          (payment) =>
+            payment.appointment?.clientId ?? payment.clientPlan?.clientId,
+        ),
       );
       if (clients.size > 1) {
         throw new BadRequestException(

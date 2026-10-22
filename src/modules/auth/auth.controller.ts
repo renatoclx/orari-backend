@@ -1,8 +1,21 @@
-import { Body, Controller, Get, HttpCode, Post } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiTooManyRequestsResponse,
+} from "@nestjs/swagger";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
+import { AUTH_THROTTLER, REFRESH_LIMIT } from "./auth-throttle";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
@@ -15,6 +28,9 @@ export class AuthController {
   @Public()
   @Post("login")
   @HttpCode(200)
+  // Limite de tentativas só nas rotas que recebem credencial (ver auth-throttle.ts).
+  @UseGuards(ThrottlerGuard)
+  @ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
@@ -23,6 +39,9 @@ export class AuthController {
   @Public()
   @Post("refresh")
   @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ [AUTH_THROTTLER]: REFRESH_LIMIT })
+  @ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto);
   }
