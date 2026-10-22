@@ -26,6 +26,7 @@ import { ServiceService } from "../service/service.service";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { FindCheckoutsQueryDto } from "./dto/find-checkouts-query.dto";
 import { FindPaymentsQueryDto } from "./dto/find-payments-query.dto";
+import { SummaryPaymentsQueryDto } from "./dto/summary-payments-query.dto";
 import { SettleCheckoutDto } from "./dto/settle-checkout.dto";
 import { SettlePaymentsDto } from "./dto/settle-payments.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
@@ -67,24 +68,64 @@ export type PaymentResponse = Payment & { isOverdue: boolean };
 
 /**
  * Na listagem, a origem de cada pagamento, para a tela descrevê-lo: o
- * atendimento (data e serviço) ou o plano da contratação. Lidos pela chave,
- * sem filtrar exclusão: o nome continua mesmo que o serviço ou o plano mudem.
+ * atendimento (data, serviço e se veio de recorrência) ou a contratação
+ * (plano e modalidade), além do cliente e do método de pagamento. Lidos pela
+ * chave, sem filtrar exclusão: o nome continua mesmo que a pessoa, o serviço ou
+ * o plano mudem.
  */
+const clientSelect = { select: { id: true, name: true } } as const;
+
 const withOrigin = {
+  paymentMethod: { select: { id: true, name: true } },
   appointment: {
     select: {
       id: true,
       startAt: true,
+      recurringAppointmentId: true,
       service: { select: { id: true, name: true } },
+      client: clientSelect,
     },
   },
   clientPlan: {
-    select: { id: true, plan: { select: { id: true, name: true } } },
+    select: {
+      id: true,
+      billingType: true,
+      plan: { select: { id: true, name: true } },
+      client: clientSelect,
+    },
   },
 } satisfies Prisma.PaymentInclude;
 
+type PaymentWithOrigin = Prisma.PaymentGetPayload<{
+  include: typeof withOrigin;
+}>;
+
+// O cliente sai no nível do pagamento (é o do atendimento ou o da contratação);
+// a origem não o repete.
 export type PaymentListItem = PaymentResponse &
-  Prisma.PaymentGetPayload<{ include: typeof withOrigin }>;
+  Omit<PaymentWithOrigin, "appointment" | "clientPlan"> & {
+    client: { id: string; name: string };
+    appointment: Omit<
+      NonNullable<PaymentWithOrigin["appointment"]>,
+      "client"
+    > | null;
+    clientPlan: Omit<
+      NonNullable<PaymentWithOrigin["clientPlan"]>,
+      "client"
+    > | null;
+  };
+
+// Um cartão do resumo: soma e quantidade, com o total em texto de duas casas.
+export interface PaymentSummaryCard {
+  total: string;
+  count: number;
+}
+
+export interface PaymentSummary {
+  overdue: PaymentSummaryCard;
+  upcoming: PaymentSummaryCard;
+  paid: PaymentSummaryCard;
+}
 
 // Pagamento dentro da comanda: a origem inclui a modalidade do plano.
 const checkoutPaymentInclude = {
@@ -246,10 +287,72 @@ export class PaymentService {
     ]);
 
     return {
-      items: items.map((payment) => this.toResponse(payment, today)),
+      items: items.map((payment) =>
+        this.toResponse(this.toListItem(payment), today),
+      ),
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * Resumo da tela de Pagamentos: atrasado, a vencer e pago, no fuso da empresa.
+   * Só o cliente e o período de vencimento filtram; status e demais filtros da
+   * listagem são ignorados, pois os cartões são os próprios status. Com período,
+   * os três usam o vencimento nele (inclusive os pagos) e pagamento sem
+   * vencimento fica de fora. Soma e contagem vêm do banco, sem carregar os
+   * pagamentos.
+   */
+  async summary(
+    { clientId, dueFrom, dueTo }: SummaryPaymentsQueryDto,
+    companyId: string,
+  ): Promise<PaymentSummary> {
+    const today = await this.todayFor(companyId);
+    const hasPeriod = Boolean(dueFrom || dueTo);
+
+    const base: Prisma.PaymentWhereInput[] = [
+      {
+        ...ownedByCompany(companyId),
+        deletedAt: null,
+      },
+    ];
+    if (clientId) {
+      base.push({
+        OR: [{ appointment: { clientId } }, { clientPlan: { clientId } }],
+      });
+    }
+    if (hasPeriod) {
+      base.push({ dueDate: { gte: dueFrom, lte: dueTo } });
+    }
+
+    const cards: Prisma.PaymentWhereInput[] = [
+      // Atrasado: pendente com vencimento antes de hoje.
+      isOverdueWhere(today),
+      // A vencer: pendente de hoje em diante; sem período, também o sem vencimento.
+      {
+        status: PaymentStatus.PENDING,
+        OR: hasPeriod
+          ? [{ dueDate: { gte: today } }]
+          : [{ dueDate: { gte: today } }, { dueDate: null }],
+      },
+      { status: PaymentStatus.PAID },
+    ];
+
+    const [overdue, upcoming, paid] = await this.prisma.$transaction(
+      cards.map((card) =>
+        this.prisma.payment.aggregate({
+          where: { AND: [...base, card] },
+          _sum: { amount: true },
+          _count: { _all: true },
+        }),
+      ),
+    );
+
+    return {
+      overdue: this.toCard(overdue),
+      upcoming: this.toCard(upcoming),
+      paid: this.toCard(paid),
     };
   }
 
@@ -500,6 +603,7 @@ export class PaymentService {
     { paymentMethodId, paidAt }: SettlePaymentsDto,
     companyId: string,
   ): Promise<number> {
+    this.ensurePaidAtIsNotFuture(paidAt);
     await this.paymentMethodService.findOne(paymentMethodId, companyId);
 
     const now = new Date();
@@ -626,6 +730,8 @@ export class PaymentService {
     { paymentIds, paymentMethodId, paidAt }: SettleCheckoutDto,
     companyId: string,
   ): Promise<{ settled: number }> {
+    this.ensurePaidAtIsNotFuture(paidAt);
+
     return this.prisma.$transaction(async (tx) => {
       const payments = await tx.payment.findMany({
         where: { id: { in: paymentIds }, deletedAt: null, companyId },
@@ -724,6 +830,39 @@ export class PaymentService {
 
   private sum(payments: { amount: Decimal }[]): Decimal {
     return payments.reduce((acc, p) => acc.plus(p.amount), new Decimal(0));
+  }
+
+  private toCard(aggregate: {
+    _sum: { amount: Decimal | null };
+    _count: { _all: number };
+  }): PaymentSummaryCard {
+    return {
+      total: (aggregate._sum.amount ?? new Decimal(0)).toFixed(2),
+      count: aggregate._count._all,
+    };
+  }
+
+  // Leva o cliente (do atendimento ou da contratação) para o nível do pagamento.
+  private toListItem(payment: PaymentWithOrigin) {
+    const { appointment, clientPlan, ...rest } = payment;
+    const { client: appointmentClient, ...appointmentRest } = appointment ?? {};
+    const { client: planClient, ...planRest } = clientPlan ?? {};
+
+    return {
+      ...rest,
+      // Todo pagamento pertence a um agendamento ou a uma contratação.
+      client: (appointmentClient ?? planClient)!,
+      appointment: appointment ? appointmentRest : null,
+      clientPlan: clientPlan ? planRest : null,
+    } as Omit<PaymentListItem, "isOverdue">;
+  }
+
+  // A baixa registra um pagamento que já aconteceu: data futura não faz sentido.
+  // Data passada é aceita, para lançar uma baixa esquecida.
+  private ensurePaidAtIsNotFuture(paidAt?: Date) {
+    if (paidAt && paidAt.getTime() > Date.now()) {
+      throw new BadRequestException("paidAt não pode estar no futuro");
+    }
   }
 
   // Hoje no calendário da empresa: é a referência do atraso.

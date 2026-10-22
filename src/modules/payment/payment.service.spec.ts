@@ -43,6 +43,7 @@ describe("PaymentService", () => {
       update: vi.fn(),
       createMany: vi.fn(),
       updateMany: vi.fn(),
+      aggregate: vi.fn(),
     },
   };
   const appointmentServiceMock = { findDetail: vi.fn() };
@@ -327,7 +328,78 @@ describe("PaymentService", () => {
       const [{ include }] = prismaMock.payment.findMany.mock.calls[0] as [
         { include: Record<string, unknown> },
       ];
-      expect(Object.keys(include)).toEqual(["appointment", "clientPlan"]);
+      expect(Object.keys(include)).toEqual([
+        "paymentMethod",
+        "appointment",
+        "clientPlan",
+      ]);
+    });
+
+    it("deve levar o cliente do atendimento ou da contratação para o pagamento", async () => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        {
+          ...payment,
+          id: "p-appointment",
+          paymentMethod: { id: "method-1", name: "Pix" },
+          appointment: {
+            id: "a1",
+            startAt: new Date("2026-10-10T13:00:00.000Z"),
+            recurringAppointmentId: null,
+            service: { id: "s1", name: "Corte" },
+            client: { id: "c1", name: "Ana" },
+          },
+          clientPlan: null,
+        },
+        {
+          ...payment,
+          id: "p-plan",
+          paymentMethod: null,
+          appointment: null,
+          clientPlan: {
+            id: "cp1",
+            billingType: "MONTHLY",
+            plan: { id: "pl1", name: "Pacote" },
+            client: { id: "c2", name: "Bia" },
+          },
+        },
+      ]);
+
+      const { items } = await paymentService.findAll(
+        { page: 1, limit: 10 },
+        COMPANY_ID,
+      );
+
+      expect(items[0].client).toEqual({ id: "c1", name: "Ana" });
+      expect(items[0].paymentMethod).toEqual({ id: "method-1", name: "Pix" });
+      expect(items[0].appointment).toEqual({
+        id: "a1",
+        startAt: new Date("2026-10-10T13:00:00.000Z"),
+        recurringAppointmentId: null,
+        service: { id: "s1", name: "Corte" },
+      });
+      expect(items[0].clientPlan).toBeNull();
+      expect(items[1].client).toEqual({ id: "c2", name: "Bia" });
+      expect(items[1].paymentMethod).toBeNull();
+      expect(items[1].appointment).toBeNull();
+      expect(items[1].clientPlan).toEqual({
+        id: "cp1",
+        billingType: "MONTHLY",
+        plan: { id: "pl1", name: "Pacote" },
+      });
+    });
+
+    it("deve combinar os filtros de status e atraso", async () => {
+      await paymentService.findAll(
+        { page: 1, limit: 10, status: "PENDING", overdue: true },
+        COMPANY_ID,
+      );
+
+      expect(whereOf()).toEqual({
+        ...ownedByCompany,
+        deletedAt: null,
+        status: "PENDING",
+        AND: [{ status: "PENDING", dueDate: { lt: today } }],
+      });
     });
 
     it("deve ordenar por vencimento, com os sem vencimento no fim", async () => {
@@ -887,6 +959,20 @@ describe("PaymentService", () => {
       });
     });
 
+    it("deve recusar baixa em lote com paidAt no futuro", async () => {
+      await expect(
+        paymentService.settlePendingForRecurrence(
+          "recurring-1",
+          {
+            paymentMethodId: "method-1",
+            paidAt: new Date("2026-10-11T00:00:00.000Z"),
+          },
+          COMPANY_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
     it("deve recusar baixa em lote com método de outra empresa", async () => {
       paymentMethodServiceMock.findOne.mockRejectedValueOnce(
         new NotFoundException(),
@@ -900,6 +986,118 @@ describe("PaymentService", () => {
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("summary", () => {
+    // Hoje: 10/10/2026 (relógio fixo do beforeEach, fuso UTC).
+    const today = new Date("2026-10-10");
+    const base = { ...ownedByCompany, deletedAt: null };
+    const card = (amount: string | null, count: number) => ({
+      _sum: { amount: amount === null ? null : new Decimal(amount) },
+      _count: { _all: count },
+    });
+    const whereOfCard = (index: number) =>
+      (
+        prismaMock.payment.aggregate.mock.calls[index][0] as {
+          where: { AND: unknown[] };
+        }
+      ).where;
+
+    beforeEach(() => {
+      prismaMock.payment.aggregate
+        .mockResolvedValueOnce(card("150.5", 2))
+        .mockResolvedValueOnce(card("300", 3))
+        .mockResolvedValueOnce(card("99.9", 1));
+    });
+
+    it("deve somar em Decimal e devolver o total com duas casas", async () => {
+      await expect(paymentService.summary({}, COMPANY_ID)).resolves.toEqual({
+        overdue: { total: "150.50", count: 2 },
+        upcoming: { total: "300.00", count: 3 },
+        paid: { total: "99.90", count: 1 },
+      });
+    });
+
+    it("deve devolver zeros quando não há pagamentos", async () => {
+      prismaMock.payment.aggregate.mockReset();
+      prismaMock.payment.aggregate.mockResolvedValue(card(null, 0));
+
+      await expect(paymentService.summary({}, COMPANY_ID)).resolves.toEqual({
+        overdue: { total: "0.00", count: 0 },
+        upcoming: { total: "0.00", count: 0 },
+        paid: { total: "0.00", count: 0 },
+      });
+    });
+
+    it("deve definir cada cartão e ignorar cancelados e excluídos", async () => {
+      await paymentService.summary({}, COMPANY_ID);
+
+      // Atrasado: PENDING com vencimento antes de hoje.
+      expect(whereOfCard(0).AND).toEqual([
+        base,
+        { status: "PENDING", dueDate: { lt: today } },
+      ]);
+      // A vencer: PENDING de hoje em diante ou sem vencimento.
+      expect(whereOfCard(1).AND).toEqual([
+        base,
+        {
+          status: "PENDING",
+          OR: [{ dueDate: { gte: today } }, { dueDate: null }],
+        },
+      ]);
+      // Pago: só PAID. CANCELLED não tem cartão e excluídos saem na base.
+      expect(whereOfCard(2).AND).toEqual([base, { status: "PAID" }]);
+    });
+
+    it("deve usar o vencimento no período nos três e tirar os sem vencimento", async () => {
+      const dueFrom = new Date("2026-10-01");
+      const dueTo = new Date("2026-10-31");
+
+      await paymentService.summary({ dueFrom, dueTo }, COMPANY_ID);
+
+      const period = { dueDate: { gte: dueFrom, lte: dueTo } };
+      expect(whereOfCard(0).AND).toContainEqual(period);
+      expect(whereOfCard(1).AND).toContainEqual(period);
+      expect(whereOfCard(2).AND).toContainEqual(period);
+      // Com período, o "a vencer" não inclui o sem vencimento.
+      expect(whereOfCard(1).AND).toContainEqual({
+        status: "PENDING",
+        OR: [{ dueDate: { gte: today } }],
+      });
+    });
+
+    it("deve filtrar pelo cliente do atendimento ou da contratação", async () => {
+      await paymentService.summary({ clientId: "client-1" }, COMPANY_ID);
+
+      for (const index of [0, 1, 2]) {
+        expect(whereOfCard(index).AND).toContainEqual({
+          OR: [
+            { appointment: { clientId: "client-1" } },
+            { clientPlan: { clientId: "client-1" } },
+          ],
+        });
+      }
+    });
+
+    it("deve usar o dia no fuso da empresa", async () => {
+      // 01:00 UTC de 11/10 ainda é 10/10 em São Paulo.
+      vi.setSystemTime(new Date("2026-10-11T01:00:00.000Z"));
+      companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
+
+      await paymentService.summary({}, COMPANY_ID);
+
+      expect(whereOfCard(0).AND).toContainEqual({
+        status: "PENDING",
+        dueDate: { lt: today },
+      });
+    });
+
+    it("não deve carregar os pagamentos, só agregar", async () => {
+      await paymentService.summary({}, COMPANY_ID);
+
+      expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
+      expect(prismaMock.payment.aggregate).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -1092,6 +1290,31 @@ describe("PaymentService", () => {
           updatedAt: anyDate,
         },
       });
+    });
+
+    it("deve recusar paidAt no futuro sem gravar nada", async () => {
+      const paidAt = new Date("2026-10-10T12:00:01.000Z");
+
+      await expect(
+        paymentService.settle({ ...body, paidAt }, COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("deve aceitar paidAt passado (baixa esquecida) e o instante atual", async () => {
+      await expect(
+        paymentService.settle(
+          { ...body, paidAt: new Date("2026-09-01T10:00:00.000Z") },
+          COMPANY_ID,
+        ),
+      ).resolves.toEqual({ settled: 2 });
+      await expect(
+        paymentService.settle(
+          { ...body, paidAt: new Date("2026-10-10T12:00:00.000Z") },
+          COMPANY_ID,
+        ),
+      ).resolves.toEqual({ settled: 2 });
     });
 
     it("deve usar o paidAt informado", async () => {
