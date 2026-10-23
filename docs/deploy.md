@@ -388,6 +388,14 @@ A mudança leva de minutos a poucas horas. Confira com
 `API_DOMAIN=api.orariapp.com.br` no `.env.production` e rode `dcp up -d`: o Caddy
 obtém o certificado HTTPS sozinho em alguns segundos.
 
+**Se o DNS do domínio estiver na Cloudflare** (muito comum), crie o registro `A` de
+`api` lá e deixe a nuvem **cinza ("DNS only")**, não laranja. Com a nuvem laranja
+(proxy), a conexão chega ao servidor vinda da Cloudflare e a API passa a ver o IP
+dela, e não o do usuário: o limite de tentativas de login contaria todos os
+usuários juntos. Com "DNS only", o tráfego vai direto ao servidor e o Caddy cuida
+do HTTPS. Para conferir: `dig +short api.orariapp.com.br` deve devolver o IP do
+seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
+
 ### 8. Conferir
 
 - [ ] `https://api.orariapp.com.br/` responde "Hello World!".
