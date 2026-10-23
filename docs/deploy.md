@@ -388,6 +388,14 @@ A mudança leva de minutos a poucas horas. Confira com
 `API_DOMAIN=api.orariapp.com.br` no `.env.production` e rode `dcp up -d`: o Caddy
 obtém o certificado HTTPS sozinho em alguns segundos.
 
+**Se o DNS do domínio estiver na Cloudflare** (muito comum), crie o registro `A` de
+`api` lá e deixe a nuvem **cinza ("DNS only")**, não laranja. Com a nuvem laranja
+(proxy), a conexão chega ao servidor vinda da Cloudflare e a API passa a ver o IP
+dela, e não o do usuário: o limite de tentativas de login contaria todos os
+usuários juntos. Com "DNS only", o tráfego vai direto ao servidor e o Caddy cuida
+do HTTPS. Para conferir: `dig +short api.orariapp.com.br` deve devolver o IP do
+seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
+
 ### 8. Conferir
 
 - [ ] `https://api.orariapp.com.br/` responde "Hello World!".
@@ -400,33 +408,99 @@ obtém o certificado HTTPS sozinho em alguns segundos.
 
 ### 9. Backup do banco
 
-Não confie só em snapshots do provedor. Faça um backup do banco todo dia e guarde
-uma cópia **fora do servidor**. Comando (testado):
+Não confie só em snapshots do provedor. O backup do banco deve ser **diário** e
+ter uma cópia **fora do servidor**: um backup só dentro da máquina que quebrou não
+serve.
+
+A pasta dos backups é `~/backups`. Como você entra como `root`, o `~` é `/root`, e
+o caminho real é `/root/backups` (no home do usuário, não na raiz `/` do sistema,
+e fora da pasta do projeto).
+
+**1. Crie o script de backup** (uma vez). Ele recusa um backup vazio ou suspeito,
+não deixa arquivos temporários para trás, guarda só os últimos 14 dias e protege o
+arquivo (`chmod 600`):
 
 ```bash
-mkdir -p ~/backups
-dcp exec -T db pg_dump -U orari orari | gzip > ~/backups/orari-$(date +%F).sql.gz
+cat > /usr/local/bin/orari-backup <<'EOF'
+#!/bin/bash
+# Backup diário do banco do Orari. Recusa backup vazio ou suspeito.
+set -euo pipefail
+
+DIR="$HOME/backups"
+mkdir -p "$DIR"
+FILE="$DIR/orari-$(date +%F-%H%M).sql.gz"
+# Qualquer saída (inclusive por erro) apaga o arquivo temporário.
+trap 'rm -f "$FILE.tmp"' EXIT
+
+cd "$HOME/orari-backend"
+# pipefail: se o pg_dump falhar, o script para (mesmo com o gzip funcionando).
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
+  pg_dump -U orari orari | gzip > "$FILE.tmp"
+
+# Um dump de verdade tem centenas de KB; menos que isso indica falha.
+if [ "$(stat -c %s "$FILE.tmp")" -lt 1000 ]; then
+  echo "backup suspeito (muito pequeno), descartado" >&2
+  exit 1
+fi
+
+mv "$FILE.tmp" "$FILE"
+chmod 600 "$FILE"
+
+# Guarda os últimos 14 dias.
+find "$DIR" -name 'orari-*.sql.gz' -mtime +14 -delete
+echo "backup ok: $FILE"
+EOF
+chmod +x /usr/local/bin/orari-backup
 ```
 
-Agende todo dia às 3h com `crontab -e` (ajuste o caminho do projeto) e mantenha
-os últimos 14:
+**2. Rode uma vez à mão e confira:**
+
+```bash
+orari-backup
+ls -lh ~/backups
+```
+
+Deve aparecer `backup ok: ...` e um arquivo `orari-AAAA-MM-DD-HHMM.sql.gz` de
+algumas centenas de KB (cresce com os dados).
+
+**3. Agende todo dia às 3h** (hora do servidor) com `crontab -e`, acrescentando a
+linha abaixo no fim do arquivo:
 
 ```
-0 3 * * * cd ~/orari-backend && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db pg_dump -U orari orari | gzip > ~/backups/orari-$(date +\%F).sql.gz && find ~/backups -name 'orari-*.sql.gz' -mtime +14 -delete
+0 3 * * * /usr/local/bin/orari-backup >> /var/log/orari-backup.log 2>&1
 ```
 
-Copie as cópias para fora do servidor (por exemplo, `scp` para o seu computador ou
-um armazenamento em nuvem). Um backup só dentro da máquina que quebrou não serve.
+No dia seguinte, confira que rodou: `tail /var/log/orari-backup.log` e
+`ls -lh ~/backups`.
 
-**Teste a restauração** pelo menos uma vez, num banco à parte (testado):
+**4. Copie para fora do servidor.** A partir do **seu computador** (não do
+servidor), traga os arquivos novos:
+
+```bash
+rsync -av root@IP_DO_SERVIDOR:backups/ ~/orari-backups/
+```
+
+Faça isso pelo menos uma vez por semana no piloto (ou agende no seu computador).
+O ideal depois é enviar automaticamente para um armazenamento em nuvem.
+
+**5. Teste a restauração** pelo menos uma vez, num banco à parte, para ter
+certeza de que o backup serve (testado):
 
 ```bash
 dcp exec -T db psql -U orari -d postgres -c 'CREATE DATABASE orari_restauracao;'
-gunzip -c ~/backups/orari-AAAA-MM-DD.sql.gz | \
+gunzip -c ~/backups/orari-AAAA-MM-DD-HHMM.sql.gz | \
   dcp exec -T db psql -U orari -d orari_restauracao -q -v ON_ERROR_STOP=1
 dcp exec -T db psql -U orari -d orari_restauracao -tAc 'select count(*) from users'
 dcp exec -T db psql -U orari -d postgres -c 'DROP DATABASE orari_restauracao;'
 ```
+
+A contagem de usuários deve bater com a do banco real. O `DROP DATABASE` apaga só
+a **cópia de teste**, nunca o banco `orari`.
+
+**Restaurar sobre o banco de verdade** (depois de um desastre) apaga o banco atual
+e exige cuidado: pare a API antes (`dcp stop api`), não improvise e peça ajuda
+antes de apagar qualquer coisa. O teste acima, em um banco à parte, é o ensaio
+seguro e mostra que o arquivo serve.
 
 As **fotos e logos** não estão nesse backup: ficam no volume `uploads`. Para o
 piloto, o risco é pequeno; antes de abrir ao público, o ideal é armazenamento em
