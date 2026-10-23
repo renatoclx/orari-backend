@@ -231,7 +231,7 @@ export class CompanyService {
   private mapUniqueViolation(error: unknown): unknown {
     return isUniqueConstraintViolation(error)
       ? new ConflictException(
-          "Já existe uma empresa com este CNPJ ou subdomínio",
+          "Já existe uma empresa com este documento ou subdomínio",
         )
       : error;
   }

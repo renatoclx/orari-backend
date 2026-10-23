@@ -59,8 +59,8 @@
 | id              | Identificador único                          |
 | corporateReason | Razão Social da empresa                      |
 | fantasyName     | Nome Fantasia (opcional)                     |
-| cnpj            | Documento da empresa                         |
-| foundationDate  | Data de fundação                             |
+| document        | CPF ou CNPJ da empresa                       |
+| foundationDate  | Data de fundação (opcional)                  |
 | isActive        | Empresa ativa ou inativa                     |
 | timezone        | Fuso horário da empresa (identificador IANA) |
 | logoUrl         | caminho da logomarca da empresa (opcional)   |

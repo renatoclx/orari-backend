@@ -8,7 +8,7 @@
 
 ## Empresas
 
-- Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, CNPJ, data de fundação, subdomínio, fuso e status).
+- Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, documento, data de fundação, subdomínio, fuso e status).
 - O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O USER não altera nada. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
 - A logo é opcional, em JPEG ou PNG, com até 2 MB; o formato é conferido pelo conteúdo do arquivo. É servida publicamente e o `logoUrl` guarda o caminho relativo. Enviar uma nova logo substitui a anterior, que é apagada; a logo também pode ser removida. Só se apaga do disco arquivo da pasta das logos: uma URL externa gravada no `logoUrl` pelo SUPER_ADMIN nunca é apagada.
 - ADMIN e USER consultam apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
@@ -20,7 +20,8 @@
   - a própria empresa continua visível ao SUPER_ADMIN, para que possa ser reativada.
 - Ao reativar a empresa, os dados voltam a ficar acessíveis.
 - Um SUPER_ADMIN não pode inativar a própria empresa.
-- O CNPJ deve ser válido, no formato numérico ou alfanumérico, sem máscara (letras são convertidas para maiúsculas).
+- O documento da empresa (`document`) é um CPF (11 dígitos) ou um CNPJ (14 caracteres), válido e sem máscara. O CNPJ pode ser numérico ou alfanumérico (letras são convertidas para maiúsculas). Quem não tem CNPJ usa o CPF, e a razão social passa a ser o nome da pessoa.
+- A data de fundação é opcional: não se aplica a quem usa CPF.
 
 ## Usuários e acesso
 
@@ -82,7 +83,7 @@
 ## Unicidade
 
 - São únicos:
-  - o CNPJ e o subdomínio da empresa;
+  - o documento (CPF ou CNPJ) e o subdomínio da empresa;
   - entre os registros não excluídos, o e-mail do usuário;
   - entre os registros não excluídos, o documento da pessoa dentro da mesma empresa, quando informado.
 - E-mails e documentos de registros excluídos podem ser reutilizados.

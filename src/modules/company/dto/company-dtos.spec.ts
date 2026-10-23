@@ -9,7 +9,7 @@ import { UpdateOwnCompanyDto } from "./update-own-company.dto";
 
 const payload = {
   corporateReason: "Empresa LTDA",
-  cnpj: "12abc34501de35",
+  document: "12abc34501de35",
   foundationDate: "2020-01-15",
   subdomain: "empresa",
 };
@@ -19,15 +19,62 @@ describe("CreateCompanyDto", () => {
     const dto = plainToInstance(CreateCompanyDto, payload);
 
     await expect(validate(dto)).resolves.toEqual([]);
-    expect(dto.cnpj).toBe("12ABC34501DE35");
+    expect(dto.document).toBe("12ABC34501DE35");
   });
 
-  it("recusa CNPJ com dígito verificador inválido", async () => {
+  it("aceita CPF como documento, sem data de fundação", async () => {
+    const { foundationDate: _omitted, ...withoutDate } = payload;
+    void _omitted;
+    const dto = plainToInstance(CreateCompanyDto, {
+      ...withoutDate,
+      corporateReason: "Maria Silva",
+      document: "52998224725",
+    });
+
+    await expect(validate(dto)).resolves.toEqual([]);
+    expect(dto.document).toBe("52998224725");
+    expect(dto.foundationDate).toBeUndefined();
+  });
+
+  it.each([
+    ["CNPJ com dígito verificador inválido", "11222333000182"],
+    ["CPF com dígito verificador inválido", "52998224726"],
+    ["CPF com máscara", "529.982.247-25"],
+    ["tamanho que não é CPF nem CNPJ", "5299822472500"],
+  ])("recusa %s", async (_case, document) => {
+    const errors = await validate(
+      plainToInstance(CreateCompanyDto, { ...payload, document }),
+    );
+
+    expect(errors.map((error) => error.property)).toEqual(["document"]);
+  });
+
+  it("exige o documento", async () => {
+    const { document: _omitted, ...withoutDocument } = payload;
+    void _omitted;
+
+    const errors = await validate(
+      plainToInstance(CreateCompanyDto, withoutDocument),
+    );
+
+    expect(errors.map((error) => error.property)).toEqual(["document"]);
+  });
+
+  it("valida a data de fundação quando informada", async () => {
     const errors = await validate(
       plainToInstance(CreateCompanyDto, {
         ...payload,
-        cnpj: "11222333000182",
+        foundationDate: "não é data",
       }),
+    );
+
+    expect(errors.map((error) => error.property)).toEqual(["foundationDate"]);
+  });
+
+  it("recusa o nome antigo do campo (cnpj)", async () => {
+    const errors = await validate(
+      plainToInstance(CreateCompanyDto, { ...payload, cnpj: "11222333000181" }),
+      { whitelist: true, forbidNonWhitelisted: true },
     );
 
     expect(errors.map((error) => error.property)).toEqual(["cnpj"]);
@@ -99,7 +146,7 @@ describe("UpdateOwnCompanyDto", () => {
       validate_({
         fantasyName: "Bem Estar",
         corporateReason: "Outra LTDA",
-        cnpj: "11222333000181",
+        document: "11222333000181",
         timezone: "UTC",
         isActive: false,
         subdomain: "outra",
@@ -107,7 +154,7 @@ describe("UpdateOwnCompanyDto", () => {
       }),
     ).resolves.toEqual([
       "corporateReason",
-      "cnpj",
+      "document",
       "timezone",
       "isActive",
       "subdomain",

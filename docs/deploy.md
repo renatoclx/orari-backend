@@ -324,20 +324,20 @@ acrescente no fim:
 
 ```
 SEED_COMPANY_CORPORATE_REASON=Orari Plataforma LTDA
-SEED_COMPANY_CNPJ=
+SEED_COMPANY_DOCUMENT=
 SEED_COMPANY_SUBDOMAIN=orari
-SEED_COMPANY_FOUNDATION_DATE=2026-01-01
 SEED_SUPER_ADMIN_NAME=Administrador
 SEED_SUPER_ADMIN_EMAIL=seu-email@exemplo.com
 SEED_SUPER_ADMIN_PASSWORD=
 ```
 
-- `SEED_COMPANY_CNPJ`: precisa ser um **CNPJ válido**, só números (14 dígitos).
-  Use o da sua empresa.
+- `SEED_COMPANY_DOCUMENT`: o **CPF ou CNPJ** válido, só números (11 ou 14
+  caracteres). Use o seu ou o da sua empresa. (A data de fundação é opcional e
+  fica de fora.)
 - `SEED_SUPER_ADMIN_PASSWORD`: senha forte, de 8 a 72 caracteres, de um
   gerenciador de senhas.
 
-Na etapa 6 você roda o seed e **apaga essas 7 linhas**.
+Na etapa 6 você roda o seed e **apaga essas 6 linhas**.
 
 ### 6. Subir a aplicação
 

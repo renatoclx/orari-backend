@@ -291,7 +291,7 @@ Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status 
 | `common/authorization/owner-scope.ts`   | `ownedByCompany()`: filtro de contatos e endereços visíveis para uma empresa (os da própria empresa e os de suas pessoas não excluídas)                  |
 | `common/decorators/`                    | `@Public()`, `@Roles()`, `@CurrentUser()`                                                                                                                |
 | `common/dto/`                           | Paginação, `OwnerDto` (dono exclusivo), filtro por dono                                                                                                  |
-| `common/validators/`                    | `ExactlyOneOf`, `AtLeastOneOf`, `Match`, `IsCpf`, `IsCnpj`                                                                                               |
+| `common/validators/`                    | `ExactlyOneOf`, `AtLeastOneOf`, `Match`, `IsCpf`, `IsCpfOrCnpj`                                                                                          |
 | `common/text/normalize-for-search.ts`   | Normalização usada na busca por nome                                                                                                                     |
 | `common/time/time-of-day.ts`            | Conversão entre `"HH:MM"` e as colunas `time`                                                                                                            |
 | `common/time/time-zone.ts`              | Conversões entre o relógio da empresa e o instante UTC                                                                                                   |
@@ -349,7 +349,7 @@ npm run seed:demo             # opcional: cadastro completo de demonstração
 
 **Variáveis do seed:**
 
-- empresa: `SEED_COMPANY_CORPORATE_REASON`, `SEED_COMPANY_CNPJ`, `SEED_COMPANY_SUBDOMAIN`, `SEED_COMPANY_FOUNDATION_DATE`;
+- empresa: `SEED_COMPANY_CORPORATE_REASON`, `SEED_COMPANY_DOCUMENT`, `SEED_COMPANY_SUBDOMAIN`, `SEED_COMPANY_FOUNDATION_DATE`;
 - SUPER_ADMIN: `SEED_SUPER_ADMIN_NAME`, `SEED_SUPER_ADMIN_EMAIL`, `SEED_SUPER_ADMIN_PASSWORD`.
 
 Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta** e nunca altera registros existentes.
@@ -430,3 +430,10 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - `src/config/env.validation.ts`: a API valida as variáveis na subida e se recusa a iniciar listando o que está errado. Em `NODE_ENV=production` exige `JWT_SECRET` forte (32+ caracteres, diferente do exemplo) e `CORS_ORIGIN`.
 - `src/app.setup.ts` (extraído do `main.ts` para ser testável): `helmet` (com `Cross-Origin-Resource-Policy: cross-origin` para as fotos de `/uploads`), CORS por lista, `ValidationPipe` global, `trust proxy` por `TRUST_PROXY` e Swagger desligado em produção (`SWAGGER_ENABLED` força).
 - Variáveis novas: `NODE_ENV`, `TRUST_PROXY`, `SWAGGER_ENABLED` (ver `.env.example` e `README.md`).
+
+## 2.37 Documento da empresa: CPF ou CNPJ
+
+- O campo `cnpj` de `Company` virou `document` e aceita CPF (11 dígitos) ou CNPJ (14 caracteres, numérico ou alfanumérico), validado por `IsCpfOrCnpj`. A `foundationDate` passou a ser opcional.
+- Migração `20261023120000_company_document`: renomeia a coluna (e o índice único), troca `CHAR(14)` por `VARCHAR(14)` (o `CHAR` completaria um CPF com espaços) e remove o `NOT NULL` da data. Os dados existentes são preservados.
+- Seed: `SEED_COMPANY_CNPJ` virou `SEED_COMPANY_DOCUMENT`, e `SEED_COMPANY_FOUNDATION_DATE` passou a ser opcional (não conta como variável ausente).
+- Mudança de contrato: o corpo de `POST`/`PATCH /companies` e a resposta usam `document` no lugar de `cnpj`.

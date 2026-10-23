@@ -5,7 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import * as bcrypt from "bcrypt";
 import { PrismaClient } from "../generated/prisma/client";
 import { normalizeForSearch } from "../src/common/text/normalize-for-search";
-import { isValidCnpj } from "../src/common/validators/document.validator";
+import { isValidCpfOrCnpj } from "../src/common/validators/document.validator";
 
 interface StateSeed {
   acronym: string;
@@ -15,9 +15,8 @@ interface StateSeed {
 
 const SUPER_ADMIN_SEED_VARIABLES = [
   "SEED_COMPANY_CORPORATE_REASON",
-  "SEED_COMPANY_CNPJ",
+  "SEED_COMPANY_DOCUMENT",
   "SEED_COMPANY_SUBDOMAIN",
-  "SEED_COMPANY_FOUNDATION_DATE",
   "SEED_SUPER_ADMIN_NAME",
   "SEED_SUPER_ADMIN_EMAIL",
   "SEED_SUPER_ADMIN_PASSWORD",
@@ -84,25 +83,30 @@ async function seedSuperAdmin() {
     (typeof SUPER_ADMIN_SEED_VARIABLES)[number],
     string
   >;
-  const cnpj = env.SEED_COMPANY_CNPJ.toUpperCase();
+  const document = env.SEED_COMPANY_DOCUMENT.toUpperCase();
   const password = env.SEED_SUPER_ADMIN_PASSWORD;
 
   // O seed grava direto no banco, sem passar pelos DTOs: aplica aqui as mesmas regras.
-  if (!isValidCnpj(cnpj)) {
-    throw new Error("SEED_COMPANY_CNPJ não é um CNPJ válido (sem máscara).");
+  if (!isValidCpfOrCnpj(document)) {
+    throw new Error(
+      "SEED_COMPANY_DOCUMENT não é um CPF ou CNPJ válido (sem máscara).",
+    );
   }
   if (password.length < 8 || password.length > 72) {
     throw new Error("SEED_SUPER_ADMIN_PASSWORD deve ter de 8 a 72 caracteres.");
   }
 
   const company =
-    (await prisma.company.findUnique({ where: { cnpj } })) ??
+    (await prisma.company.findUnique({ where: { document } })) ??
     (await prisma.company.create({
       data: {
         corporateReason: env.SEED_COMPANY_CORPORATE_REASON,
-        cnpj,
+        document,
         subdomain: env.SEED_COMPANY_SUBDOMAIN,
-        foundationDate: new Date(env.SEED_COMPANY_FOUNDATION_DATE),
+        // A data de fundação é opcional: vai só se informada.
+        foundationDate: process.env.SEED_COMPANY_FOUNDATION_DATE
+          ? new Date(process.env.SEED_COMPANY_FOUNDATION_DATE)
+          : undefined,
       },
     }));
 
