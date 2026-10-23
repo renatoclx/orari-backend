@@ -1,7 +1,7 @@
 # Roteiro de deploy
 
-Passo a passo, o mais simples possível, para colocar a API do Orari no ar em um
-servidor Linux (VPS) com Docker. Os arquivos de produção do repositório
+Passo a passo, o mais simples possível, para colocar o Orari (a API e o frontend)
+no ar em um servidor Linux (VPS) com Docker. Os arquivos de produção do repositório
 (`Dockerfile`, `docker-compose.prod.yml`, `Caddyfile` e `.env.production.example`)
 foram **testados de ponta a ponta** em um ambiente limpo: subida, migrações,
 seed, login, HTTPS/headers, persistência de dados e fotos depois de reiniciar, e
@@ -11,7 +11,7 @@ backup com restauração.
 
 - Domínio: `orariapp.com.br` (Registro.br).
 - Endereços: `api.orariapp.com.br` para a API e `app.orariapp.com.br` para o
-  frontend, quando existir.
+  frontend.
 - Primeiro servidor: um VPS emprestado, para o **piloto fechado** (poucos
   usuários). O produto final deve ir para um servidor **na sua conta** (ver
   [Piloto x produção](#piloto-x-produção)).
@@ -19,17 +19,25 @@ backup com restauração.
 ## Como as peças se encaixam
 
 ```
-navegador → api.orariapp.com.br → [Caddy: HTTPS] → [API] → [PostgreSQL]
-                                                      └→ [pasta de fotos]
+navegador → app.orariapp.com.br → [Caddy: HTTPS] → [Frontend (Next.js)] → [API]
+                                                                           │
+navegador → api.orariapp.com.br → [Caddy: HTTPS] ────────────────────────→ [API] → [PostgreSQL]
+                                                                           └→ [pasta de fotos]
 ```
+
+O navegador do usuário só fala com o frontend: as chamadas à API (login, dados,
+fotos em `/uploads`) saem do servidor do frontend, pela rede interna do Docker. O
+endereço `api.orariapp.com.br` continua existindo para o Swagger interno, testes e
+integrações.
 
 Tudo roda no mesmo servidor, em contêineres (Docker Compose):
 
-| Contêiner | Função                                                               |
-| --------- | -------------------------------------------------------------------- |
-| `caddy`   | Recebe o tráfego de fora e cuida do certificado HTTPS sozinho        |
-| `api`     | A API do Orari. Roda as migrações do banco toda vez que sobe         |
-| `db`      | PostgreSQL. **Sem porta aberta** para a internet: só a API o alcança |
+| Contêiner  | Função                                                               |
+| ---------- | -------------------------------------------------------------------- |
+| `caddy`    | Recebe o tráfego de fora e cuida do certificado HTTPS sozinho        |
+| `frontend` | O site (Next.js). Sem porta aberta: só o Caddy o alcança             |
+| `api`      | A API do Orari. Roda as migrações do banco toda vez que sobe         |
+| `db`       | PostgreSQL. **Sem porta aberta** para a internet: só a API o alcança |
 
 Os dados ficam em volumes do Docker (`pgdata` para o banco, `uploads` para fotos e
 logos), que sobrevivem a reinícios e a novas versões da aplicação.
@@ -251,6 +259,34 @@ com o GitHub, basta um `git pull`.
 
 Nunca coloque senhas ou tokens pessoais do GitHub no servidor.
 
+#### 4b. O código do frontend
+
+O frontend é **outro repositório** (`orari-frontend`) e precisa estar no servidor
+**ao lado** do backend, porque o `docker-compose.prod.yml` o constrói a partir de
+`../orari-frontend`. Uma deploy key do GitHub vale para **um único repositório**:
+não dá para reaproveitar a do backend. Repita o processo com uma chave nova:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/orari_frontend_deploy -N ""
+cat ~/.ssh/orari_frontend_deploy.pub
+```
+
+No GitHub, no repositório **orari-frontend** → **Settings** → **Deploy keys** →
+**Add deploy key**: cole a linha inteira, sem **Allow write access**. Depois, no
+servidor, **na pasta de cima** (a que contém `orari-backend`):
+
+```bash
+cd ~
+GIT_SSH_COMMAND="ssh -i ~/.ssh/orari_frontend_deploy" \
+  git clone git@github.com:renatoclx/orari-frontend.git
+cd orari-frontend
+git config core.sshCommand "ssh -i ~/.ssh/orari_frontend_deploy"
+```
+
+Resultado esperado: `~/orari-backend` e `~/orari-frontend`, lado a lado. O
+frontend **não tem arquivo de variáveis nem volume**: o único valor que ele usa
+(`API_URL=http://api:3333`) já está no `docker-compose.prod.yml`.
+
 ### 5. Criar o arquivo de variáveis (`.env.production`)
 
 Este arquivo guarda as configurações e os segredos da produção. Ele **nunca vai
@@ -271,6 +307,8 @@ NODE_ENV=production
 
 # ":80" = só HTTP, para testar por IP. Com o domínio funcionando, troque por api.orariapp.com.br
 API_DOMAIN=:80
+# Domínio do frontend. Sem domínio, deixe app.orariapp.com.br mesmo assim (ou apague a linha).
+APP_DOMAIN=app.orariapp.com.br
 
 POSTGRES_USER=orari
 POSTGRES_PASSWORD=$PG
@@ -297,16 +335,17 @@ sed -E 's/(PASSWORD|SECRET)=.*/\1=(oculto)/; s#(//orari:)[^@]*#\1(oculto)#' .env
 
 **O que cada linha significa**
 
-| Linha                                       | Para que serve                                                                                 |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `NODE_ENV=production`                       | Liga as regras rígidas de segurança (a API se recusa a subir com configuração fraca)           |
-| `API_DOMAIN`                                | Endereço da API. `:80` serve só HTTP (teste por IP); depois vira `api.orariapp.com.br`         |
-| `POSTGRES_USER` / `_PASSWORD` / `_DB`       | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                              |
-| `DATABASE_URL`                              | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima       |
-| `JWT_SECRET`                                | Segredo que assina os logins. Precisa ser longo e aleatório                                    |
-| `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Duração do login (15 minutos, renovável por 7 dias)                                            |
-| `CORS_ORIGIN`                               | Endereço do frontend autorizado a falar com a API. Ainda não existe, mas o valor já fica certo |
-| `TRUST_PROXY=1`                             | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente        |
+| Linha                                       | Para que serve                                                                               |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `NODE_ENV=production`                       | Liga as regras rígidas de segurança (a API se recusa a subir com configuração fraca)         |
+| `API_DOMAIN`                                | Endereço da API. `:80` serve só HTTP (teste por IP); depois vira `api.orariapp.com.br`       |
+| `APP_DOMAIN`                                | Endereço do frontend (`app.orariapp.com.br`). Sem ele, o frontend não fica acessível de fora |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB`       | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                            |
+| `DATABASE_URL`                              | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima     |
+| `JWT_SECRET`                                | Segredo que assina os logins. Precisa ser longo e aleatório                                  |
+| `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Duração do login (15 minutos, renovável por 7 dias)                                          |
+| `CORS_ORIGIN`                               | Endereço do frontend autorizado a falar com a API (`https://app.orariapp.com.br`)            |
+| `TRUST_PROXY=1`                             | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente      |
 
 Se algo estiver fraco ou faltando, a API se recusa a subir e o log diz o quê (ver
 `docs/auth.md`, seção "Configuração de produção").
@@ -360,10 +399,19 @@ Antes da primeira subida, confirme que o `.env.production` já tem as linhas
 `SEED_*` do primeiro administrador (fim da etapa 5). Depois:
 
 ```bash
-dcp up -d --build        # constrói e sobe (leva alguns minutos na primeira vez)
-dcp ps                   # os três serviços devem aparecer; a API como "healthy"
+dcp build api            # constrói a API
+dcp build frontend       # constrói o site (um de cada vez: veja o aviso abaixo)
+dcp up -d                # sobe tudo
+dcp ps                   # os quatro serviços devem aparecer; API e frontend como "healthy"
 dcp logs -f api          # acompanha a subida; Ctrl+C para sair
 ```
+
+> **Construa um de cada vez.** O build do frontend usa até ~1,5 GB de memória e o
+> da API também é pesado; o servidor tem 3,8 GB. Um `dcp up -d --build` os
+> constrói **em paralelo** e pode estourar a memória (o build para sem mensagem).
+> Se preferir um comando só: `COMPOSE_PARALLEL_LIMIT=1 dcp up -d --build`.
+> O primeiro build do frontend leva cerca de 2 minutos (as dependências são
+> instaladas); os seguintes, menos, porque reaproveitam camadas.
 
 As tabelas do banco são criadas na própria subida. Em seguida, crie a empresa da
 plataforma e o administrador, **uma única vez**:
@@ -382,17 +430,19 @@ No painel de DNS do Registro.br (`orariapp.com.br` → editar zona), crie:
 | Tipo | Nome  | Valor              |
 | ---- | ----- | ------------------ |
 | A    | `api` | IP do seu servidor |
+| A    | `app` | IP do seu servidor |
 
 A mudança leva de minutos a poucas horas. Confira com
 `dig +short api.orariapp.com.br` (deve mostrar o IP). Depois, ponha
-`API_DOMAIN=api.orariapp.com.br` no `.env.production` e rode `dcp up -d`: o Caddy
-obtém o certificado HTTPS sozinho em alguns segundos.
+`API_DOMAIN=api.orariapp.com.br` e `APP_DOMAIN=app.orariapp.com.br` no
+`.env.production` e rode `dcp up -d`: o Caddy obtém os dois certificados HTTPS
+sozinho em alguns segundos. Confira também `dig +short app.orariapp.com.br`.
 
-**Se o DNS do domínio estiver na Cloudflare** (muito comum), crie o registro `A` de
-`api` lá e deixe a nuvem **cinza ("DNS only")**, não laranja. Com a nuvem laranja
+**Se o DNS do domínio estiver na Cloudflare** (muito comum), crie os registros `A` de
+`api` e de `app` lá e deixe a nuvem **cinza ("DNS only")**, não laranja. Com a nuvem laranja
 (proxy), a conexão chega ao servidor vinda da Cloudflare e a API passa a ver o IP
 dela, e não o do usuário: o limite de tentativas de login contaria todos os
-usuários juntos. Com "DNS only", o tráfego vai direto ao servidor e o Caddy cuida
+usuários juntos (o frontend repassa à API o IP que o Caddy enxerga). Com "DNS only", o tráfego vai direto ao servidor e o Caddy cuida
 do HTTPS. Para conferir: `dig +short api.orariapp.com.br` deve devolver o IP do
 seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
 
@@ -402,6 +452,16 @@ seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
 - [ ] O login do administrador funciona (`POST /auth/login`).
 - [ ] `https://api.orariapp.com.br/docs` responde **404** (Swagger desligado).
 - [ ] O navegador mostra o cadeado (HTTPS válido).
+- [ ] `https://app.orariapp.com.br/login` abre a tela de entrada (com o ícone do
+      Orari na aba) e o cadeado aparece.
+- [ ] O login pelo site funciona e leva à agenda. Sem erro "Invalid Server
+      Actions request" (ver "Problemas comuns").
+- [ ] Uma rota protegida (`https://app.orariapp.com.br/clientes`) sem estar logado
+      leva ao `/login`.
+- [ ] A foto de uma pessoa e a logo da empresa aparecem (passam por
+      `/uploads`, repassado à API).
+- [ ] A porta do frontend **não** está aberta: `nc -zv IP_DO_SERVIDOR 3000` deve
+      falhar (só o Caddy fala com ele).
 - [ ] O banco **não** aceita conexão de fora: de outro computador,
       `nc -zv IP_DO_SERVIDOR 5432` deve falhar.
 - [ ] Depois de `dcp down && dcp up -d`, o login e as fotos continuam lá.
@@ -547,14 +607,19 @@ apontando para `https://api.orariapp.com.br/`, com aviso por e-mail.
 ### 11. Atualizar a aplicação depois
 
 ```bash
-cd ~/orari-backend
-git pull
+cd ~/orari-backend && git pull
+cd ~/orari-frontend && git pull          # só se o frontend mudou
 # faça um backup (etapa 9) antes, principalmente se a versão tiver migrações
-dcp up -d --build
+COMPOSE_PARALLEL_LIMIT=1 dcp up -d --build
 dcp logs -f api
 ```
 
-As migrações novas são aplicadas sozinhas na subida.
+As migrações novas são aplicadas sozinhas na subida. Quem estava com o site aberto
+durante a atualização do frontend vê erro na próxima ação até recarregar a página
+(cada versão tem as suas chaves internas).
+
+**Mudou o endereço da API** (`API_URL` no Compose)? O frontend precisa ser
+reconstruído (`dcp build frontend`): o valor fica gravado no build.
 
 **Voltar atrás:** `git checkout <commit anterior>` e `dcp up -d --build`. Atenção:
 as migrações **não** são desfeitas; por isso o backup antes de atualizar.
@@ -651,10 +716,14 @@ em um gerenciador de senhas seu.
 
 ## Problemas comuns
 
-| Sintoma                       | Causa provável                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------- |
-| A API reinicia sem parar      | Veja `dcp logs api`. Uma "Configuração inválida" lista a variável errada ou fraca |
-| `HTTPS` não aparece           | O DNS ainda não aponta para o servidor, ou as portas 80/443 estão fechadas        |
-| O build para sem mensagem     | Pouca memória: crie o swap (seção "Escolha do servidor")                          |
-| `permission denied` no Docker | Faltou sair e entrar de novo no SSH depois de `usermod -aG docker`                |
-| Login retorna 429             | Mais de 5 tentativas por minuto do mesmo IP; aguarde um minuto                    |
+| Sintoma                                      | Causa provável                                                                                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A API reinicia sem parar                     | Veja `dcp logs api`. Uma "Configuração inválida" lista a variável errada ou fraca                                                                                                                                          |
+| `HTTPS` não aparece                          | O DNS ainda não aponta para o servidor, ou as portas 80/443 estão fechadas                                                                                                                                                 |
+| O build para sem mensagem                    | Pouca memória: crie o swap (seção "Escolha do servidor")                                                                                                                                                                   |
+| `permission denied` no Docker                | Faltou sair e entrar de novo no SSH depois de `usermod -aG docker`                                                                                                                                                         |
+| Login retorna 429                            | Mais de 5 tentativas por minuto do mesmo IP; aguarde um minuto                                                                                                                                                             |
+| Login dá 429 para todo mundo                 | A API está vendo um IP só (o do contêiner). O frontend repassa o `X-Forwarded-For` que o Caddy coloca: confira que o Caddy está na frente e o DNS da Cloudflare em "DNS only"                                              |
+| "Invalid Server Actions request" no site     | O `Host` não chegou ao Next como o do navegador. No Caddy, o `reverse_proxy` padrão o preserva; se tiver mudado, volte ao padrão (ou, como último recurso, `serverActions.allowedOrigins` no `next.config.ts` do frontend) |
+| O site abre mas as telas dão erro de conexão | A API não está saudável (`dcp ps`, `dcp logs api`). O healthcheck do frontend só testa `/login`, que abre mesmo com a API fora                                                                                             |
+| Fotos e logos não aparecem                   | A `API_URL` do build não é a da API (`http://api:3333`): ajuste o Compose e reconstrua o frontend                                                                                                                          |
