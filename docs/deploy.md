@@ -406,49 +406,64 @@ seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
       `nc -zv IP_DO_SERVIDOR 5432` deve falhar.
 - [ ] Depois de `dcp down && dcp up -d`, o login e as fotos continuam lá.
 
-### 9. Backup do banco
+### 9. Backup do banco e das fotos
 
-Não confie só em snapshots do provedor. O backup do banco deve ser **diário** e
-ter uma cópia **fora do servidor**: um backup só dentro da máquina que quebrou não
-serve.
+Não confie só em snapshots do provedor. O backup deve ser **diário** e ter uma
+cópia **fora do servidor**: um backup só dentro da máquina que quebrou não serve.
+Ele guarda dois arquivos: o **banco** (`orari-AAAA-MM-DD-HHMM.sql.gz`) e as **fotos
+e logos** (`uploads-AAAA-MM-DD-HHMM.tgz`). As fotos ficam num volume à parte, e sem
+o segundo arquivo elas se perderiam se o disco falhasse.
 
 A pasta dos backups é `~/backups`. Como você entra como `root`, o `~` é `/root`, e
 o caminho real é `/root/backups` (no home do usuário, não na raiz `/` do sistema,
 e fora da pasta do projeto).
 
-**1. Crie o script de backup** (uma vez). Ele recusa um backup vazio ou suspeito,
-não deixa arquivos temporários para trás, guarda só os últimos 14 dias e protege o
-arquivo (`chmod 600`):
+**1. Crie (ou atualize) o script de backup.** Ele recusa um banco vazio ou
+suspeito, confere que o arquivo das fotos está íntegro, grava o banco antes das
+fotos (se as fotos falharem, o dump já está salvo), não deixa arquivos temporários
+para trás, guarda só os últimos 14 dias e protege os arquivos (`chmod 600`). Se você
+já criou uma versão anterior (só do banco), rode o bloco de novo: ele a substitui.
 
 ```bash
 cat > /usr/local/bin/orari-backup <<'EOF'
 #!/bin/bash
-# Backup diário do banco do Orari. Recusa backup vazio ou suspeito.
+# Backup diário do Orari: banco (dump) e fotos/logos (pasta de uploads).
+# Recusa banco vazio ou suspeito e confere a integridade do arquivo das fotos.
 set -euo pipefail
 
 DIR="$HOME/backups"
 mkdir -p "$DIR"
-FILE="$DIR/orari-$(date +%F-%H%M).sql.gz"
-# Qualquer saída (inclusive por erro) apaga o arquivo temporário.
-trap 'rm -f "$FILE.tmp"' EXIT
+STAMP="$(date +%F-%H%M)"
+DB_FILE="$DIR/orari-$STAMP.sql.gz"
+UPLOADS_FILE="$DIR/uploads-$STAMP.tgz"
+# Qualquer saída (inclusive por erro) apaga os arquivos temporários.
+trap 'rm -f "$DB_FILE.tmp" "$UPLOADS_FILE.tmp"' EXIT
 
 cd "$HOME/orari-backend"
-# pipefail: se o pg_dump falhar, o script para (mesmo com o gzip funcionando).
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T db \
-  pg_dump -U orari orari | gzip > "$FILE.tmp"
+COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
+
+# 1) Banco. pipefail: se o pg_dump falhar, o script para (mesmo com o gzip funcionando).
+$COMPOSE exec -T db pg_dump -U orari orari | gzip > "$DB_FILE.tmp"
 
 # Um dump de verdade tem centenas de KB; menos que isso indica falha.
-if [ "$(stat -c %s "$FILE.tmp")" -lt 1000 ]; then
-  echo "backup suspeito (muito pequeno), descartado" >&2
+if [ "$(stat -c %s "$DB_FILE.tmp")" -lt 1000 ]; then
+  echo "backup do banco suspeito (muito pequeno), descartado" >&2
   exit 1
 fi
+# O banco é guardado antes das fotos: se as fotos falharem, o dump já está salvo.
+mv "$DB_FILE.tmp" "$DB_FILE"
+chmod 600 "$DB_FILE"
 
-mv "$FILE.tmp" "$FILE"
-chmod 600 "$FILE"
+# 2) Fotos e logos. Um arquivo pequeno é normal (pode não haver fotos ainda):
+# aqui só se confere que o arquivo compactado está íntegro.
+$COMPOSE exec -T api tar czf - -C /data/uploads . > "$UPLOADS_FILE.tmp"
+gzip -t "$UPLOADS_FILE.tmp"
+mv "$UPLOADS_FILE.tmp" "$UPLOADS_FILE"
+chmod 600 "$UPLOADS_FILE"
 
 # Guarda os últimos 14 dias.
-find "$DIR" -name 'orari-*.sql.gz' -mtime +14 -delete
-echo "backup ok: $FILE"
+find "$DIR" \( -name 'orari-*.sql.gz' -o -name 'uploads-*.tgz' \) -mtime +14 -delete
+echo "backup ok: $DB_FILE e $UPLOADS_FILE"
 EOF
 chmod +x /usr/local/bin/orari-backup
 ```
@@ -460,8 +475,10 @@ orari-backup
 ls -lh ~/backups
 ```
 
-Deve aparecer `backup ok: ...` e um arquivo `orari-AAAA-MM-DD-HHMM.sql.gz` de
-algumas centenas de KB (cresce com os dados).
+Deve aparecer `backup ok: ...` e dois arquivos: o `orari-AAAA-MM-DD-HHMM.sql.gz`
+(o banco, de algumas centenas de KB, que cresce com os dados) e o
+`uploads-AAAA-MM-DD-HHMM.tgz` (as fotos). Se ainda não houver nenhuma foto, o
+segundo fica minúsculo (uns 100 bytes): é normal.
 
 **3. Agende todo dia às 3h** (hora do servidor) com `crontab -e`, acrescentando a
 linha abaixo no fim do arquivo:
@@ -483,8 +500,8 @@ rsync -av root@IP_DO_SERVIDOR:backups/ ~/orari-backups/
 Faça isso pelo menos uma vez por semana no piloto (ou agende no seu computador).
 O ideal depois é enviar automaticamente para um armazenamento em nuvem.
 
-**5. Teste a restauração** pelo menos uma vez, num banco à parte, para ter
-certeza de que o backup serve (testado):
+**5. Teste a restauração do banco** pelo menos uma vez, num banco à parte, para
+ter certeza de que o backup serve (testado):
 
 ```bash
 dcp exec -T db psql -U orari -d postgres -c 'CREATE DATABASE orari_restauracao;'
@@ -502,9 +519,25 @@ e exige cuidado: pare a API antes (`dcp stop api`), não improvise e peça ajuda
 antes de apagar qualquer coisa. O teste acima, em um banco à parte, é o ensaio
 seguro e mostra que o arquivo serve.
 
-As **fotos e logos** não estão nesse backup: ficam no volume `uploads`. Para o
-piloto, o risco é pequeno; antes de abrir ao público, o ideal é armazenamento em
-nuvem (ver `docs/technical-debt.md`, "Fotos em pasta local e com acesso público").
+**6. Teste a restauração das fotos.** Para ver o conteúdo do arquivo sem mexer em
+nada:
+
+```bash
+tar tzf ~/backups/uploads-AAAA-MM-DD-HHMM.tgz
+```
+
+Para recolocar as fotos no volume (testado: os arquivos voltam idênticos e com o
+dono certo). Isso **só acrescenta ou sobrescreve** arquivos de mesmo nome, não
+apaga os que já existem:
+
+```bash
+dcp exec -T api tar xzf - -C /data/uploads < ~/backups/uploads-AAAA-MM-DD-HHMM.tgz
+```
+
+As fotos continuam numa pasta do servidor e acessíveis por link a quem o tiver.
+Para o piloto, o risco é pequeno; antes de abrir a clientes reais, o ideal é
+armazenamento privado em nuvem (ver `docs/technical-debt.md`, "Fotos em pasta
+local e com acesso público").
 
 ### 10. Aviso de queda
 

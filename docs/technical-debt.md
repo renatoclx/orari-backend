@@ -56,8 +56,10 @@ mas valem a perda de arquivos e a falta de réplica abaixo. Em produção, com m
 instância do servidor ou com deploy que recria o disco, os arquivos locais
 também se perdem ou ficam só em uma das instâncias.
 
-**Mitigação atual:** uso só em ambiente local; formato conferido pelo conteúdo
-(JPEG ou PNG), até 2 MB, nome aleatório.
+**Mitigação atual:** formato conferido pelo conteúdo (JPEG ou PNG), até 2 MB,
+nome aleatório. Em produção, os arquivos ficam num volume do Docker e entram no
+backup diário (`uploads-*.tgz`, ver `docs/deploy.md`), então um disco que falha não
+os perde de vez; mas o acesso continua público por quem tiver o link.
 
 **Como resolver:** trocar o `LocalFileStorage` por um armazenamento em nuvem
 privado (ex.: S3 ou compatível) e servir as fotos por links temporários
