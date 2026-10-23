@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { AppController } from "./app.controller";
+import { validateEnv } from "./config/env.validation";
 import { AppService } from "./app.service";
 import { AddressModule } from "./modules/address/address.module";
 import { AppointmentModule } from "./modules/appointment/appointment.module";
@@ -25,6 +26,8 @@ import { ScheduleModule } from "@nestjs/schedule";
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // A API não sobe com configuração ausente ou fraca (ver validateEnv).
+      validate: validateEnv,
     }),
     PrismaModule,
     AuthModule,

@@ -10,6 +10,8 @@ generated/
 # environment
 .env
 .env.*.local
+# Segredos de produção/homologação; só o modelo .env.production.example vai ao Git.
+.env.production
 
 # logs
 npm-debug.log*

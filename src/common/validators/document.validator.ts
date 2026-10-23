@@ -63,7 +63,15 @@ export function isValidCnpj(value: string): boolean {
   return value.endsWith(`${first}${second}`);
 }
 
-// Fábrica compartilhada por IsCpf e IsCnpj: evita duplicar o boilerplate do
+/**
+ * Documento de uma empresa: CPF (11 dígitos) ou CNPJ (14 caracteres). O tamanho
+ * decide qual validação vale, e as duas já recusam o formato do outro.
+ */
+export function isValidCpfOrCnpj(value: string): boolean {
+  return isValidCpf(value) || isValidCnpj(value);
+}
+
+// Fábrica compartilhada por IsCpf e IsCpfOrCnpj: evita duplicar o boilerplate do
 // registerDecorator para cada validação de documento.
 function documentDecorator(
   name: string,
@@ -94,11 +102,12 @@ export const IsCpf = (validationOptions?: ValidationOptions) =>
     validationOptions,
   );
 
-// Decorator de propriedade para validar CNPJ de Company (ver isValidCnpj).
-export const IsCnpj = (validationOptions?: ValidationOptions) =>
+// Decorator de propriedade para validar o documento de Company: CPF ou CNPJ
+// (ver isValidCpfOrCnpj).
+export const IsCpfOrCnpj = (validationOptions?: ValidationOptions) =>
   documentDecorator(
-    "isCnpj",
-    isValidCnpj,
-    "$property deve ser um CNPJ válido (numérico ou alfanumérico), com 14 caracteres e sem máscara",
+    "isCpfOrCnpj",
+    isValidCpfOrCnpj,
+    "$property deve ser um CPF (11 dígitos) ou CNPJ (14 caracteres, numérico ou alfanumérico) válido, sem máscara",
     validationOptions,
   );

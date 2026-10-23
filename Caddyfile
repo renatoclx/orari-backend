@@ -1,0 +1,30 @@
+# Caddy: recebe as requisições de fora, cuida do HTTPS (certificado automático)
+# e repassa para a API e para o frontend.
+#
+# API_DOMAIN e APP_DOMAIN vêm do .env.production (ex.: api.orariapp.com.br e
+# app.orariapp.com.br). Com ":80", a API serve só HTTP, útil para o primeiro teste
+# por IP, antes de o domínio existir.
+{$API_DOMAIN::80} {
+	encode gzip
+
+	# Fotos e logos têm até 2 MB; o resto do tráfego é JSON pequeno.
+	request_body {
+		max_size 5MB
+	}
+
+	reverse_proxy api:3333
+}
+
+# Frontend (Next.js). O reverse_proxy repassa o Host original (o Next confere
+# Origin e Host nas Server Actions) e sobrescreve o X-Forwarded-For com o IP real
+# da conexão (o frontend o repassa à API no login e na renovação da sessão).
+{$APP_DOMAIN::81} {
+	encode gzip
+
+	# As Server Actions aceitam até 3 MB (foto da pessoa, até 2 MB).
+	request_body {
+		max_size 5MB
+	}
+
+	reverse_proxy frontend:3000
+}

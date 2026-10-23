@@ -8,7 +8,7 @@
 
 ## Empresas
 
-- Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, CNPJ, data de fundação, subdomínio, fuso e status).
+- Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, documento, data de fundação, subdomínio, fuso e status).
 - O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O USER não altera nada. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
 - A logo é opcional, em JPEG ou PNG, com até 2 MB; o formato é conferido pelo conteúdo do arquivo. É servida publicamente e o `logoUrl` guarda o caminho relativo. Enviar uma nova logo substitui a anterior, que é apagada; a logo também pode ser removida. Só se apaga do disco arquivo da pasta das logos: uma URL externa gravada no `logoUrl` pelo SUPER_ADMIN nunca é apagada.
 - ADMIN e USER consultam apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
@@ -20,7 +20,8 @@
   - a própria empresa continua visível ao SUPER_ADMIN, para que possa ser reativada.
 - Ao reativar a empresa, os dados voltam a ficar acessíveis.
 - Um SUPER_ADMIN não pode inativar a própria empresa.
-- O CNPJ deve ser válido, no formato numérico ou alfanumérico, sem máscara (letras são convertidas para maiúsculas).
+- O documento da empresa (`document`) é um CPF (11 dígitos) ou um CNPJ (14 caracteres), válido e sem máscara. O CNPJ pode ser numérico ou alfanumérico (letras são convertidas para maiúsculas). Quem não tem CNPJ usa o CPF, e a razão social passa a ser o nome da pessoa.
+- A data de fundação é opcional: não se aplica a quem usa CPF.
 
 ## Usuários e acesso
 
@@ -82,7 +83,7 @@
 ## Unicidade
 
 - São únicos:
-  - o CNPJ e o subdomínio da empresa;
+  - o documento (CPF ou CNPJ) e o subdomínio da empresa;
   - entre os registros não excluídos, o e-mail do usuário;
   - entre os registros não excluídos, o documento da pessoa dentro da mesma empresa, quando informado.
 - E-mails e documentos de registros excluídos podem ser reutilizados.
@@ -108,7 +109,7 @@
 - Não há exclusão de agendamento: o ciclo de vida é controlado pelo status (`SCHEDULED`, `CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), e um agendamento novo começa como `SCHEDULED`.
 - Não é possível agendar em data e hora que já passaram, nem remarcar um agendamento para o passado. Alterar status ou observação de um agendamento já realizado continua permitido, exceto cancelá-lo e exceto quando ele está concluído com pagamento.
 - Um agendamento só pode ser cancelado antes de iniciar: em `SCHEDULED` ou `CONFIRMED` e com início ainda no futuro. Vale o horário, e não só o status, porque o status é atualizado periodicamente e um agendamento que já começou pode ainda constar como agendado ou confirmado.
-- Não podem ser cancelados: o que já iniciou ("Agendamento que já iniciou não pode ser cancelado"), o concluído, aquele em que o cliente não compareceu e o já cancelado. Nesses casos nada é alterado. A regra vale também quando o cancelamento vem junto com outras alterações, considerando o estado do agendamento antes delas.
+- Não podem ser cancelados: o que já iniciou ("Agendamento que já iniciou não pode ser cancelado"), o concluído, aquele em que o cliente não compareceu e o já cancelado. Nesses casos nada é alterado. A regra vale também quando o cancelamento vem junto com outras alterações, considerando o estado do agendamento antes delas. Se o agendamento mudar de situação entre a leitura e a gravação (ex.: o job de status o inicia no mesmo instante), o cancelamento é recusado com 409 e nada é alterado.
 - Ao cancelar um agendamento avulso, o pagamento dele ainda `PENDING` também é cancelado; o pagamento `PAID` não muda (não há reembolso).
 - Um agendamento concluído que tem pagamento (pendente ou pago) não sofre mais nenhuma alteração: nem observação, nem status, nem serviço, cliente ou horário (400). O pagamento foi gerado a partir dele, e mudar o agendamento o deixaria divergente. Pagamento cancelado ou excluído libera a edição. Agendamento de plano não tem pagamento próprio e não é travado por esta regra.
 - `CANCELLED` é o estado final do agendamento: um agendamento cancelado não volta a nenhum outro status (400). Para marcar de novo, cria-se outro agendamento. A observação de um cancelado continua editável.
@@ -238,7 +239,7 @@
 
 - Só podem ser contratados planos ativos, com o período escolhido cadastrado e com todos os serviços ativos. O cliente precisa ser do tipo `CLIENT`.
 - Ao contratar um plano, são definidos a modalidade de pagamento (integral ou mensal) e o número de meses, que precisa corresponder a um período do plano. São congelados o valor mensal, o percentual de desconto aplicado conforme a modalidade e o total do período.
-- A data de início é, por padrão, a data atual no fuso da empresa. Pode ser futura, mas não passada.
+- A data de início é, por padrão, a data atual no fuso da empresa. Pode ser futura, mas não passada. A agenda nunca começa antes dela, inclusive à noite, quando em UTC já é o dia seguinte.
 - A data final é a data de início somada ao número de meses, menos um dia (ex.: 3 meses a partir de 15/10 terminam em 14/01).
 - A contratação, as recorrências dos serviços e os pagamentos são criados juntos: se qualquer horário conflitar, nada é gravado.
 - Alterar preços de serviços ou o plano depois da contratação não altera o valor da contratação.
@@ -267,7 +268,7 @@
 ### Cancelamento da contratação
 
 - O cancelamento não gera multa nem reembolso, em qualquer modalidade.
-- A contratação cancelada registra a data do cancelamento e não pode ser cancelada de novo. Uma contratação cujo período já terminou não pode ser cancelada.
+- A contratação cancelada registra a data do cancelamento e não pode ser cancelada de novo (também quando dois cancelamentos chegam ao mesmo tempo: só o primeiro vale). Uma contratação cujo período já terminou não pode ser cancelada.
 - Ao cancelar a contratação, as recorrências de todos os serviços do plano são encerradas, e os agendamentos futuros em `SCHEDULED` ou `CONFIRMED` passam para `CANCELLED`; os horários voltam a ficar disponíveis.
 - Na modalidade mensal, as parcelas `PENDING` com vencimento na data do cancelamento ou depois passam para `CANCELLED`. As parcelas atrasadas continuam `PENDING`, e as pagas não mudam.
 - Na modalidade integral, o pagamento não muda: ele é feito no ato da contratação.
@@ -291,7 +292,7 @@
 - Um método inativado pode ser reativado por `PATCH /payment-methods/:id/restore` (limpa o `deletedAt`). Reativar um método já ativo responde 409; se o nome estiver em uso por outro método ativo da empresa, também responde 409.
 - A listagem de pagamentos (`GET /payments`) traz a origem de cada um, para a tela descrevê-lo: o atendimento (`appointment`, com a data, o serviço e o `recurringAppointmentId`, nulo no avulso) ou a contratação (`clientPlan`, com o nome do plano e a modalidade `billingType`). Traz também o cliente (`client`: o do atendimento ou o da contratação) e o método de pagamento (`paymentMethod`, preenchido quando pago). Cliente, serviço e plano são lidos pela chave, sem filtrar exclusão: o nome continua aparecendo depois de inativados. A ordem é o vencimento crescente, com os sem vencimento no fim, e os filtros combinam entre si (ex.: `status=PENDING&overdue=true`).
 - `GET /payments/summary` devolve os totais da tela de Pagamentos, cada um com `total` (texto com duas casas) e `count`: `overdue` (pendentes com vencimento antes de hoje, no fuso da empresa), `upcoming` (pendentes com vencimento de hoje em diante ou sem vencimento) e `paid` (pagos). Cancelados e excluídos ficam de fora. Só `clientId`, `dueFrom` e `dueTo` filtram; `status` e os demais filtros da listagem são recusados (400). Com período, os três usam o vencimento nele (inclusive os pagos) e o pagamento sem vencimento não entra.
-- A baixa (`PATCH /payments/settle` e a baixa em lote da recorrência) não aceita `paidAt` no futuro (400, comparando com o instante da requisição). Data passada é aceita, para lançar uma baixa esquecida.
+- A baixa (`PATCH /payments/settle` e a baixa em lote da recorrência) e a criação de um pagamento (`POST /payments`) não aceitam `paidAt` no futuro (400, comparando com o instante da requisição). Data passada é aceita, para lançar uma baixa esquecida. A edição de um pagamento (`PATCH /payments/:id`) não tem essa checagem.
 - Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
 - Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
 - Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.

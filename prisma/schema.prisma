@@ -116,8 +116,10 @@ model Company {
   id              String    @id @default(uuid())
   corporateReason String
   fantasyName     String?
-  cnpj            String    @unique @db.Char(14)
-  foundationDate  DateTime  @db.Date
+  // CPF (11) ou CNPJ (14), sem máscara. VarChar: o Char completaria o CPF com espaços.
+  document        String    @unique @db.VarChar(14)
+  // Opcional: não se aplica a quem usa CPF.
+  foundationDate  DateTime? @db.Date
   isActive        Boolean   @default(true)
   // Fuso IANA usado para interpretar janelas de atendimento e horários de recorrência.
   timezone        String    @default("America/Sao_Paulo")

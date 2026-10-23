@@ -37,7 +37,7 @@ const DEMO = {
   company: {
     corporateReason: "Orari Demonstração LTDA",
     fantasyName: "Orari Demo",
-    cnpj: "11222333000181",
+    document: "11222333000181",
     subdomain: "demo",
     foundationDate: new Date("2024-03-10"),
     timezone: "America/Sao_Paulo",
@@ -96,7 +96,7 @@ async function main() {
   const clientPlans = app.get(ClientPlanService);
 
   const existing = await prisma.company.findUnique({
-    where: { cnpj: DEMO.company.cnpj },
+    where: { document: DEMO.company.document },
   });
   if (existing) {
     console.log(

@@ -1,0 +1,91 @@
+# Produção/homologação: banco + API + frontend + Caddy (HTTPS), tudo num servidor.
+#
+# Use sempre com o arquivo de variáveis:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+# (modelo em .env.production.example). Ver docs/deploy.md.
+name: orari-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # A porta é publicada só no próprio servidor (127.0.0.1), nunca na internet:
+    # serve para um túnel SSH (ex.: DBeaver) olhar o banco. A API fala com o banco
+    # pela rede interna do Docker e não depende dela. Se a porta já estiver em uso
+    # no servidor, troque com DB_LOCAL_PORT no .env.production.
+    ports:
+      - "127.0.0.1:${DB_LOCAL_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/data/uploads
+    # Sem "ports": quem recebe o tráfego de fora é o Caddy.
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -qO- http://localhost:3333/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # Frontend (Next.js). O código fica no repositório orari-frontend, clonado ao lado
+  # deste (~/orari-frontend no servidor).
+  frontend:
+    build:
+      context: ../orari-frontend
+      args:
+        # Endereço da API na rede interna. Entra no build (o Next o grava na
+        # reescrita de /uploads) e na execução; mudou, é preciso reconstruir.
+        API_URL: http://api:3333
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3333
+    depends_on:
+      api:
+        condition: service_healthy
+    # Sem "ports": quem recebe o tráfego de fora é o Caddy (frontend:3000). O Next
+    # confia no Caddy para o IP do usuário; exposto direto, qualquer cliente
+    # forjaria o IP e escaparia do limite de tentativas da API.
+    # O healthcheck já vem na imagem (/login responde 200 sem sessão).
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:-:80}
+      # Sem domínio (primeiro teste por IP) o frontend fica em ":81", porta que
+      # não é publicada: só o domínio dele (app...) o expõe.
+      APP_DOMAIN: ${APP_DOMAIN:-:81}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - frontend
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

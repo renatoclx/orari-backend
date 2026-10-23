@@ -256,6 +256,7 @@ export class PaymentService {
 
     const status = dto.status ?? PaymentStatus.PENDING;
     this.ensurePaidAtMatchesStatus(status, dto.paidAt);
+    this.ensurePaidAtIsNotFuture(dto.paidAt);
     this.ensurePaymentMethodWhenPaid(status, dto.paymentMethodId);
     const amount = await this.resolveAmount(
       dto.amount,
@@ -788,10 +789,25 @@ export class PaymentService {
     const isToday = (paidAt: Date | null) =>
       paidAt !== null && paidAt >= start && paidAt < end;
 
+    // Agrupa uma única vez por cliente: filtrar as listas inteiras a cada cliente
+    // da página custaria clientes × atendimentos × pagamentos.
+    const visitsByClient = this.groupBy(
+      appointments,
+      (appointment) => appointment.clientId,
+    );
+    const visitIds = new Set(appointmentIds);
+    const previousByClient = this.groupBy(
+      payments.filter(
+        (payment) =>
+          !payment.appointmentId || !visitIds.has(payment.appointmentId),
+      ),
+      (payment) =>
+        (payment.appointment?.clientId ?? payment.clientPlan?.clientId)!,
+    );
+
     const items = clients.map((client): Checkout => {
-      const visits = appointments
-        .filter((appointment) => appointment.clientId === client.id)
-        .map((appointment): CheckoutAppointment => {
+      const visits = (visitsByClient.get(client.id) ?? []).map(
+        (appointment): CheckoutAppointment => {
           const payment = byAppointment.get(appointment.id);
 
           return {
@@ -805,17 +821,10 @@ export class PaymentService {
               appointment.recurringAppointment?.clientPlanId ?? null,
             payment: payment ? this.toCheckoutPayment(payment, today) : null,
           };
-        });
-
-      const previous = payments.filter(
-        (payment) =>
-          (payment.appointment?.clientId ?? payment.clientPlan?.clientId) ===
-            client.id &&
-          !(
-            payment.appointmentId &&
-            appointmentIds.includes(payment.appointmentId)
-          ),
+        },
       );
+
+      const previous = previousByClient.get(client.id) ?? [];
       const visitPayments = visits.flatMap((visit) =>
         visit.payment ? [visit.payment] : [],
       );
@@ -983,6 +992,22 @@ export class PaymentService {
           }
         : null,
     };
+  }
+
+  // Agrupa os itens pela chave, mantendo a ordem em que chegaram.
+  private groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {
+    const groups = new Map<string, T[]>();
+    for (const item of items) {
+      const key = keyOf(item);
+      const group = groups.get(key);
+      if (group) {
+        group.push(item);
+      } else {
+        groups.set(key, [item]);
+      }
+    }
+
+    return groups;
   }
 
   private sum(payments: { amount: Decimal }[]): Decimal {

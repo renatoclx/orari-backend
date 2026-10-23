@@ -12,6 +12,7 @@ import {
 } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { toZonedParts } from "../../common/time/time-zone";
+import { isRecordNotFound } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { PeopleService } from "../people/people.service";
@@ -307,11 +308,23 @@ export class AppointmentService {
      * recurso usado no cadastro completo de pessoas.
      */
     return this.prisma.$transaction(async (tx) => {
-      const cancelled = await tx.appointment.update({
-        where: { id },
-        data,
-        include: withRelations,
-      });
+      // O status lido no início vai no filtro: se o job de status (ou outra
+      // requisição) mudou o agendamento nesse intervalo, nada é cancelado. Sem
+      // isso, um atendimento que acabou de começar seria cancelado.
+      let cancelled: AppointmentWithRelations;
+      try {
+        cancelled = await tx.appointment.update({
+          where: { id, status: appointment.status },
+          data,
+          include: withRelations,
+        });
+      } catch (error) {
+        throw isRecordNotFound(error)
+          ? new ConflictException(
+              "O agendamento mudou de situação; confira e tente novamente",
+            )
+          : error;
+      }
       await tx.payment.updateMany({
         where: {
           appointmentId: id,

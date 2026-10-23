@@ -56,8 +56,10 @@ mas valem a perda de arquivos e a falta de réplica abaixo. Em produção, com m
 instância do servidor ou com deploy que recria o disco, os arquivos locais
 também se perdem ou ficam só em uma das instâncias.
 
-**Mitigação atual:** uso só em ambiente local; formato conferido pelo conteúdo
-(JPEG ou PNG), até 2 MB, nome aleatório.
+**Mitigação atual:** formato conferido pelo conteúdo (JPEG ou PNG), até 2 MB,
+nome aleatório. Em produção, os arquivos ficam num volume do Docker e entram no
+backup diário (`uploads-*.tgz`, ver `docs/deploy.md`), então um disco que falha não
+os perde de vez; mas o acesso continua público por quem tiver o link.
 
 **Como resolver:** trocar o `LocalFileStorage` por um armazenamento em nuvem
 privado (ex.: S3 ou compatível) e servir as fotos por links temporários
@@ -84,26 +86,6 @@ com mais volume.
 **Como resolver:** restrição de sobreposição no PostgreSQL (`EXCLUDE USING gist`,
 extensão `btree_gist`) por profissional e por cliente, ignorando cancelados, com o
 erro convertido em 409. Conferir antes se já existem sobreposições gravadas.
-
-**Registrado em:** 2026-10-22.
-
----
-
-## Configuração de produção
-
-**Onde:** `main.ts` e variáveis de ambiente.
-
-**O que é:** sem `CORS_ORIGIN`, qualquer origem é aceita; o Swagger fica público
-em `/docs`; não há headers de segurança (`helmet`); as variáveis de ambiente não
-são validadas na subida (um `JWT_SECRET` fraco é aceito); o access token dura 1
-dia; sem `trust proxy`, atrás de um proxy todos os clientes aparecem com o mesmo
-IP e dividem o limite de tentativas do login.
-
-**Impacto:** nenhum no desenvolvimento; obrigatório antes do primeiro deploy.
-
-**Como resolver:** definir `CORS_ORIGIN`, restringir ou desligar o Swagger em
-produção, adicionar `helmet`, validar as variáveis na subida, reduzir
-`JWT_EXPIRES_IN` (ex.: 15m) e configurar `trust proxy` conforme o proxy usado.
 
 **Registrado em:** 2026-10-22.
 

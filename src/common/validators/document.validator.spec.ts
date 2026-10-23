@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isValidCnpj, isValidCpf } from "./document.validator";
+import {
+  isValidCnpj,
+  isValidCpf,
+  isValidCpfOrCnpj,
+} from "./document.validator";
 
 describe("isValidCpf", () => {
   it.each(["52998224725", "11144477735", "12345678909"])(
@@ -39,5 +43,29 @@ describe("isValidCnpj", () => {
     ["tamanho errado", "1122233300018"],
   ])("recusa %s (%s)", (_case, cnpj) => {
     expect(isValidCnpj(cnpj)).toBe(false);
+  });
+});
+
+describe("isValidCpfOrCnpj", () => {
+  it.each([
+    ["CPF", "52998224725"],
+    ["CNPJ numérico", "11222333000181"],
+    ["CNPJ alfanumérico", "12ABC34501DE35"],
+  ])("aceita %s válido", (_type, value) => {
+    expect(isValidCpfOrCnpj(value)).toBe(true);
+  });
+
+  it.each([
+    ["CPF com dígito errado", "52998224726"],
+    ["CNPJ com dígito errado", "11222333000182"],
+    ["CPF com máscara", "529.982.247-25"],
+    ["CNPJ com máscara", "11.222.333/0001-81"],
+    ["tamanho entre os dois (12 dígitos)", "529982247250"],
+    ["tamanho entre os dois (13 dígitos)", "5299822472500"],
+    ["vazio", ""],
+    ["sequência repetida de CPF", "11111111111"],
+    ["sequência repetida de CNPJ", "00000000000000"],
+  ])("recusa %s", (_case, value) => {
+    expect(isValidCpfOrCnpj(value)).toBe(false);
   });
 });

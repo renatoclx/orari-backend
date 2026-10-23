@@ -47,7 +47,7 @@ describe("CompanyService", () => {
 
   const dto: CreateCompanyDto = {
     corporateReason: "Orari LTDA",
-    cnpj: "11222333000181",
+    document: "11222333000181",
     foundationDate: new Date("2020-01-15"),
     subdomain: "orari",
   };
@@ -75,7 +75,25 @@ describe("CompanyService", () => {
       expect(prismaMock.company.create).toHaveBeenCalledWith({ data: dto });
     });
 
-    it("deve lançar ConflictException quando CNPJ ou subdomínio já existem", async () => {
+    it("deve criar a empresa de quem usa CPF, sem data de fundação", async () => {
+      const personal: CreateCompanyDto = {
+        corporateReason: "Maria Silva",
+        document: "52998224725",
+        subdomain: "maria",
+      };
+      prismaMock.company.create.mockResolvedValue({
+        id: COMPANY_ID,
+        ...personal,
+      });
+
+      await companyService.create(personal);
+
+      expect(prismaMock.company.create).toHaveBeenCalledWith({
+        data: personal,
+      });
+    });
+
+    it("deve lançar ConflictException quando documento ou subdomínio já existem", async () => {
       prismaMock.company.create.mockRejectedValueOnce(uniqueViolation());
 
       await expect(companyService.create(dto)).rejects.toBeInstanceOf(
@@ -240,14 +258,14 @@ describe("CompanyService", () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("deve lançar ConflictException quando o novo CNPJ já existe", async () => {
+    it("deve lançar ConflictException quando o novo documento já existe", async () => {
       prismaMock.company.findUnique.mockResolvedValue(company);
       prismaMock.company.update.mockRejectedValueOnce(uniqueViolation());
 
       await expect(
         companyService.update(
           COMPANY_ID,
-          { cnpj: "11444777000161" },
+          { document: "11444777000161" },
           superAdminUser,
         ),
       ).rejects.toBeInstanceOf(ConflictException);
