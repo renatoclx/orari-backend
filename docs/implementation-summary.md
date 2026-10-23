@@ -417,6 +417,12 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - `GET /payments/checkouts` passa a partir das visitas: o cliente tem comanda se tem atendimento hoje (`SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED`) ou pagamento `PAID` hoje. Os clientes saem de uma só consulta em `People` com filtro por relação, ordenada e paginada no banco.
 - Resposta por cliente: `appointments` (com `payment` ou `null`), `previousPayments` e `todayPending`, `previousPending` e `paidToday`. `PATCH /payments/settle` não mudou.
 
+## 2.34 Testes da camada HTTP
+
+- `test/http-routes.e2e-spec.ts` (`npm run test:e2e`) sobe os controllers reais com guards, `JwtStrategy`, `@Roles`, `ValidationPipe` e limite de tentativas, com os services simulados e **sem banco**. Complementa os testes unitários dos services.
+- Cobre: toda rota não pública recusa requisição sem token (401, descoberta pelos decoradores, então rota nova entra sozinha); token inválido, adulterado, de usuário excluído ou de empresa inativa; `@Roles` (USER recusado, perfis permitidos passam, lista fixa das rotas que devem ser restritas); rotas estáticas antes de `:id`; validação (UUID, campo desconhecido, empresa vinda do corpo, paginação); a empresa chegando ao service sempre a do token; erro 500 sem detalhe interno; e o 429 do login e do refresh.
+- `test/support/http-app.ts` monta a aplicação e descobre as rotas.
+
 ## 2.35 Correções da revisão de código
 
 - **Início da recorrência e da contratação:** a geração de agendamentos começa no maior dia entre o início contratado e hoje, comparados como dias de calendário no fuso da empresa; à noite não começa mais no dia anterior ao contratado.
