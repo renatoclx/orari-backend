@@ -13,7 +13,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    # Sem "ports": o banco só é alcançável pela API, nunca pela internet.
+    # A porta é publicada só no próprio servidor (127.0.0.1), nunca na internet:
+    # serve para um túnel SSH (ex.: DBeaver) olhar o banco. A API fala com o banco
+    # pela rede interna do Docker e não depende dela. Se a porta já estiver em uso
+    # no servidor, troque com DB_LOCAL_PORT no .env.production.
+    ports:
+      - "127.0.0.1:${DB_LOCAL_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
