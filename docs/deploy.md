@@ -46,11 +46,14 @@ Antes de usar um servidor, confira (entre por SSH e rode):
 cat /etc/os-release | head -2     # ideal: Ubuntu 22.04 ou 24.04
 free -h && df -h /                # memória e disco
 nproc                             # processadores
-curl -fsSL https://get.docker.com | sudo sh && sudo docker run --rm hello-world
+docker --version                  # se já existir, NÃO rode o script de instalação (etapa 3)
 ```
 
-Recursos mínimos: **2 GB de RAM** e 20 GB de disco. Com 1 GB, o build da API pode
-ficar sem memória; para um teste, crie uma área de troca (swap):
+Recursos mínimos, **livres** na hora do deploy: **2 GB de RAM** e **10 GB de
+disco**. O espaço pesa mais do que parece: a imagem da API tem cerca de 1,5 GB, o
+PostgreSQL 0,4 GB, e o cache do build passa de 2 GB a cada versão nova (limpe com
+`docker builder prune -f` em um servidor só seu). Com 1 GB de RAM, o build da API
+pode ficar sem memória; para um teste, crie uma área de troca (swap):
 
 ```bash
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
@@ -61,7 +64,15 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 Também confira que as portas **80 e 443** estão liberadas, inclusive em um
 eventual firewall do painel do provedor.
 
+**Prefira um servidor só para o Orari.** Em um servidor compartilhado com outras
+aplicações, o Orari disputa memória, disco e portas (80/443) com elas, e um
+problema de um lado derruba o outro.
+
 ## Etapas
+
+> **Sobre o `sudo`:** os comandos usam `sudo` onde um usuário comum precisaria. Se
+> você entra como `root` (o caso atual deste projeto), **omita o `sudo`**: o
+> `root` já tem todas as permissões.
 
 ### 1. Registrar o domínio
 
@@ -71,124 +82,282 @@ eventual firewall do painel do provedor.
 
 ### 2. Primeiro acesso e segurança básica do servidor
 
+Por ora, o acesso é como `root` com **senha**: é o mais simples para quem está
+começando, e é aceitável para um piloto **se** você seguir os cuidados abaixo. O
+caminho recomendado para depois (chave SSH, sem senha) está em
+[2b](#2b-endurecer-o-acesso-depois).
+
+#### 2a. Agora: root com senha
+
 Do seu computador (o IP vem do provedor):
 
 ```bash
 ssh root@IP_DO_SERVIDOR
 ```
 
-Crie um usuário comum com poderes de administrador, em vez de trabalhar como
-`root`:
+**1. Senha forte.** Use 16 ou mais caracteres, gerada por um gerenciador de senhas.
+Se a atual é curta ou previsível, troque com `passwd`. Um servidor novo na
+internet recebe tentativas de invasão em minutos; a senha é a única barreira.
+
+**2. Firewall com limite de tentativas.** Só SSH, HTTP e HTTPS, e `limit` no SSH,
+que bloqueia quem tenta conectar demais:
+
+```bash
+ufw limit OpenSSH
+ufw allow 80
+ufw allow 443
+ufw enable
+```
+
+**3. `fail2ban`.** Bane por um tempo o IP que erra a senha várias vezes:
+
+```bash
+apt update && apt upgrade -y
+apt install -y fail2ban unattended-upgrades
+systemctl enable --now fail2ban
+```
+
+Para conferir: `fail2ban-client status sshd` mostra os IPs já bloqueados, e
+`grep -c "Failed password" /var/log/auth.log` mostra quantas tentativas já houve.
+
+> Não envie a senha do servidor a ninguém, nem a mim. Se precisar de ajuda, mostre
+> só o que o servidor responde, nunca as credenciais.
+
+#### 2b. Endurecer o acesso (depois)
+
+Quando estiver confortável, troque a senha por **chave SSH**. No **seu
+computador**, não no servidor:
+
+```bash
+ssh-keygen -t ed25519            # Enter nas perguntas; defina uma frase-senha
+ssh-copy-id root@IP_DO_SERVIDOR  # pede a senha uma última vez e instala a chave
+```
+
+**Teste em outra janela** que `ssh root@IP_DO_SERVIDOR` entra **sem pedir a senha
+do servidor**. Só então, na primeira janela, edite `/etc/ssh/sshd_config`:
+
+```
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+```
+
+e aplique com `systemctl restart ssh`. Mantenha a primeira janela aberta até
+confirmar que a segunda ainda entra; se algo der errado, o painel do provedor tem
+um terminal de emergência.
+
+Mais seguro ainda é deixar de usar o `root`: crie um usuário comum e use `sudo`.
 
 ```bash
 adduser orari
 usermod -aG sudo orari
+ssh-copy-id orari@IP_DO_SERVIDOR   # no seu computador
 ```
 
-Entre com chave SSH (mais segura que senha). No **seu computador**:
-
-```bash
-ssh-keygen -t ed25519          # se você ainda não tem uma chave
-ssh-copy-id orari@IP_DO_SERVIDOR
-```
-
-**Teste em outra janela** que `ssh orari@IP_DO_SERVIDOR` entra sem pedir a senha.
-Só depois disso, no servidor, desligue o login como `root` e por senha, editando
-`/etc/ssh/sshd_config`:
-
-```
-PermitRootLogin no
-PasswordAuthentication no
-```
-
-e aplique com `sudo systemctl restart ssh`. Se o servidor não é seu (é de um
-amigo), combine com ele antes de mexer em acessos.
-
-Firewall (só SSH, HTTP e HTTPS) e atualizações de segurança automáticas:
-
-```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 80
-sudo ufw allow 443
-sudo ufw enable
-
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y unattended-upgrades
-```
+Teste o login do novo usuário e então ponha `PermitRootLogin no`. Com um usuário
+comum, mantenha o `sudo` nos comandos deste roteiro e use o `usermod -aG docker`
+da etapa 3. Se o servidor não é seu, combine com o dono antes de mexer em acessos.
 
 ### 3. Instalar o Docker
+
+**Só se ainda não estiver instalado** (`docker --version`). Em um servidor que já
+roda Docker, o script abaixo reconfigura os repositórios e pode atualizar o motor,
+afetando o que já estiver rodando nele; nesse caso, pule esta etapa e use o Docker
+existente.
+
+Como `root`:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+docker run --rm hello-world
+```
+
+Com um usuário comum (por exemplo, `orari`), use `sudo` e dê a ele acesso ao
+Docker; depois saia e entre de novo no SSH:
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker orari
 ```
 
-Saia e entre de novo no SSH. Teste com `docker run --rm hello-world`.
-
 ### 4. Levar o código para o servidor
 
-O repositório é privado, então o servidor precisa de permissão de leitura. O
-jeito mais simples é uma **deploy key** do GitHub, somente leitura:
+O repositório é privado, então o servidor precisa de permissão para **ler** o
+código. O jeito mais simples é uma **deploy key** do GitHub: uma chave que vive só
+no servidor e só pode ler este repositório.
 
-1. No servidor: `ssh-keygen -t ed25519 -f ~/.ssh/orari_deploy -N ""`.
-2. Copie o conteúdo de `~/.ssh/orari_deploy.pub`.
-3. No GitHub: repositório → Settings → Deploy keys → Add deploy key, **sem**
-   marcar escrita.
-4. Clone com essa chave:
+**1. No servidor**, gere a chave:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/orari_deploy -N ""
+```
+
+O comando mostra uma "impressão digital" (`SHA256:...`) e um desenho. **Ignore
+isso**: não é o que o GitHub pede.
+
+**2. Mostre a chave pública** (é o arquivo que termina em `.pub`):
+
+```bash
+cat ~/.ssh/orari_deploy.pub
+```
+
+Sai **uma linha só**, assim:
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... root@nome-do-servidor
+```
+
+Copie a linha **inteira**, do `ssh-ed25519` até o fim. Essa é pública: pode ser
+colada no GitHub sem risco. Já o arquivo **sem** `.pub` (`orari_deploy`) é a
+chave privada e **nunca sai do servidor**.
+
+**3. No GitHub**, abra o repositório → **Settings** → **Deploy keys** → **Add
+deploy key**:
+
+- **Title:** `servidor-orari` (qualquer nome);
+- **Key:** cole a linha inteira do passo 2;
+- **Allow write access:** deixe **desmarcado** (o servidor só precisa ler).
+
+**4. No servidor**, baixe o código:
 
 ```bash
 GIT_SSH_COMMAND="ssh -i ~/.ssh/orari_deploy" \
   git clone git@github.com:renatoclx/orari-backend.git
-cd orari-backend
-git config core.sshCommand "ssh -i ~/.ssh/orari_deploy"   # para os próximos git pull
 ```
+
+Na primeira vez ele pergunta `Are you sure you want to continue connecting
+(yes/no)?`: responda `yes`. Depois, entre na pasta e guarde a chave para os
+próximos `git pull`:
+
+```bash
+cd orari-backend
+git config core.sshCommand "ssh -i ~/.ssh/orari_deploy"
+```
+
+Se aparecer `Permission denied (publickey)`, a chave não foi cadastrada direito
+no GitHub: confira se colou a linha inteira do `.pub` (e não o `SHA256:`) e se
+a chave foi adicionada **ao repositório certo**.
+
+**Alternativa sem GitHub (só para começar):** enviar os arquivos direto do seu
+computador, sem chave nenhuma. Na pasta do projeto, no **seu computador**:
+
+```bash
+rsync -av --exclude node_modules --exclude .git --exclude dist \
+  --exclude generated --exclude uploads --exclude coverage --exclude '.env*' \
+  ./ root@IP_DO_SERVIDOR:/root/orari-backend/
+```
+
+É rápido para a primeira vez, mas a cada atualização você precisa rodar de novo;
+com o GitHub, basta um `git pull`.
 
 Nunca coloque senhas ou tokens pessoais do GitHub no servidor.
 
-### 5. Preencher as variáveis de ambiente
+### 5. Criar o arquivo de variáveis (`.env.production`)
 
-Copie o modelo e edite (o arquivo `.env.production` **nunca vai para o Git**; o
-`.gitignore` já o protege):
+Este arquivo guarda as configurações e os segredos da produção. Ele **nunca vai
+para o Git** (o `.gitignore` já o protege) e existe só no servidor.
+
+Em vez de preencher à mão (e correr o risco de errar a senha do banco, que
+aparece em dois lugares), **gere o arquivo com este bloco**. Copie tudo e cole no
+servidor:
 
 ```bash
-cp .env.production.example .env.production
+cd ~/orari-backend
+
+PG=$(openssl rand -hex 24)      # senha do banco
+JWT=$(openssl rand -hex 48)     # segredo dos tokens
+
+cat > .env.production <<EOF
+NODE_ENV=production
+
+# ":80" = só HTTP, para testar por IP. Com o domínio funcionando, troque por api.orariapp.com.br
+API_DOMAIN=:80
+
+POSTGRES_USER=orari
+POSTGRES_PASSWORD=$PG
+POSTGRES_DB=orari
+DATABASE_URL=postgresql://orari:$PG@db:5432/orari?schema=public
+
+JWT_SECRET=$JWT
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+
+CORS_ORIGIN=https://app.orariapp.com.br
+TRUST_PROXY=1
+EOF
+
 chmod 600 .env.production
-nano .env.production
 ```
 
-O que preencher:
+As duas senhas já saem corretas e iguais nos lugares certos, e ninguém precisa
+digitar segredo. Para conferir **sem mostrar os segredos**:
 
-| Variável            | Valor                                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `API_DOMAIN`        | `api.orariapp.com.br` (ou `:80`, para o primeiro teste por IP; ver abaixo)                             |
-| `POSTGRES_PASSWORD` | `openssl rand -hex 24` (só letras e números). **Repita a mesma senha na `DATABASE_URL`**               |
-| `DATABASE_URL`      | `postgresql://orari:SENHA@db:5432/orari?schema=public` (o host é `db`, o nome do contêiner)            |
-| `JWT_SECRET`        | `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` (ou `openssl rand -hex 48`) |
-| `CORS_ORIGIN`       | o endereço do frontend, quando existir (ex.: `https://app.orariapp.com.br`)                            |
-| `TRUST_PROXY`       | `1` (o Caddy é o único proxy à frente da API)                                                          |
+```bash
+sed -E 's/(PASSWORD|SECRET)=.*/\1=(oculto)/; s#(//orari:)[^@]*#\1(oculto)#' .env.production
+```
 
-O restante já vem com valores seguros. Se algo estiver fraco ou faltando, a API
-se recusa a subir e o log diz o quê (ver `docs/auth.md`, seção "Configuração de
-produção").
+**O que cada linha significa**
+
+| Linha                                       | Para que serve                                                                                 |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `NODE_ENV=production`                       | Liga as regras rígidas de segurança (a API se recusa a subir com configuração fraca)           |
+| `API_DOMAIN`                                | Endereço da API. `:80` serve só HTTP (teste por IP); depois vira `api.orariapp.com.br`         |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB`       | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                              |
+| `DATABASE_URL`                              | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima       |
+| `JWT_SECRET`                                | Segredo que assina os logins. Precisa ser longo e aleatório                                    |
+| `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Duração do login (15 minutos, renovável por 7 dias)                                            |
+| `CORS_ORIGIN`                               | Endereço do frontend autorizado a falar com a API. Ainda não existe, mas o valor já fica certo |
+| `TRUST_PROXY=1`                             | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente        |
+
+Se algo estiver fraco ou faltando, a API se recusa a subir e o log diz o quê (ver
+`docs/auth.md`, seção "Configuração de produção").
 
 **Primeiro teste, antes de o domínio funcionar:** deixe `API_DOMAIN=:80`. O Caddy
-passa a servir só HTTP, e você testa por `http://IP_DO_SERVIDOR/`. É só para
-conferir que sobe: **sem HTTPS, senhas e tokens trafegam sem criptografia**, então
-não deixe usuários reais entrarem assim. Com o domínio apontado (etapa 7), troque
-para `api.orariapp.com.br`.
+serve só HTTP, e você testa por `http://IP_DO_SERVIDOR/`. É só para conferir que
+sobe: **sem HTTPS, senhas e tokens trafegam sem criptografia**, então não deixe
+usuários reais entrarem assim. Com o domínio apontado (etapa 7), troque para
+`api.orariapp.com.br`.
+
+**O primeiro administrador.** O seed precisa de mais algumas linhas, que você
+coloca **só para criar o administrador e depois apaga**. Edite com
+`nano .env.production` (assim a senha não fica no histórico do terminal) e
+acrescente no fim:
+
+```
+SEED_COMPANY_CORPORATE_REASON=Orari Plataforma LTDA
+SEED_COMPANY_CNPJ=
+SEED_COMPANY_SUBDOMAIN=orari
+SEED_COMPANY_FOUNDATION_DATE=2026-01-01
+SEED_SUPER_ADMIN_NAME=Administrador
+SEED_SUPER_ADMIN_EMAIL=seu-email@exemplo.com
+SEED_SUPER_ADMIN_PASSWORD=
+```
+
+- `SEED_COMPANY_CNPJ`: precisa ser um **CNPJ válido**, só números (14 dígitos).
+  Use o da sua empresa.
+- `SEED_SUPER_ADMIN_PASSWORD`: senha forte, de 8 a 72 caracteres, de um
+  gerenciador de senhas.
+
+Na etapa 6 você roda o seed e **apaga essas 7 linhas**.
 
 ### 6. Subir a aplicação
 
-Para não repetir as opções, crie um atalho (vale para a sessão; ponha no
-`~/.bashrc` para guardar):
+Para não repetir as opções, crie o comando `dcp`, que roda o Docker Compose com
+os arquivos certos. Ele é um arquivo em `/usr/local/bin`, então funciona em
+qualquer terminal e de qualquer pasta, e continua existindo quando você sai e
+entra de novo (um `alias` não faria isso):
 
 ```bash
-alias dcp='docker compose --env-file .env.production -f docker-compose.prod.yml'
+cat > /usr/local/bin/dcp <<'EOF'
+#!/bin/sh
+cd "$HOME/orari-backend" && exec docker compose --env-file .env.production -f docker-compose.prod.yml "$@"
+EOF
+chmod +x /usr/local/bin/dcp
 ```
 
-Antes da primeira subida, **acrescente ao `.env.production` as variáveis do
-primeiro administrador** (linhas `SEED_*` do modelo, descomentadas; o CNPJ precisa
-ser válido e a senha forte). Depois:
+Ele assume que o projeto está em `~/orari-backend`. Teste com `dcp ps`.
+
+Antes da primeira subida, confirme que o `.env.production` já tem as linhas
+`SEED_*` do primeiro administrador (fim da etapa 5). Depois:
 
 ```bash
 dcp up -d --build        # constrói e sobe (leva alguns minutos na primeira vez)
@@ -293,6 +462,53 @@ as migrações **não** são desfeitas; por isso o backup antes de atualizar.
 | Parar tudo (os dados ficam) | `dcp down`                                            |
 | Apagar também os dados      | `dcp down -v` — **cuidado: apaga o banco e as fotos** |
 
+## Ver o banco no DBeaver (túnel SSH)
+
+O banco **não** fica aberto para a internet: a porta dele é publicada só dentro do
+próprio servidor (`127.0.0.1`). Para olhá-lo pelo DBeaver, use um **túnel SSH**: o
+DBeaver entra no servidor pelo SSH (que você já usa) e, de lá, fala com o banco.
+
+**Credenciais.** Estão só no servidor, em `.env.production`:
+
+| Dado    | Valor                                                     |
+| ------- | --------------------------------------------------------- |
+| Usuário | `orari`                                                   |
+| Banco   | `orari`                                                   |
+| Senha   | linha `POSTGRES_PASSWORD` do `.env.production`            |
+| Porta   | `5432` (ou o valor de `DB_LOCAL_PORT`, se você o definiu) |
+
+Para ver a senha no servidor (guarde-a no gerenciador de senhas; não a cole em
+conversas): `grep POSTGRES_PASSWORD ~/orari-backend/.env.production`.
+
+**No DBeaver:** Nova conexão → PostgreSQL.
+
+1. Aba **Principal**: Host `localhost`, Porta `5432`, Banco `orari`, Usuário
+   `orari` e a senha acima.
+2. Aba **SSH**: marque **Usar SSH Tunnel**, Host/IP = o IP do servidor, Porta
+   `22`, Usuário `root` e autenticação por Senha (ou chave, se já usa).
+3. **Testar conexão** e salvar.
+
+O `localhost` do passo 1 é o do **servidor**, não o do seu computador: é o túnel
+que leva até lá.
+
+**Cuidados**
+
+- Em produção, **use o DBeaver para consultar, não para editar**. A API mantém
+  regras (valores calculados, `updatedAt`, vínculos) que uma edição manual pode
+  quebrar.
+- Nunca abra a porta 5432 no firewall (`ufw`) nem no painel do provedor.
+- Esta publicação só existe a partir da versão do `docker-compose.prod.yml` que a
+  inclui. Num servidor já em funcionamento: `git pull` e `dcp up -d` (recria só o
+  contêiner do banco, com uma breve pausa; os dados ficam).
+- Se a porta 5432 já estiver em uso no servidor, defina `DB_LOCAL_PORT` (por
+  exemplo `15432`) no `.env.production` e use esse número no DBeaver.
+
+**Esqueci o e-mail do administrador:** consulte direto, sem DBeaver:
+
+```bash
+docker exec -it orari-prod-db-1 psql -U orari -d orari -c "select email, type from users;"
+```
+
 ## Piloto x produção
 
 O piloto com poucas pessoas num servidor emprestado é uma boa forma de testar,
@@ -311,6 +527,8 @@ desde que fique claro o que é e o que não é:
 Antes de abrir a clientes reais:
 
 - [ ] Servidor e domínio **na sua conta**, não de terceiros.
+- [ ] Acesso por **chave SSH**, sem senha (etapa 2b), e, de preferência, sem usar o
+      `root` no dia a dia.
 - [ ] Backup diário com cópia externa e restauração testada.
 - [ ] Fotos e logos em armazenamento persistente em nuvem.
 - [ ] Política de privacidade e fluxo de exclusão de dados a pedido (LGPD).
