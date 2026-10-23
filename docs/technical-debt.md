@@ -140,3 +140,25 @@ conferir a documentação gerada.
   converteria em 404 ou 409.
 
 **Registrado em:** 2026-10-22.
+
+---
+
+## Acesso de suporte e auditoria do SUPER_ADMIN
+
+**Onde:** `src/common/authorization/company-scope.ts` e os módulos operacionais
+(pessoas, agenda, pagamentos), que usam sempre a empresa do próprio token.
+
+**O que é:** o SUPER_ADMIN administra empresas e usuários, mas não opera os dados de
+uma clínica: não há como "entrar como" outra empresa para dar suporte, e não existe
+registro de auditoria (quem fez o quê, inclusive as ações do SUPER_ADMIN).
+
+**Impacto:** no piloto, com poucos usuários sob controle de quem administra a
+plataforma, é aceitável. O suporte hoje depende de entrar com um usuário da clínica
+ou de consultar o banco. Com mais clientes, falta rastreabilidade para saber quem
+alterou um dado.
+
+**Como resolver:** um acesso de suporte explícito e limitado (por empresa, com prazo
+e motivo) e um registro de auditoria das ações sensíveis (cadastro e inativação de
+empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
+
+**Registrado em:** 2026-10-23.
