@@ -52,7 +52,7 @@ export class AnamnesisController {
     return this.anamnesisService.findByClient(query, currentUser, ip);
   }
 
-  // Sem uso no frontend por enquanto (ver o service). Declarada antes de ":id", senão "appointments-with-entry" seria lido como id.
+  // Usada pela agenda (cartão de hover). Declarada antes de ":id", senão "appointments-with-entry" seria lido como id.
   @Get("appointments-with-entry")
   findAppointmentsWithEntry(
     @Query() query: FindEntryAppointmentsQueryDto,

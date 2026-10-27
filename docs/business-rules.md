@@ -354,6 +354,7 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - A **data da consulta** é informada no registro: o padrão é hoje no fuso da empresa, pode ser passada (para lançar um acompanhamento esquecido), não pode ser futura nem anterior à data do registro inicial.
 - Os registros são **imutáveis**: não há edição nem exclusão pela API. Para corrigir, cria-se um novo acompanhamento. Um acompanhamento atualiza respostas, mas não as apaga: não há como limpar uma resposta já dada.
 - As fichas de um cliente são listadas pelo cliente (`clientId` obrigatório): não existe listagem geral de fichas da empresa.
+- É possível consultar **quais agendamentos já têm acompanhamento** (`GET /anamnesis/appointments-with-entry?appointmentIds=a,b,c`, de 1 a 100 ids, da empresa do usuário): a resposta traz só os ids de agendamento que têm acompanhamento, sem nenhum conteúdo da ficha, cliente ou modelo. Exige o mesmo acesso da anamnese (os demais recebem 403) e **não entra na auditoria**, por não expor dado de saúde e por ser chamada a cada carregamento da agenda do frontend, que avisa os atendimentos ainda sem acompanhamento.
 - A **situação atual** da ficha é a resposta mais recente de cada pergunta; o histórico completo, em ordem de data, continua disponível.
 - Cliente inativo: as fichas continuam legíveis, mas não recebem novos registros.
 - Cada registro guarda o usuário que o gravou e, se ele for vinculado a um profissional, esse profissional.

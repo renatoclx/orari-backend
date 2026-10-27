@@ -292,12 +292,11 @@ export class AnamnesisService {
   }
 
   /**
-   * Quais dos agendamentos informados já têm acompanhamento. **Sem uso no
-   * frontend por enquanto**: foi pensado para a agenda avisar os atendimentos
-   * sem acompanhamento, ideia descartada; fica disponível para uma futura
-   * marcação de agendamentos. Devolve só ids de agendamento: nenhum conteúdo da ficha,
-   * nem o cliente ou o modelo, por isso não entra na auditoria (a agenda
-   * consultaria a cada carregamento). Exige o acesso à anamnese: quem não o tem
+   * Quais dos agendamentos informados já têm acompanhamento (a agenda
+   * do frontend avisa, no cartão de hover, os atendimentos que ainda não têm).
+   * Devolve só ids de agendamento: nenhum conteúdo da ficha, nem o cliente ou o
+   * modelo, por isso não entra na auditoria (a agenda consultaria a cada
+   * carregamento). Exige o acesso à anamnese: quem não o tem
    * não pode saber se um cliente tem ficha.
    */
   async findAppointmentsWithEntry(
