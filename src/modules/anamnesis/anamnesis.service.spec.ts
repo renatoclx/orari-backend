@@ -41,7 +41,7 @@ describe("AnamnesisService", () => {
     },
     anamnesisEntry: { create: vi.fn(), findMany: vi.fn() },
     anamnesisTemplate: { findFirst: vi.fn() },
-    people: { findFirst: vi.fn() },
+    people: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   };
   const accessMock = { ensureAccess: vi.fn(), findProfessionalId: vi.fn() };
   const auditMock = { record: vi.fn() };
@@ -438,6 +438,84 @@ describe("AnamnesisService", () => {
           adminUser,
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
+      expect(auditMock.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findClients", () => {
+    it("lista os clientes com ficha e a quantidade, com uma auditoria só", async () => {
+      prismaMock.people.findMany.mockResolvedValue([
+        {
+          id: "client-1",
+          name: "Joana",
+          deletedAt: null,
+          _count: { anamnesesAsClient: 2 },
+        },
+        {
+          id: "client-2",
+          name: "Marcos",
+          deletedAt: new Date("2026-10-01T00:00:00Z"),
+          _count: { anamnesesAsClient: 1 },
+        },
+      ]);
+      prismaMock.people.count.mockResolvedValue(2);
+
+      const result = await service.findClients(
+        { page: 1, limit: 10, name: "João" },
+        adminUser,
+        "10.0.0.1",
+      );
+
+      expect(result).toEqual({
+        items: [
+          {
+            clientId: "client-1",
+            clientName: "Joana",
+            isActive: true,
+            anamnesisCount: 2,
+          },
+          {
+            clientId: "client-2",
+            clientName: "Marcos",
+            isActive: false,
+            anamnesisCount: 1,
+          },
+        ],
+        total: 2,
+        page: 1,
+        limit: 10,
+      });
+      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
+        containing({
+          where: {
+            companyId: COMPANY_ID,
+            type: "CLIENT",
+            anamnesesAsClient: { some: {} },
+            // Busca sem acento nem maiúscula.
+            normalizedName: { contains: "joao" },
+          },
+          orderBy: { name: "asc" },
+        }),
+      );
+      // Uma auditoria para a página inteira, sem cliente específico.
+      expect(auditMock.record).toHaveBeenCalledTimes(1);
+      expect(auditMock.record).toHaveBeenCalledWith({
+        companyId: COMPANY_ID,
+        userId: adminUser.id,
+        action: "ANAMNESIS_LISTED",
+        entityType: "COMPANY",
+        entityId: COMPANY_ID,
+        ip: "10.0.0.1",
+      });
+    });
+
+    it("sem acesso à anamnese é 403 e nem consulta", async () => {
+      accessMock.ensureAccess.mockRejectedValue(new ForbiddenException());
+
+      await expect(
+        service.findClients({ page: 1, limit: 10 }, regularUser),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.people.findMany).not.toHaveBeenCalled();
       expect(auditMock.record).not.toHaveBeenCalled();
     });
   });

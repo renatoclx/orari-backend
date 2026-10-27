@@ -18,6 +18,7 @@ import { AnamnesisService } from "./anamnesis.service";
 import { CreateAnamnesisEntryDto } from "./dto/create-anamnesis-entry.dto";
 import { CreateAnamnesisDto } from "./dto/create-anamnesis.dto";
 import { FindAnamnesesQueryDto } from "./dto/find-anamneses-query.dto";
+import { FindAnamnesisClientsQueryDto } from "./dto/find-anamnesis-clients-query.dto";
 import { FindEntryAppointmentsQueryDto } from "./dto/find-entry-appointments-query.dto";
 import { FindAnamnesisPdfQueryDto } from "./dto/find-anamnesis-pdf-query.dto";
 
@@ -50,6 +51,16 @@ export class AnamnesisController {
     @Ip() ip: string,
   ) {
     return this.anamnesisService.findByClient(query, currentUser, ip);
+  }
+
+  // Clientes com ficha (tela "Fichas dos clientes"). Declarada antes de ":id".
+  @Get("clients")
+  findClients(
+    @Query() query: FindAnamnesisClientsQueryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
+  ) {
+    return this.anamnesisService.findClients(query, currentUser, ip);
   }
 
   // Usada pela agenda (cartão de hover). Declarada antes de ":id", senão "appointments-with-entry" seria lido como id.
