@@ -32,6 +32,7 @@ model User {
   refreshTokens             RefreshToken[]
   auditLogs                 AuditLog[]
   anamnesisTemplateVersions AnamnesisTemplateVersion[]
+  anamnesisEntries          AnamnesisEntry[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -145,6 +146,7 @@ model Company {
   notifications         Notification[]
   auditLogs             AuditLog[]
   anamnesisTemplates    AnamnesisTemplate[]
+  anamneses             Anamnesis[]
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
@@ -183,6 +185,8 @@ model People {
   recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                ClientPlan[]
   users                      User[]
+  anamnesesAsClient          Anamnesis[]            @relation("AnamnesisClient")
+  anamnesisEntriesAsAuthor   AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
@@ -330,6 +334,7 @@ model Appointment {
   professional         People                @relation("AppointmentProfessional", fields: [professionalId], references: [id])
   service              Service               @relation(fields: [serviceId], references: [id])
   payment              Payment?
+  anamnesisEntries     AnamnesisEntry[]
   recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
 
   @@index([companyId, startAt])
@@ -585,6 +590,9 @@ enum AuditAction {
   USER_LINK_CHANGED
   ANAMNESIS_TEMPLATE_CREATED
   ANAMNESIS_TEMPLATE_UPDATED
+  ANAMNESIS_VIEWED
+  ANAMNESIS_LISTED
+  ANAMNESIS_ENTRY_CREATED
 }
 
 /**
@@ -637,8 +645,9 @@ model AnamnesisTemplate {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
-  company  Company                    @relation(fields: [companyId], references: [id])
-  versions AnamnesisTemplateVersion[]
+  company   Company                    @relation(fields: [companyId], references: [id])
+  versions  AnamnesisTemplateVersion[]
+  anamneses Anamnesis[]
 
   @@unique([companyId, normalizedName])
   @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
@@ -657,6 +666,7 @@ model AnamnesisTemplateVersion {
   template  AnamnesisTemplate   @relation(fields: [templateId], references: [id])
   createdBy User                @relation(fields: [createdById], references: [id])
   questions AnamnesisQuestion[]
+  anamneses Anamnesis[]
 
   // Também barra duas edições simultâneas que gerariam o mesmo número de versão.
   @@unique([templateId, version])
@@ -678,7 +688,76 @@ model AnamnesisQuestion {
   detailLabel String?
 
   version AnamnesisTemplateVersion @relation(fields: [versionId], references: [id])
+  answers AnamnesisAnswer[]
 
   @@unique([versionId, position])
   @@map("anamnesis_questions")
+}
+
+enum AnamnesisEntryKind {
+  INITIAL
+  FOLLOW_UP
+}
+
+// Ficha de um cliente em um modelo: o dossiê ao qual os registros se ligam. Presa
+// à versão do modelo vigente quando foi criada. Não é excluída pela API.
+model Anamnesis {
+  id         String   @id @default(uuid())
+  companyId  String
+  clientId   String
+  templateId String
+  versionId  String
+  createdAt  DateTime @default(now())
+
+  company  Company                  @relation(fields: [companyId], references: [id])
+  client   People                   @relation("AnamnesisClient", fields: [clientId], references: [id])
+  template AnamnesisTemplate        @relation(fields: [templateId], references: [id])
+  version  AnamnesisTemplateVersion @relation(fields: [versionId], references: [id])
+  entries  AnamnesisEntry[]
+
+  // Uma ficha por cliente e por modelo.
+  @@unique([clientId, templateId])
+  @@index([companyId])
+  @@map("anamneses")
+}
+
+// Registro do histórico da ficha (o inicial ou um acompanhamento). Imutável: sem
+// alteração nem exclusão pela API; correções entram como novo acompanhamento.
+model AnamnesisEntry {
+  id                   String             @id @default(uuid())
+  anamnesisId          String
+  kind                 AnamnesisEntryKind
+  // Data da consulta a que o registro se refere (não é a data em que foi gravado).
+  consultationDate     DateTime           @db.Date
+  appointmentId        String?
+  // Criptografado (ver AnamnesisCryptoService); nulo no registro inicial.
+  evolution            String?
+  authorUserId         String
+  authorProfessionalId String?
+  createdAt            DateTime           @default(now())
+
+  anamnesis          Anamnesis         @relation(fields: [anamnesisId], references: [id])
+  appointment        Appointment?      @relation(fields: [appointmentId], references: [id])
+  authorUser         User              @relation(fields: [authorUserId], references: [id])
+  authorProfessional People?           @relation("AnamnesisEntryProfessional", fields: [authorProfessionalId], references: [id])
+  answers            AnamnesisAnswer[]
+
+  @@index([anamnesisId, consultationDate])
+  @@map("anamnesis_entries")
+}
+
+// Resposta a uma pergunta em um registro. No acompanhamento só existem as das
+// perguntas que mudaram.
+model AnamnesisAnswer {
+  id         String @id @default(uuid())
+  entryId    String
+  questionId String
+  // JSON da resposta, criptografado (ver AnamnesisCryptoService).
+  value      String
+
+  entry    AnamnesisEntry    @relation(fields: [entryId], references: [id])
+  question AnamnesisQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([entryId, questionId])
+  @@map("anamnesis_answers")
 }

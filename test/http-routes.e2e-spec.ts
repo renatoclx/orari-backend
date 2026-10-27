@@ -9,6 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
 import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
 import { AuthService } from "../src/modules/auth/auth.service";
@@ -338,6 +339,88 @@ describe("Rotas HTTP", () => {
         ANY_UUID,
         expect.objectContaining({ id: USERS.user.id, type: "USER" }),
       );
+    });
+
+    it("ficha de anamnese: o acesso é conferido no service e o IP chega a ele", async () => {
+      const anamnesis = http.mockOf(AnamnesisService);
+      anamnesis.create.mockClear();
+      const body = {
+        clientId: ANY_UUID,
+        templateId: ANY_UUID,
+        answers: [{ questionId: ANY_UUID, value: { answer: true } }],
+      };
+
+      await request(server())
+        .post("/anamnesis")
+        .set("Authorization", auth(http, "user"))
+        .send(body)
+        .expect(201);
+      expect(anamnesis.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: ANY_UUID }),
+        expect.objectContaining({ id: USERS.user.id }),
+        expect.any(String),
+      );
+
+      await request(server())
+        .get(`/anamnesis?clientId=${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+    });
+
+    it("ficha de anamnese: não tem edição nem exclusão e valida a entrada (400)", async () => {
+      for (const method of ["patch", "put", "delete"] as const) {
+        await request(server())
+          [method](`/anamnesis/${ANY_UUID}`)
+          .set("Authorization", auth(http, "admin"))
+          .expect(404);
+      }
+
+      const ok = { clientId: ANY_UUID, templateId: ANY_UUID, answers: [] };
+      for (const body of [
+        { ...ok, clientId: "x" },
+        { ...ok, answers: undefined },
+        { ...ok, consultationDate: "27/10/2026" },
+        { ...ok, companyId: COMPANY_B },
+        { ...ok, answers: [{ questionId: "x", value: 1 }] },
+        { ...ok, answers: [{ questionId: ANY_UUID }] },
+      ]) {
+        await request(server())
+          .post("/anamnesis")
+          .set("Authorization", auth(http, "admin"))
+          .send(body)
+          .expect(400);
+      }
+
+      // Acompanhamento: evolução obrigatória e limitada; data no formato certo.
+      for (const body of [
+        {},
+        { evolution: "   " },
+        { evolution: "a".repeat(10001) },
+        { evolution: "ok", consultationDate: "ontem" },
+        { evolution: "ok", appointmentId: "x" },
+        { evolution: "ok", kind: "INITIAL" },
+      ]) {
+        await request(server())
+          .post(`/anamnesis/${ANY_UUID}/entries`)
+          .set("Authorization", auth(http, "admin"))
+          .send(body)
+          .expect(400);
+      }
+      await request(server())
+        .post(`/anamnesis/${ANY_UUID}/entries`)
+        .set("Authorization", auth(http, "user"))
+        .send({ evolution: "Melhorou" })
+        .expect(201);
+
+      // A listagem exige o cliente; não há listagem geral.
+      await request(server())
+        .get("/anamnesis")
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
     });
 
     it("modelo de anamnese: recusa perguntas fora do formato (400)", async () => {

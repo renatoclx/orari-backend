@@ -344,11 +344,65 @@ sed -E 's/(PASSWORD|SECRET)=.*/\1=(oculto)/; s#(//orari:)[^@]*#\1(oculto)#' .env
 | `DATABASE_URL`                              | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima     |
 | `JWT_SECRET`                                | Segredo que assina os logins. Precisa ser longo e aleatório                                  |
 | `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Duração do login (15 minutos, renovável por 7 dias)                                          |
+| `ANAMNESIS_ENCRYPTION_KEY`                  | Chave que criptografa as fichas de anamnese (dados de saúde). Ver a etapa 5.1                |
 | `CORS_ORIGIN`                               | Endereço do frontend autorizado a falar com a API (`https://app.orariapp.com.br`)            |
 | `TRUST_PROXY=1`                             | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente      |
 
 Se algo estiver fraco ou faltando, a API se recusa a subir e o log diz o quê (ver
 `docs/auth.md`, seção "Configuração de produção").
+
+### 5.1. Chave da anamnese (`ANAMNESIS_ENCRYPTION_KEY`)
+
+As fichas de anamnese guardam **dados de saúde**, e a API os criptografa antes de
+gravar no banco. Quem cifra e decifra é esta chave. A API **não sobe sem ela**, e
+ela exige cuidado especial:
+
+- **Sem a chave, as fichas não podem ser lidas.** Se ela for perdida, os dados
+  cifrados viram lixo, sem recuperação.
+- **Ela não está no backup do banco** (de propósito: um backup roubado não revela as
+  fichas). Por isso você precisa guardar uma cópia **à parte**, no gerenciador de
+  senhas.
+- **Nunca troque a chave de um sistema que já tem fichas**: as antigas deixariam de
+  abrir. (A troca com reencriptação é um trabalho futuro.)
+
+**Passo a passo (primeira vez):**
+
+1. **No seu computador** (não no servidor), gere a chave:
+
+   ```bash
+   openssl rand -base64 32
+   ```
+
+   Sai uma linha de 44 caracteres terminada em `=`.
+
+2. **Guarde no gerenciador de senhas ANTES de qualquer outra coisa**, com um nome
+   como "Orari produção - chave da anamnese". Confirme que salvou.
+
+3. **No servidor**, grave a chave no `.env.production` **sem que ela apareça na tela
+   nem no histórico**. Cole a chave quando o comando pedir (ela não é exibida):
+
+   ```bash
+   cd ~/orari-backend
+   read -rs -p "Cole a chave e tecle Enter: " KEY; echo
+   echo "ANAMNESIS_ENCRYPTION_KEY=$KEY" >> .env.production
+   unset KEY
+   ```
+
+4. Confira que a linha existe, **sem mostrar o valor**:
+
+   ```bash
+   grep -c '^ANAMNESIS_ENCRYPTION_KEY=' .env.production   # deve imprimir 1
+   ```
+
+5. Suba (ou recrie) a API; se a chave estiver ausente ou malformada, o log diz:
+
+   ```bash
+   dcp up -d --force-recreate api
+   dcp logs --tail 30 api
+   ```
+
+Para o desenvolvimento local, o `.env` precisa ter uma chave própria (gere outra,
+**nunca reutilize a de produção**).
 
 **Primeiro teste, antes de o domínio funcionar:** deixe `API_DOMAIN=:80`. O Caddy
 serve só HTTP, e você testa por `http://IP_DO_SERVIDOR/`. É só para conferir que
@@ -473,6 +527,9 @@ cópia **fora do servidor**: um backup só dentro da máquina que quebrou não s
 Ele guarda dois arquivos: o **banco** (`orari-AAAA-MM-DD-HHMM.sql.gz`) e as **fotos
 e logos** (`uploads-AAAA-MM-DD-HHMM.tgz`). As fotos ficam num volume à parte, e sem
 o segundo arquivo elas se perderiam se o disco falhasse.
+
+**A chave da anamnese não entra neste backup** (ver a etapa 5.1): sem ela, as fichas
+do backup não podem ser lidas. Guarde-a no gerenciador de senhas.
 
 A pasta dos backups é `~/backups`. Como você entra como `root`, o `~` é `/root`, e
 o caminho real é `/root/backups` (no home do usuário, não na raiz `/` do sistema,
@@ -710,8 +767,8 @@ Antes de abrir a clientes reais:
 
 ## Segredos: o que nunca vai para o repositório nem para o chat
 
-`JWT_SECRET`, senha do banco, `DATABASE_URL`, senha do administrador, chaves SSH e
-tokens do GitHub. Eles ficam só no servidor (`.env.production`, com `chmod 600`) e
+`JWT_SECRET`, `ANAMNESIS_ENCRYPTION_KEY`, senha do banco, `DATABASE_URL`, senha do
+administrador, chaves SSH e tokens do GitHub. Eles ficam só no servidor (`.env.production`, com `chmod 600`) e
 em um gerenciador de senhas seu.
 
 ## Problemas comuns

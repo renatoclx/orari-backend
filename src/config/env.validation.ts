@@ -9,13 +9,20 @@ type Env = Record<string, string | undefined>;
 const isText = (value: string | undefined): value is string =>
   value !== undefined && value.trim() !== "";
 
+// Chave do AES-256: 32 bytes, que em base64 ocupam 44 caracteres (43 + "=").
+const ENCRYPTION_KEY_BYTES = 32;
+const isValidEncryptionKey = (key: string) =>
+  /^[A-Za-z0-9+/]{43}=$/.test(key) &&
+  Buffer.from(key, "base64").length === ENCRYPTION_KEY_BYTES;
+
 /**
  * Confere as variáveis de ambiente na subida da API: ela se recusa a iniciar,
  * com a lista do que está errado, em vez de falhar depois (ou, pior, subir com
  * configuração fraca). Usada pelo ConfigModule.
  *
  * Em produção (NODE_ENV=production) as regras são mais rígidas: segredo forte e
- * CORS com lista de origens.
+ * CORS com lista de origens. A chave de criptografia da anamnese vale em todo
+ * ambiente: não existe modo sem criptografia que possa vazar para produção.
  */
 export function validateEnv(config: Env): Env {
   const errors: string[] = [];
@@ -37,6 +44,16 @@ export function validateEnv(config: Env): Env {
     if (secret.toLowerCase().startsWith("change-me")) {
       errors.push("JWT_SECRET não pode ser o valor de exemplo em produção");
     }
+  }
+
+  if (!isText(config.ANAMNESIS_ENCRYPTION_KEY)) {
+    errors.push(
+      "ANAMNESIS_ENCRYPTION_KEY é obrigatória (gere com: openssl rand -base64 32)",
+    );
+  } else if (!isValidEncryptionKey(config.ANAMNESIS_ENCRYPTION_KEY)) {
+    errors.push(
+      "ANAMNESIS_ENCRYPTION_KEY deve ser uma chave de 32 bytes em base64 (gere com: openssl rand -base64 32)",
+    );
   }
 
   for (const name of ["JWT_EXPIRES_IN", "JWT_REFRESH_EXPIRES_IN"] as const) {

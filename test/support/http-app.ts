@@ -16,6 +16,7 @@ import { AppService } from "../../src/app.service";
 import { IS_PUBLIC_KEY } from "../../src/common/decorators/public.decorator";
 import { ROLES_KEY } from "../../src/common/decorators/roles.decorator";
 import { AddressController } from "../../src/modules/address/address.controller";
+import { AnamnesisController } from "../../src/modules/anamnesis/anamnesis.controller";
 import { AnamnesisTemplateController } from "../../src/modules/anamnesis/anamnesis-template.controller";
 import { AppointmentController } from "../../src/modules/appointment/appointment.controller";
 import {
@@ -53,6 +54,7 @@ import { UserService } from "../../src/modules/user/user.service";
 export const CONTROLLERS: Type<unknown>[] = [
   AppController,
   AddressController,
+  AnamnesisController,
   AnamnesisTemplateController,
   AppointmentController,
   AuditController,
