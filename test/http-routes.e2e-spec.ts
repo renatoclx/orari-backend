@@ -9,6 +9,9 @@ import {
   it,
   vi,
 } from "vitest";
+import { AnamnesisPdfService } from "../src/modules/anamnesis/anamnesis-pdf.service";
+import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
+import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
@@ -137,6 +140,10 @@ describe("Rotas HTTP", () => {
       ["DELETE /users/:id", ["SUPER_ADMIN", "ADMIN"]],
       // Auditoria: só o ADMIN; o SUPER_ADMIN não lê dados de saúde de outras empresas.
       ["GET /audit-logs", ["ADMIN"]],
+      // Modelos de anamnese: escrita só do ADMIN. A leitura não usa @Roles: o
+      // service confere o acesso (ADMIN ou profissional vinculado).
+      ["POST /anamnesis-templates", ["ADMIN"]],
+      ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 
@@ -300,6 +307,180 @@ describe("Rotas HTTP", () => {
         .set("Authorization", auth(http, "admin"))
         .send({ peopleId: "abc" })
         .expect(400);
+    });
+
+    it("modelo de anamnese: ADMIN cria, USER recebe 403 na escrita e a leitura chega ao service", async () => {
+      const templates = http.mockOf(AnamnesisTemplateService);
+      templates.create.mockClear();
+      const body = {
+        name: "Pilates",
+        questions: [{ label: "Dor", type: "SCALE" }],
+      };
+
+      await request(server())
+        .post("/anamnesis-templates")
+        .set("Authorization", auth(http, "user"))
+        .send(body)
+        .expect(403);
+      expect(templates.create).not.toHaveBeenCalled();
+
+      await request(server())
+        .post("/anamnesis-templates")
+        .set("Authorization", auth(http, "admin"))
+        .send(body)
+        .expect(201);
+      expect(templates.create).toHaveBeenCalledTimes(1);
+
+      // A leitura passa o usuário ao service, que decide o acesso (aqui simulado).
+      await request(server())
+        .get(`/anamnesis-templates/${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+      expect(templates.findOne).toHaveBeenCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ id: USERS.user.id, type: "USER" }),
+      );
+    });
+
+    it("ficha de anamnese: o acesso é conferido no service e o IP chega a ele", async () => {
+      const anamnesis = http.mockOf(AnamnesisService);
+      anamnesis.create.mockClear();
+      const body = {
+        clientId: ANY_UUID,
+        templateId: ANY_UUID,
+        answers: [{ questionId: ANY_UUID, value: { answer: true } }],
+      };
+
+      await request(server())
+        .post("/anamnesis")
+        .set("Authorization", auth(http, "user"))
+        .send(body)
+        .expect(201);
+      expect(anamnesis.create).toHaveBeenCalledWith(
+        expect.objectContaining({ clientId: ANY_UUID }),
+        expect.objectContaining({ id: USERS.user.id }),
+        expect.any(String),
+      );
+
+      await request(server())
+        .get(`/anamnesis?clientId=${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+    });
+
+    it("ficha de anamnese: o PDF sai com tipo, nome genérico e sem cache", async () => {
+      const pdf = http.mockOf(AnamnesisPdfService);
+      pdf.generate.mockClear();
+      pdf.generate.mockResolvedValue(Buffer.from("%PDF-1.4 teste"));
+
+      const response = await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+
+      expect(response.headers["content-type"]).toContain("application/pdf");
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(response.headers["content-disposition"]).toMatch(
+        /^inline; filename="ficha-anamnese-\d{4}-\d{2}-\d{2}\.pdf"$/,
+      );
+      // O histórico é impresso por padrão; includeHistory=false o omite.
+      expect(pdf.generate).toHaveBeenLastCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ includeHistory: true }),
+        expect.objectContaining({ id: USERS.user.id }),
+        expect.any(String),
+      );
+
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf?includeHistory=false`)
+        .set("Authorization", auth(http, "admin"))
+        .expect(200);
+      expect(pdf.generate).toHaveBeenLastCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ includeHistory: false }),
+        expect.anything(),
+        expect.anything(),
+      );
+
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf?includeHistory=talvez`)
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
+      await request(server())
+        .get("/anamnesis/nao-e-uuid/pdf")
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
+    });
+
+    it("ficha de anamnese: não tem edição nem exclusão e valida a entrada (400)", async () => {
+      for (const method of ["patch", "put", "delete"] as const) {
+        await request(server())
+          [method](`/anamnesis/${ANY_UUID}`)
+          .set("Authorization", auth(http, "admin"))
+          .expect(404);
+      }
+
+      const ok = { clientId: ANY_UUID, templateId: ANY_UUID, answers: [] };
+      for (const body of [
+        { ...ok, clientId: "x" },
+        { ...ok, answers: undefined },
+        { ...ok, consultationDate: "27/10/2026" },
+        { ...ok, companyId: COMPANY_B },
+        { ...ok, answers: [{ questionId: "x", value: 1 }] },
+        { ...ok, answers: [{ questionId: ANY_UUID }] },
+      ]) {
+        await request(server())
+          .post("/anamnesis")
+          .set("Authorization", auth(http, "admin"))
+          .send(body)
+          .expect(400);
+      }
+
+      // Acompanhamento: evolução obrigatória e limitada; data no formato certo.
+      for (const body of [
+        {},
+        { evolution: "   " },
+        { evolution: "a".repeat(10001) },
+        { evolution: "ok", consultationDate: "ontem" },
+        { evolution: "ok", appointmentId: "x" },
+        { evolution: "ok", kind: "INITIAL" },
+      ]) {
+        await request(server())
+          .post(`/anamnesis/${ANY_UUID}/entries`)
+          .set("Authorization", auth(http, "admin"))
+          .send(body)
+          .expect(400);
+      }
+      await request(server())
+        .post(`/anamnesis/${ANY_UUID}/entries`)
+        .set("Authorization", auth(http, "user"))
+        .send({ evolution: "Melhorou" })
+        .expect(201);
+
+      // A listagem exige o cliente; não há listagem geral.
+      await request(server())
+        .get("/anamnesis")
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
+    });
+
+    it("modelo de anamnese: recusa perguntas fora do formato (400)", async () => {
+      for (const questions of [
+        [],
+        [{ label: "Dor", type: "OUTRO" }],
+        [{ label: "a".repeat(401), type: "SCALE" }],
+        [{ label: "Dor", type: "SCALE", position: 2 }],
+      ]) {
+        await request(server())
+          .post("/anamnesis-templates")
+          .set("Authorization", auth(http, "admin"))
+          .send({ name: "Pilates", questions })
+          .expect(400);
+      }
     });
 
     it("deve recusar campos desconhecidos (400)", async () => {

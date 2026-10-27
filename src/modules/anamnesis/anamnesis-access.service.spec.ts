@@ -60,6 +60,16 @@ describe("AnamnesisAccessService", () => {
     await expect(service.canAccess(superAdminUser)).resolves.toBe(false);
   });
 
+  it("findProfessionalId devolve o profissional vinculado ativo ou null, também para o ADMIN", async () => {
+    prismaMock.people.findFirst.mockResolvedValueOnce({ id: "people-1" });
+    await expect(service.findProfessionalId(adminUser)).resolves.toBe(
+      "people-1",
+    );
+
+    prismaMock.people.findFirst.mockResolvedValueOnce(null);
+    await expect(service.findProfessionalId(adminUser)).resolves.toBeNull();
+  });
+
   it("ensureAccess recusa com 403 quando não há acesso", async () => {
     prismaMock.people.findFirst.mockResolvedValue(null);
 

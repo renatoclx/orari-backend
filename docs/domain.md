@@ -567,6 +567,8 @@ a evolução do cliente é acompanhada, visita a visita, na mesma ficha.
 | normalizedName | Nome sem acentos e em minúsculas, para busca |
 | description    | Descrição do modelo (opcional)               |
 | isActive       | Modelo ativo ou inativo                      |
+| createdAt      | Data de criação                              |
+| updatedAt      | Data da última alteração                     |
 
 ### Relacionamentos
 

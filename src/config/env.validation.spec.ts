@@ -6,6 +6,8 @@ const base = {
   JWT_SECRET: "um-segredo-qualquer",
   JWT_EXPIRES_IN: "15m",
   JWT_REFRESH_EXPIRES_IN: "7d",
+  // 32 bytes em base64.
+  ANAMNESIS_ENCRYPTION_KEY: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
 };
 
 const production = {
@@ -27,6 +29,26 @@ describe("validateEnv", () => {
   it.each(["DATABASE_URL", "JWT_SECRET"])("deve exigir %s", (name) => {
     expect(() => validateEnv({ ...base, [name]: undefined })).toThrow(name);
     expect(() => validateEnv({ ...base, [name]: "  " })).toThrow(name);
+  });
+
+  it("deve exigir a chave da anamnese em qualquer ambiente", () => {
+    const withoutKey = { ...base, ANAMNESIS_ENCRYPTION_KEY: undefined };
+
+    expect(() => validateEnv(withoutKey)).toThrow("ANAMNESIS_ENCRYPTION_KEY");
+    expect(() => validateEnv({ ...production, ...withoutKey })).toThrow(
+      "ANAMNESIS_ENCRYPTION_KEY",
+    );
+  });
+
+  it.each([
+    ["curta demais", "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"],
+    ["16 bytes", "AAECAwQFBgcICQoLDA0ODw=="],
+    ["64 bytes", "A".repeat(86) + "=="],
+    ["texto comum", "uma-senha-qualquer-que-nao-e-base64-valido!!"],
+  ])("deve recusar a chave da anamnese %s", (_, key) => {
+    expect(() =>
+      validateEnv({ ...base, ANAMNESIS_ENCRYPTION_KEY: key }),
+    ).toThrow("ANAMNESIS_ENCRYPTION_KEY");
   });
 
   it.each(["JWT_EXPIRES_IN", "JWT_REFRESH_EXPIRES_IN"])(

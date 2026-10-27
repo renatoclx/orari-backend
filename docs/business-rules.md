@@ -329,12 +329,12 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - Um modelo pertence à empresa do usuário que o cadastrou; a empresa não é informada no payload.
 - O nome do modelo é obrigatório e único entre os modelos da mesma empresa, sem diferenciar maiúsculas nem acentos.
 - Não há exclusão: o modelo é inativado (`isActive`) e pode ser reativado. Um modelo inativo não inicia novas fichas; as fichas já existentes continuam acessíveis e recebendo acompanhamentos.
-- Cada modelo tem **versões** numeradas a partir de 1. Criar o modelo cria a versão 1. Editar as perguntas cria uma nova versão (a lista informada substitui a anterior). Uma versão existente nunca muda. Renomear ou inativar o modelo não cria versão.
+- Cada modelo tem **versões** numeradas a partir de 1. Criar o modelo cria a versão 1. Editar as perguntas cria uma nova versão (a lista informada substitui a anterior); reenviar a mesma lista também cria uma nova versão. Uma versão existente nunca muda. Renomear ou inativar o modelo não cria versão.
 - Quem cria, edita e inativa modelos é **somente o ADMIN**. Os profissionais consultam os modelos e os usam para preencher fichas.
 
 ### Perguntas
 
-- Um modelo precisa de ao menos uma pergunta.
+- Um modelo precisa de ao menos uma pergunta. A ordem é a da lista enviada: o servidor numera as perguntas de 1 em diante, e o cliente não informa posição.
 - A ordem das perguntas pode ser alterada no frontend antes de enviar para salvar.
 - O texto da pergunta é obrigatório. O texto de ajuda é opcional.
 - Tipos: texto curto, texto longo, sim ou não, escolha única, escolha múltipla, número, data e escala de 0 a 10.
@@ -352,7 +352,8 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - O **acompanhamento** registra o que o profissional observou na consulta: a evolução (texto obrigatório) e, se algo mudou, as respostas atualizadas, **só das perguntas alteradas**.
 - O acompanhamento pode apontar o agendamento da visita; ele deve ser do mesmo cliente e da mesma empresa.
 - A **data da consulta** é informada no registro: o padrão é hoje no fuso da empresa, pode ser passada (para lançar um acompanhamento esquecido), não pode ser futura nem anterior à data do registro inicial.
-- Os registros são **imutáveis**: não há edição nem exclusão pela API. Para corrigir, cria-se um novo acompanhamento.
+- Os registros são **imutáveis**: não há edição nem exclusão pela API. Para corrigir, cria-se um novo acompanhamento. Um acompanhamento atualiza respostas, mas não as apaga: não há como limpar uma resposta já dada.
+- As fichas de um cliente são listadas pelo cliente (`clientId` obrigatório): não existe listagem geral de fichas da empresa.
 - A **situação atual** da ficha é a resposta mais recente de cada pergunta; o histórico completo, em ordem de data, continua disponível.
 - Cliente inativo: as fichas continuam legíveis, mas não recebem novos registros.
 - Cada registro guarda o usuário que o gravou e, se ele for vinculado a um profissional, esse profissional.
@@ -382,8 +383,11 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 ### PDF para impressão
 
 - A ficha é exportada em PDF, **gerado no backend**; a impressão é feita pelo frontend.
-- O PDF traz os dados da clínica e do cliente, o modelo e a versão, a situação atual de cada pergunta, o histórico de acompanhamentos (data, profissional, evolução e respostas alteradas), as linhas de assinatura do cliente e do profissional, a data e hora da emissão no fuso da empresa e a paginação. A assinatura é conferida manualmente.
-- Cada geração de PDF fica registrada na auditoria.
+- O PDF tem duas partes. A **ficha** é o que o cliente assina: traz os dados da clínica (nome, CPF/CNPJ, contato e endereço principais), os do cliente (nome, idade, CPF, telefone e endereço principais), o modelo e a versão, e as respostas do **registro inicial** (não as atualizações posteriores, para que o papel assinado reflita o que o cliente declarou), com a linha de assinatura **só do cliente**. A assinatura é conferida manualmente.
+- O **histórico de acompanhamento** vem em página própria: cada registro com a data da consulta, o profissional (ou o usuário, sem vínculo), a evolução e as respostas atualizadas. É controle do profissional, anotado conforme a evolução do cliente, e **não leva assinatura**. A ficha continua como foi assinada: o histórico só cresce, com novos acompanhamentos.
+- Como o histórico é do profissional, o PDF pode ser emitido **sem ele** (`includeHistory=false`), para a via do cliente. O padrão é incluí-lo.
+- Todas as páginas trazem o nome da clínica, a data e hora da emissão no fuso da empresa e a paginação. A **logomarca** da clínica aparece no cabeçalho de todas as páginas, quando existe e é PNG ou JPEG (o único formato aceito no upload). Sem logo, ou com um valor que não seja um arquivo de logo válido, o PDF sai só com o nome da clínica, sem erro.
+- Cada geração de PDF fica registrada na auditoria, e o arquivo só é entregue se o registro for gravado. O PDF não é guardado em cache.
 
 ### Fora desta versão
 

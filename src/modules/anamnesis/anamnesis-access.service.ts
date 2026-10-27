@@ -17,8 +17,16 @@ export class AnamnesisAccessService {
       return true;
     }
 
-    // Consulta pelo lado do profissional: vale só enquanto ele estiver ativo
-    // (inativar o profissional suspende o acesso sem desfazer o vínculo).
+    return (await this.findProfessionalId(user)) !== null;
+  }
+
+  /**
+   * Profissional ativo da empresa ao qual o usuário está vinculado, ou null.
+   * Consulta pelo lado do profissional: vale só enquanto ele estiver ativo
+   * (inativar o profissional suspende o acesso sem desfazer o vínculo). Também
+   * serve ao ADMIN vinculado, para registrar o profissional no autor do registro.
+   */
+  async findProfessionalId(user: AuthenticatedUser): Promise<string | null> {
     const professional = await this.prisma.people.findFirst({
       where: {
         companyId: user.companyId,
@@ -29,7 +37,7 @@ export class AnamnesisAccessService {
       select: { id: true },
     });
 
-    return professional !== null;
+    return professional?.id ?? null;
   }
 
   // Versão para os services: recusa com 403 quando não há acesso.
