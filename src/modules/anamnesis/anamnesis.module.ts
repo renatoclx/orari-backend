@@ -1,9 +1,11 @@
 import { Module } from "@nestjs/common";
 import { AnamnesisAccessService } from "./anamnesis-access.service";
+import { AnamnesisTemplateController } from "./anamnesis-template.controller";
+import { AnamnesisTemplateService } from "./anamnesis-template.service";
 
-// Por ora só a regra de acesso; modelos e fichas entram nas próximas etapas.
 @Module({
-  providers: [AnamnesisAccessService],
+  controllers: [AnamnesisTemplateController],
+  providers: [AnamnesisAccessService, AnamnesisTemplateService],
   exports: [AnamnesisAccessService],
 })
 export class AnamnesisModule {}

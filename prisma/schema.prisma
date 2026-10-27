@@ -27,10 +27,11 @@ model User {
   updatedAt DateTime?
   deletedAt DateTime?
 
-  company       Company        @relation(fields: [companyId], references: [id])
-  people        People?        @relation(fields: [peopleId], references: [id])
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
+  company                   Company                    @relation(fields: [companyId], references: [id])
+  people                    People?                    @relation(fields: [peopleId], references: [id])
+  refreshTokens             RefreshToken[]
+  auditLogs                 AuditLog[]
+  anamnesisTemplateVersions AnamnesisTemplateVersion[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -143,6 +144,7 @@ model Company {
   businessHours         BusinessHour[]
   notifications         Notification[]
   auditLogs             AuditLog[]
+  anamnesisTemplates    AnamnesisTemplate[]
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
@@ -581,6 +583,8 @@ model Notification {
 // que gravam o registro (a anamnese acrescentará as suas).
 enum AuditAction {
   USER_LINK_CHANGED
+  ANAMNESIS_TEMPLATE_CREATED
+  ANAMNESIS_TEMPLATE_UPDATED
 }
 
 /**
@@ -607,4 +611,74 @@ model AuditLog {
   @@index([companyId, createdAt])
   @@index([companyId, clientId])
   @@map("audit_logs")
+}
+
+enum AnamnesisQuestionType {
+  SHORT_TEXT
+  LONG_TEXT
+  YES_NO
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  NUMBER
+  DATE
+  SCALE
+}
+
+// Modelo de ficha de anamnese da empresa. Não é excluído: é inativado (isActive).
+model AnamnesisTemplate {
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação (ver normalizeForSearch):
+  // sustenta a busca e a unicidade do nome sem diferenciar maiúsculas nem acentos.
+  normalizedName String
+  description    String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company  Company                    @relation(fields: [companyId], references: [id])
+  versions AnamnesisTemplateVersion[]
+
+  @@unique([companyId, normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("anamnesis_templates")
+}
+
+// Conjunto de perguntas do modelo em um momento. Imutável: editar as perguntas
+// cria a versão seguinte, sem exclusão física (as fichas ficam presas à versão).
+model AnamnesisTemplateVersion {
+  id          String   @id @default(uuid())
+  templateId  String
+  version     Int
+  createdById String
+  createdAt   DateTime @default(now())
+
+  template  AnamnesisTemplate   @relation(fields: [templateId], references: [id])
+  createdBy User                @relation(fields: [createdById], references: [id])
+  questions AnamnesisQuestion[]
+
+  // Também barra duas edições simultâneas que gerariam o mesmo número de versão.
+  @@unique([templateId, version])
+  @@map("anamnesis_template_versions")
+}
+
+model AnamnesisQuestion {
+  id          String                @id @default(uuid())
+  versionId   String
+  // Posição na lista (de 1 em diante), definida pela ordem em que o front envia as perguntas.
+  position    Int
+  label       String
+  helpText    String?
+  type        AnamnesisQuestionType
+  isRequired  Boolean               @default(false)
+  // Só para escolha única e múltipla; vazio nos demais tipos.
+  options     String[]
+  // Só para sim ou não (ex.: "Qual?").
+  detailLabel String?
+
+  version AnamnesisTemplateVersion @relation(fields: [versionId], references: [id])
+
+  @@unique([versionId, position])
+  @@map("anamnesis_questions")
 }

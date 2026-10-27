@@ -71,6 +71,8 @@ Todas as entidades persistentes devem possuir:
 - **RecurringDay**: faz parte do agendamento recorrente e é substituído em bloco junto com ele, por isso usa exclusão física (`onDelete: Cascade`). Não utiliza `deletedAt`.
 - **Notification**: não possui exclusão; é resolvida (`resolvedAt`). Não utiliza `deletedAt`.
 - **AuditLog**: registro de auditoria; só recebe inserções e não é alterado nem excluído pela API. Não utiliza `deletedAt` nem `updatedAt`. Não tem relação com o cliente (`clientId`): o registro vale mesmo que o cliente seja removido.
+- **AnamnesisTemplate**: não possui exclusão; é inativado (`isActive`). Não utiliza `deletedAt`.
+- **AnamnesisTemplateVersion** e **AnamnesisQuestion**: imutáveis, sem exclusão nem alteração pela API (editar o modelo cria uma versão nova); as fichas ficam presas à versão em que nasceram. Não utilizam `deletedAt`.
 - **RefreshToken**: não é uma entidade de domínio, é um artefato de sessão (ver `auth.md`). Não possui exclusão; é revogado (`revokedAt`). Não utiliza `deletedAt`.
 
 ## Índices

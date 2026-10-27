@@ -9,6 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
@@ -137,6 +138,10 @@ describe("Rotas HTTP", () => {
       ["DELETE /users/:id", ["SUPER_ADMIN", "ADMIN"]],
       // Auditoria: só o ADMIN; o SUPER_ADMIN não lê dados de saúde de outras empresas.
       ["GET /audit-logs", ["ADMIN"]],
+      // Modelos de anamnese: escrita só do ADMIN. A leitura não usa @Roles: o
+      // service confere o acesso (ADMIN ou profissional vinculado).
+      ["POST /anamnesis-templates", ["ADMIN"]],
+      ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 
@@ -300,6 +305,54 @@ describe("Rotas HTTP", () => {
         .set("Authorization", auth(http, "admin"))
         .send({ peopleId: "abc" })
         .expect(400);
+    });
+
+    it("modelo de anamnese: ADMIN cria, USER recebe 403 na escrita e a leitura chega ao service", async () => {
+      const templates = http.mockOf(AnamnesisTemplateService);
+      templates.create.mockClear();
+      const body = {
+        name: "Pilates",
+        questions: [{ label: "Dor", type: "SCALE" }],
+      };
+
+      await request(server())
+        .post("/anamnesis-templates")
+        .set("Authorization", auth(http, "user"))
+        .send(body)
+        .expect(403);
+      expect(templates.create).not.toHaveBeenCalled();
+
+      await request(server())
+        .post("/anamnesis-templates")
+        .set("Authorization", auth(http, "admin"))
+        .send(body)
+        .expect(201);
+      expect(templates.create).toHaveBeenCalledTimes(1);
+
+      // A leitura passa o usuário ao service, que decide o acesso (aqui simulado).
+      await request(server())
+        .get(`/anamnesis-templates/${ANY_UUID}`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+      expect(templates.findOne).toHaveBeenCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ id: USERS.user.id, type: "USER" }),
+      );
+    });
+
+    it("modelo de anamnese: recusa perguntas fora do formato (400)", async () => {
+      for (const questions of [
+        [],
+        [{ label: "Dor", type: "OUTRO" }],
+        [{ label: "a".repeat(401), type: "SCALE" }],
+        [{ label: "Dor", type: "SCALE", position: 2 }],
+      ]) {
+        await request(server())
+          .post("/anamnesis-templates")
+          .set("Authorization", auth(http, "admin"))
+          .send({ name: "Pilates", questions })
+          .expect(400);
+      }
     });
 
     it("deve recusar campos desconhecidos (400)", async () => {
