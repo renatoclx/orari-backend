@@ -588,6 +588,8 @@ model Notification {
 // que gravam o registro (a anamnese acrescentará as suas).
 enum AuditAction {
   USER_LINK_CHANGED
+  USER_TYPE_CHANGED
+  USER_RESTORED
   ANAMNESIS_TEMPLATE_CREATED
   ANAMNESIS_TEMPLATE_UPDATED
   ANAMNESIS_VIEWED

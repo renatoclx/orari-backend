@@ -493,3 +493,10 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **`/auth/me`:** `professional` só vale para `PROFESSIONAL`; novo `person` (`{ id, name, type, profession }`) traz a pessoa vinculada ativa, profissional ou funcionário.
 - **`GET /users`:** cada usuário traz `people: { type, profession } | null`, para a tela mostrar a "Função" sem outra chamada.
 - **Permissão da anamnese:** inalterada (`AnamnesisAccessService` continua exigindo `PROFESSIONAL`): o funcionário não acessa fichas.
+
+## 2.43 Auditoria de quem recebe acesso à anamnese
+
+- **Motivo:** o acesso às fichas vem do vínculo com profissional **ou** do tipo ADMIN, mas só o vínculo era auditado. Promover alguém a ADMIN, criar um ADMIN (inclusive o SUPER_ADMIN, em qualquer empresa) ou reativar um usuário com acesso não deixava rastro.
+- **Ações novas** (migration `20261027200000_user_type_audit`): `USER_TYPE_CHANGED` (criação com tipo ADMIN e toda mudança de tipo no `PATCH /users/:id`) e `USER_RESTORED` (reativação de usuário ADMIN ou com pessoa vinculada).
+- **Como:** mesmo molde do `USER_LINK_CHANGED`, agora num método único (`recordUserChange`), na mesma transação da alteração e na empresa do usuário alterado. O `restore` passou a usar transação interativa (o `revokeSessions` aceita o `tx`) e recebe o IP no controller.
+- **Fora do escopo:** guardar o tipo anterior e o novo (exigiria um campo de detalhes no `AuditLog`).

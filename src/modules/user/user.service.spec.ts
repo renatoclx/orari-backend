@@ -258,6 +258,12 @@ describe("UserService", () => {
     });
 
     it("SUPER_ADMIN cria na empresa informada, que precisa estar ativa", async () => {
+      prismaMock.user.create.mockResolvedValue({
+        ...storedUser,
+        type: "ADMIN",
+        companyId: OTHER_COMPANY_ID,
+      });
+
       await userService.create(
         { ...dto, type: "ADMIN", companyId: OTHER_COMPANY_ID },
         superAdminUser,
@@ -273,6 +279,37 @@ describe("UserService", () => {
             type: "ADMIN",
           }) as unknown,
         }),
+      );
+      // Nascer ADMIN dá acesso à anamnese: fica registrado na empresa do usuário.
+      expect(auditServiceMock.record).toHaveBeenCalledWith(
+        {
+          companyId: OTHER_COMPANY_ID,
+          userId: superAdminUser.id,
+          action: "USER_TYPE_CHANGED",
+          entityType: "USER",
+          entityId: storedUser.id,
+          ip: undefined,
+        },
+        prismaMock,
+      );
+    });
+
+    it("ADMIN que cria outro ADMIN audita na mesma transação", async () => {
+      prismaMock.user.create.mockResolvedValue({
+        ...storedUser,
+        type: "ADMIN",
+      });
+
+      await userService.create(
+        { ...dto, type: "ADMIN" },
+        adminUser,
+        "10.0.0.1",
+      );
+
+      expect(auditServiceMock.record).toHaveBeenCalledTimes(1);
+      expect(auditServiceMock.record).toHaveBeenCalledWith(
+        containing({ action: "USER_TYPE_CHANGED", ip: "10.0.0.1" }),
+        prismaMock,
       );
     });
 
@@ -375,6 +412,10 @@ describe("UserService", () => {
   describe("update", () => {
     it("deve atualizar sem expor a senha e registrando o updatedAt", async () => {
       prismaMock.user.findFirst.mockResolvedValue(storedUser);
+      prismaMock.user.update.mockResolvedValue({
+        ...storedUser,
+        type: "ADMIN",
+      });
 
       await userService.update("user-2", { type: "ADMIN" }, adminUser);
 
@@ -382,6 +423,61 @@ describe("UserService", () => {
         where: { id: "user-2" },
         data: { type: "ADMIN", updatedAt: anyDate },
         omit,
+      });
+    });
+
+    describe("auditoria da mudança de tipo", () => {
+      it.each([
+        ["promove a ADMIN", "USER", "ADMIN"],
+        ["tira do ADMIN", "ADMIN", "USER"],
+      ])("%s e audita na mesma transação", async (_, from, to) => {
+        prismaMock.user.findFirst.mockResolvedValue({
+          ...storedUser,
+          type: from,
+        });
+        prismaMock.user.update.mockResolvedValue({ ...storedUser, type: to });
+
+        await userService.update(
+          "user-2",
+          { type: to as "USER" | "ADMIN" },
+          adminUser,
+          "10.0.0.1",
+        );
+
+        expect(auditServiceMock.record).toHaveBeenCalledWith(
+          {
+            companyId: COMPANY_ID,
+            userId: adminUser.id,
+            action: "USER_TYPE_CHANGED",
+            entityType: "USER",
+            entityId: storedUser.id,
+            ip: "10.0.0.1",
+          },
+          prismaMock,
+        );
+      });
+
+      it("reenviar o mesmo tipo ou alterar só o nome não audita", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(storedUser);
+        prismaMock.user.update.mockResolvedValue(storedUser);
+
+        await userService.update("user-2", { type: "USER" }, adminUser);
+        await userService.update("user-2", { name: "Outro" }, adminUser);
+
+        expect(auditServiceMock.record).not.toHaveBeenCalled();
+      });
+
+      it("não altera o tipo se a auditoria falhar", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(storedUser);
+        prismaMock.user.update.mockResolvedValue({
+          ...storedUser,
+          type: "ADMIN",
+        });
+        auditServiceMock.record.mockRejectedValueOnce(new Error("db fora"));
+
+        await expect(
+          userService.update("user-2", { type: "ADMIN" }, adminUser),
+        ).rejects.toThrow("db fora");
       });
     });
 
@@ -585,7 +681,7 @@ describe("UserService", () => {
 
       expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
         where: { id: "user-2", ...withDeleted(visibleToAdmin) },
-        select: { deletedAt: true },
+        select: { deletedAt: true, type: true, peopleId: true },
       });
       expect(prismaMock.user.update).toHaveBeenCalledWith({
         where: { id: "user-2" },
@@ -595,6 +691,33 @@ describe("UserService", () => {
       // Tokens de antes da inativação não voltam a valer.
       expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
         revokeSessionsOf("user-2"),
+      );
+      // Usuário comum sem vínculo não volta a ter acesso à anamnese.
+      expect(auditServiceMock.record).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["ADMIN", { type: "ADMIN", peopleId: null }],
+      ["vinculado a uma pessoa", { type: "USER", peopleId: "people-1" }],
+    ])("reativar usuário %s audita na mesma transação", async (_, user) => {
+      prismaMock.user.findFirst.mockResolvedValue({
+        deletedAt: new Date(),
+        ...user,
+      });
+      prismaMock.user.update.mockResolvedValue({ ...storedUser, ...user });
+
+      await userService.restore("user-2", adminUser, "10.0.0.1");
+
+      expect(auditServiceMock.record).toHaveBeenCalledWith(
+        {
+          companyId: COMPANY_ID,
+          userId: adminUser.id,
+          action: "USER_RESTORED",
+          entityType: "USER",
+          entityId: storedUser.id,
+          ip: "10.0.0.1",
+        },
+        prismaMock,
       );
     });
 
