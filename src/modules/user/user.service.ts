@@ -29,6 +29,12 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 
 export type PublicUser = Omit<User, "password">;
 
+// Item da listagem: o usuário e, se houver vínculo, o tipo e o cargo da pessoa
+// (a tela mostra a "Função" sem outra chamada).
+export type UserListItem = PublicUser & {
+  people: { type: PeopleType; profession: string | null } | null;
+};
+
 const PASSWORD_SALT_ROUNDS = 10;
 
 // O hash da senha nunca deve sair nas respostas da API (ver docs/auth.md).
@@ -40,8 +46,16 @@ const profileSelect = {
   name: true,
   email: true,
   type: true,
-  // Profissional vinculado; só vale enquanto ativo (o deletedAt decide no AuthService).
-  people: { select: { id: true, name: true, deletedAt: true } },
+  // Pessoa vinculada (profissional ou funcionário); só vale enquanto ativa (o deletedAt decide no AuthService).
+  people: {
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      profession: true,
+      deletedAt: true,
+    },
+  },
   company: {
     select: {
       id: true,
@@ -101,7 +115,7 @@ export class UserService {
     this.ensureCanAssignType(dto.type, currentUser);
     const companyId = await this.resolveTargetCompany(dto, currentUser);
     if (dto.peopleId) {
-      await this.ensureLinkableProfessional(dto.peopleId, companyId);
+      await this.ensureLinkablePerson(dto.peopleId, companyId);
     }
 
     try {
@@ -133,7 +147,7 @@ export class UserService {
   async findAll(
     { page, limit, companyId }: FindUsersQueryDto,
     currentUser: AuthenticatedUser,
-  ): Promise<PaginatedResult<PublicUser>> {
+  ): Promise<PaginatedResult<UserListItem>> {
     // A listagem traz ativos e inativos (o status vem do deletedAt), para que
     // um usuário inativado possa ser reativado.
     const where = this.visibleTo(currentUser, companyId, {
@@ -144,6 +158,7 @@ export class UserService {
       this.prisma.user.findMany({
         where,
         omit: omitPassword,
+        include: { people: { select: { type: true, profession: true } } },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -190,7 +205,7 @@ export class UserService {
     const linkChanged =
       dto.peopleId !== undefined && dto.peopleId !== user.peopleId;
     if (linkChanged && dto.peopleId) {
-      await this.ensureLinkableProfessional(dto.peopleId, user.companyId, id);
+      await this.ensureLinkablePerson(dto.peopleId, user.companyId, id);
     }
 
     try {
@@ -273,7 +288,7 @@ export class UserService {
       // usuário pode ter assumido um deles.
       throw isUniqueConstraintViolation(error)
         ? new ConflictException(
-            "Não é possível reativar: o e-mail ou o profissional vinculado já está em uso por outro usuário ativo",
+            "Não é possível reativar: o e-mail ou a pessoa vinculada já está em uso por outro usuário ativo",
           )
         : error;
     }
@@ -386,32 +401,33 @@ export class UserService {
     }
     return new ConflictException(
       linkInvolved
-        ? "Já existe um usuário com este e-mail ou com este profissional vinculado"
+        ? "Já existe um usuário com este e-mail ou com esta pessoa vinculada"
         : "Já existe um usuário com este e-mail",
     );
   }
 
   /**
-   * O profissional do vínculo deve ser uma pessoa ativa do tipo PROFESSIONAL da
-   * empresa do usuário e não pode estar ligado a outro usuário ativo.
+   * A pessoa do vínculo deve estar ativa, ser da empresa do usuário e do tipo
+   * PROFESSIONAL ou EMPLOYEE (cliente não tem acesso), e não pode estar ligada a
+   * outro usuário ativo.
    */
-  private async ensureLinkableProfessional(
+  private async ensureLinkablePerson(
     peopleId: string,
     companyId: string,
     userId?: string,
   ): Promise<void> {
-    const professional = await this.prisma.people.findFirst({
+    const person = await this.prisma.people.findFirst({
       where: {
         id: peopleId,
         companyId,
-        type: PeopleType.PROFESSIONAL,
+        type: { in: [PeopleType.PROFESSIONAL, PeopleType.EMPLOYEE] },
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!professional) {
+    if (!person) {
       throw new BadRequestException(
-        "peopleId deve ser um profissional ativo da empresa do usuário",
+        "peopleId deve ser um profissional ou funcionário ativo da empresa do usuário",
       );
     }
 
@@ -425,7 +441,7 @@ export class UserService {
     });
     if (linkedUser) {
       throw new ConflictException(
-        "O profissional já está vinculado a outro usuário",
+        "Esta pessoa já está vinculada a outro usuário",
       );
     }
   }

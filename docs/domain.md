@@ -96,12 +96,12 @@
 | password  | Senha para login                                                     |
 | type      | Tipo de usuário                                                      |
 | companyId | Código da empresa                                                    |
-| peopleId  | Código do profissional vinculado ao usuário (opcional, ver Anamnese) |
+| peopleId  | Código da pessoa vinculada ao usuário: profissional ou funcionário (opcional, ver Anamnese) |
 
 ### Relacionamentos
 
 - Uma usuário pertence a uma empresa
-- Um usuário pode estar vinculado a uma pessoa do tipo PROFESSIONAL (People)
+- Um usuário pode estar vinculado a uma pessoa do tipo PROFESSIONAL ou EMPLOYEE (People)
 
 ---
 

@@ -35,7 +35,7 @@
 - Um usuário autenticado perde o acesso imediatamente quando é excluído ou quando sua empresa fica inativa.
 - A exclusão é lógica (inativação): preenche o `deletedAt`. A listagem (`GET /users`) traz ativos e inativos; consultar, alterar, trocar a senha e excluir valem só para ativos (inativo responde 404).
 - Um usuário inativado pode ser reativado por `PATCH /users/:id/restore` (limpa o `deletedAt`), pelos mesmos perfis e com o mesmo alcance da gestão de usuários. Reativar um usuário já ativo responde 409; se o e-mail dele estiver em uso por outro usuário ativo, também responde 409.
-- Um usuário pode ser vinculado a um profissional (pessoa do tipo `PROFESSIONAL`, ativa e da mesma empresa); o vínculo é o que dá acesso às fichas de anamnese (ver Anamnese, em desenho).
+- Um usuário pode ser vinculado a uma pessoa ativa da mesma empresa, do tipo `PROFESSIONAL` ou `EMPLOYEE` (funcionário: recepção, secretaria). Só o vínculo com um **profissional** dá acesso às fichas de anamnese (ver Anamnese); o vínculo com funcionário identifica a função do usuário, e o acesso dele será tratado à parte. Uma pessoa se liga a no máximo um usuário ativo.
 
 ## Senhas
 
@@ -363,7 +363,7 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - Veem e registram fichas: o **ADMIN** e o usuário **vinculado a um profissional ativo** da empresa. Os demais recebem 403.
 - Quem tem acesso vê as fichas de **todos os clientes da empresa**.
 - O SUPER_ADMIN não acessa fichas, salvo se estiver vinculado a um profissional da própria empresa. Fichas de outras empresas respondem 404, como os demais dados.
-- O **vínculo** entre usuário e profissional é opcional e único: um usuário se liga a uma pessoa do tipo `PROFESSIONAL`, ativa e da mesma empresa, e um profissional se liga a no máximo um usuário ativo. ADMIN e SUPER_ADMIN definem e alteram o vínculo. O `/auth/me` informa o profissional vinculado.
+- O **vínculo** entre usuário e profissional é opcional e único: um usuário se liga a uma pessoa do tipo `PROFESSIONAL` (ou `EMPLOYEE`, sem acesso à anamnese), ativa e da mesma empresa, e uma pessoa se liga a no máximo um usuário ativo. ADMIN e SUPER_ADMIN definem e alteram o vínculo. O `/auth/me` informa o profissional vinculado (`professional`) e a pessoa vinculada (`person`).
 - O acesso por vínculo vale enquanto o profissional estiver ativo.
 
 ### Segurança e privacidade

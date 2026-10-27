@@ -4,7 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import ms, { type StringValue } from "ms";
-import { UserType } from "../../../generated/prisma/enums";
+import { PeopleType, UserType } from "../../../generated/prisma/enums";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { UserService } from "../user/user.service";
@@ -32,8 +32,16 @@ export interface MeResponse {
   name: string;
   email: string;
   type: UserType;
-  // Profissional vinculado ativo (o front mostra o menu de anamnese por ele); null se não houver.
+  // Profissional vinculado ativo (o front mostra o menu de anamnese por ele); null se não houver
+  // ou se o vínculo for com um funcionário.
   professional: { id: string; name: string } | null;
+  // Pessoa vinculada ativa, profissional ou funcionário, com o cargo (base do controle de acesso por função).
+  person: {
+    id: string;
+    name: string;
+    type: PeopleType;
+    profession: string | null;
+  } | null;
   company: {
     id: string;
     // Nome fantasia; sem ele, a razão social.
@@ -88,14 +96,23 @@ export class AuthService {
     }
 
     const { company, people, ...user } = profile;
+    const activePerson = people && !people.deletedAt ? people : null;
 
     return {
       ...user,
-      // Profissional inativo não conta como vínculo.
+      // Pessoa inativa não conta como vínculo; só o profissional dá acesso à anamnese.
       professional:
-        people && !people.deletedAt
-          ? { id: people.id, name: people.name }
+        activePerson?.type === PeopleType.PROFESSIONAL
+          ? { id: activePerson.id, name: activePerson.name }
           : null,
+      person: activePerson
+        ? {
+            id: activePerson.id,
+            name: activePerson.name,
+            type: activePerson.type,
+            profession: activePerson.profession,
+          }
+        : null,
       company: {
         id: company.id,
         name: company.fantasyName ?? company.corporateReason,

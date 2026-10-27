@@ -486,3 +486,10 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Conteúdo:** a ficha mostra as respostas do **registro inicial** e a assinatura só do cliente; o histórico vai em página própria, sem assinatura. Cliente com nome, idade (no fuso da empresa), CPF, telefone e endereço principais; clínica com nome, CPF/CNPJ, contato e endereço. Rodapé com emissão no fuso da empresa e paginação.
 - **Auditoria:** `ANAMNESIS_PDF_GENERATED` (migration `20261027180000_anamnesis_pdf_audit`), gravada antes da entrega. `AnamnesisService.getView` monta a ficha com o controle de acesso e sem auditar, para que o PDF não registre também uma leitura.
 - **Logomarca:** no cabeçalho de todas as páginas, em caixa de 120×30 (mantém a proporção). Só é lida se o `logoUrl` está na pasta de logos (`/uploads/companies/`); o formato é conferido pelo conteúdo (`detectImageExtension`: PNG ou JPEG) e vai ao pdfmake como data URL. Qualquer problema (sem logo, URL externa, arquivo ausente ou de outro formato) gera o PDF sem logo, nunca erro. Para isso o `LocalFileStorage` ganhou `read` (com a mesma proteção contra caminhos fora de `uploads` do `remove`): continua sendo o único ponto a trocar quando as imagens forem para a nuvem.
+
+## 2.42 Vínculo do usuário com funcionário
+
+- **`users.peopleId`** passa a aceitar também uma pessoa `EMPLOYEE` ativa da empresa (antes, só `PROFESSIONAL`). Sem migration: o campo e o índice único parcial já serviam. A mensagem do 400 e a do 409 falam em "pessoa".
+- **`/auth/me`:** `professional` só vale para `PROFESSIONAL`; novo `person` (`{ id, name, type, profession }`) traz a pessoa vinculada ativa, profissional ou funcionário.
+- **`GET /users`:** cada usuário traz `people: { type, profession } | null`, para a tela mostrar a "Função" sem outra chamada.
+- **Permissão da anamnese:** inalterada (`AnamnesisAccessService` continua exigindo `PROFESSIONAL`): o funcionário não acessa fichas.

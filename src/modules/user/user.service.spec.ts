@@ -129,7 +129,15 @@ describe("UserService", () => {
           name: true,
           email: true,
           type: true,
-          people: { select: { id: true, name: true, deletedAt: true } },
+          people: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              profession: true,
+              deletedAt: true,
+            },
+          },
           company: {
             select: {
               id: true,
@@ -173,7 +181,7 @@ describe("UserService", () => {
       });
     });
 
-    describe("vínculo com o profissional", () => {
+    describe("vínculo com o profissional ou funcionário", () => {
       const peopleId = "11111111-1111-4111-8111-111111111111";
       const linkedDto = { ...dto, peopleId };
 
@@ -184,12 +192,12 @@ describe("UserService", () => {
 
         await userService.create(linkedDto, adminUser, "10.0.0.1");
 
-        // Só profissional ativo da empresa do usuário é aceito.
+        // Só profissional ou funcionário ativo da empresa do usuário é aceito.
         expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
           where: {
             id: peopleId,
             companyId: COMPANY_ID,
-            type: "PROFESSIONAL",
+            type: { in: ["PROFESSIONAL", "EMPLOYEE"] },
             deletedAt: null,
           },
           select: { id: true },
@@ -207,7 +215,7 @@ describe("UserService", () => {
         );
       });
 
-      it("recusa pessoa que não é profissional ativo da empresa (400)", async () => {
+      it("recusa pessoa que não é profissional ou funcionário ativo da empresa (400)", async () => {
         prismaMock.people.findFirst.mockResolvedValue(null);
 
         await expect(

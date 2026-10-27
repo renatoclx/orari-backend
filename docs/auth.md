@@ -47,8 +47,11 @@
 
 - `GET /auth/me` (protegida) devolve o usuário do access token enviado: `id`,
   `name`, `email`, `type`, `professional` (`id` e `name` do profissional
-  vinculado ao usuário, ou `null` sem vínculo ou com o profissional inativo;
-  é por ele que o front mostra o menu de anamnese) e `company` (`id`, `name`,
+  vinculado ao usuário, ou `null` sem vínculo, com o profissional inativo ou
+  com vínculo a um funcionário; é por ele que o front mostra o menu de
+  anamnese), `person` (`id`, `name`, `type` e `profession` da pessoa vinculada,
+  profissional ou funcionário, ou `null` sem vínculo ou com a pessoa inativa;
+  base do futuro controle de acesso por função) e `company` (`id`, `name`,
   `timezone`, `logoUrl`).
   O `name` da empresa é o nome fantasia ou, sem ele, a razão social; o
   `timezone` permite ao front exibir os horários no fuso da empresa.

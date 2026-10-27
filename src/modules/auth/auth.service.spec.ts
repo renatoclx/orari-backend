@@ -93,6 +93,7 @@ describe("AuthService", () => {
         email: "ana@orari.local",
         type: "ADMIN",
         professional: null,
+        person: null,
         company: {
           id: "company-1",
           name: "Bem Estar",
@@ -117,7 +118,13 @@ describe("AuthService", () => {
     it("deve informar o profissional vinculado ativo", async () => {
       userServiceMock.findProfile.mockResolvedValue({
         ...profile,
-        people: { id: "people-1", name: "Dra. Paula", deletedAt: null },
+        people: {
+          id: "people-1",
+          name: "Dra. Paula",
+          type: "PROFESSIONAL",
+          profession: "Esteticista",
+          deletedAt: null,
+        },
       });
 
       const result = await authService.me("user-1");
@@ -126,17 +133,53 @@ describe("AuthService", () => {
         id: "people-1",
         name: "Dra. Paula",
       });
+      expect(result.person).toEqual({
+        id: "people-1",
+        name: "Dra. Paula",
+        type: "PROFESSIONAL",
+        profession: "Esteticista",
+      });
     });
 
-    it("não deve informar o profissional vinculado inativo", async () => {
+    it("funcionário vinculado aparece em person, mas não em professional", async () => {
       userServiceMock.findProfile.mockResolvedValue({
         ...profile,
-        people: { id: "people-1", name: "Dra. Paula", deletedAt: new Date() },
+        people: {
+          id: "people-2",
+          name: "Paula Recepção",
+          type: "EMPLOYEE",
+          profession: "Recepcionista",
+          deletedAt: null,
+        },
       });
 
       const result = await authService.me("user-1");
 
       expect(result.professional).toBeNull();
+      expect(result.person).toEqual({
+        id: "people-2",
+        name: "Paula Recepção",
+        type: "EMPLOYEE",
+        profession: "Recepcionista",
+      });
+    });
+
+    it("não deve informar o profissional vinculado inativo", async () => {
+      userServiceMock.findProfile.mockResolvedValue({
+        ...profile,
+        people: {
+          id: "people-1",
+          name: "Dra. Paula",
+          type: "PROFESSIONAL",
+          profession: null,
+          deletedAt: new Date(),
+        },
+      });
+
+      const result = await authService.me("user-1");
+
+      expect(result.professional).toBeNull();
+      expect(result.person).toBeNull();
     });
 
     it("deve recusar com 401 quando o usuário não existe mais", async () => {
