@@ -7,7 +7,11 @@ import {
 } from "@nestjs/common";
 import * as bcrypt from "bcrypt";
 import { Prisma, User } from "../../../generated/prisma/client";
-import { UserType } from "../../../generated/prisma/enums";
+import {
+  AuditAction,
+  PeopleType,
+  UserType,
+} from "../../../generated/prisma/enums";
 import {
   isSuperAdmin,
   resolveCompanyScope,
@@ -16,6 +20,7 @@ import { AuthenticatedUser } from "../../common/interfaces/authenticated-user.in
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 import { CompanyService } from "../company/company.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { FindUsersQueryDto } from "./dto/find-users-query.dto";
@@ -35,6 +40,8 @@ const profileSelect = {
   name: true,
   email: true,
   type: true,
+  // Profissional vinculado; só vale enquanto ativo (o deletedAt decide no AuthService).
+  people: { select: { id: true, name: true, deletedAt: true } },
   company: {
     select: {
       id: true,
@@ -62,6 +69,7 @@ export class UserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly companyService: CompanyService,
+    private readonly auditService: AuditService,
   ) {}
 
   // Uso exclusivo da autenticação: é a única consulta que retorna o hash da senha.
@@ -88,23 +96,37 @@ export class UserService {
   async create(
     dto: CreateUserDto,
     currentUser: AuthenticatedUser,
+    ip?: string,
   ): Promise<PublicUser> {
     this.ensureCanAssignType(dto.type, currentUser);
     const companyId = await this.resolveTargetCompany(dto, currentUser);
+    if (dto.peopleId) {
+      await this.ensureLinkableProfessional(dto.peopleId, companyId);
+    }
 
     try {
-      return await this.prisma.user.create({
-        data: {
-          name: dto.name,
-          email: dto.email,
-          password: await this.hashPassword(dto.password),
-          type: dto.type,
-          companyId,
-        },
-        omit: omitPassword,
+      // Usuário e auditoria do vínculo na mesma transação: sem rastro, sem vínculo.
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            name: dto.name,
+            email: dto.email,
+            password: await this.hashPassword(dto.password),
+            type: dto.type,
+            companyId,
+            peopleId: dto.peopleId,
+          },
+          omit: omitPassword,
+        });
+
+        if (dto.peopleId) {
+          await this.recordLinkChange(created, currentUser, ip, tx);
+        }
+
+        return created;
       });
     } catch (error) {
-      throw this.mapUniqueViolation(error);
+      throw this.mapUniqueViolation(error, Boolean(dto.peopleId));
     }
   }
 
@@ -152,6 +174,7 @@ export class UserService {
     id: string,
     dto: UpdateUserDto,
     currentUser: AuthenticatedUser,
+    ip?: string,
   ): Promise<PublicUser> {
     const user = await this.findOne(id, currentUser);
 
@@ -163,14 +186,29 @@ export class UserService {
       this.ensureCanAssignType(dto.type, currentUser);
     }
 
+    // Enviar o mesmo vínculo que já existe não muda nada (e não gera auditoria).
+    const linkChanged =
+      dto.peopleId !== undefined && dto.peopleId !== user.peopleId;
+    if (linkChanged && dto.peopleId) {
+      await this.ensureLinkableProfessional(dto.peopleId, user.companyId, id);
+    }
+
     try {
-      return await this.prisma.user.update({
-        where: { id },
-        data: { ...dto, updatedAt: new Date() },
-        omit: omitPassword,
+      return await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id },
+          data: { ...dto, updatedAt: new Date() },
+          omit: omitPassword,
+        });
+
+        if (linkChanged) {
+          await this.recordLinkChange(updated, currentUser, ip, tx);
+        }
+
+        return updated;
       });
     } catch (error) {
-      throw this.mapUniqueViolation(error);
+      throw this.mapUniqueViolation(error, linkChanged);
     }
   }
 
@@ -231,10 +269,11 @@ export class UserService {
 
       return restored;
     } catch (error) {
-      // O e-mail é único só entre ativos: outro usuário pode ter assumido o dele.
+      // E-mail e profissional vinculado são únicos só entre ativos: outro
+      // usuário pode ter assumido um deles.
       throw isUniqueConstraintViolation(error)
         ? new ConflictException(
-            "Não é possível reativar: o e-mail já está em uso por outro usuário ativo",
+            "Não é possível reativar: o e-mail ou o profissional vinculado já está em uso por outro usuário ativo",
           )
         : error;
     }
@@ -336,9 +375,78 @@ export class UserService {
     return bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
   }
 
-  private mapUniqueViolation(error: unknown): unknown {
-    return isUniqueConstraintViolation(error)
-      ? new ConflictException("Já existe um usuário com este e-mail")
-      : error;
+  /**
+   * O vínculo é conferido antes de gravar; se ainda assim o banco recusar (duas
+   * requisições ao mesmo tempo), a violação pode ser do e-mail ou do vínculo, e
+   * a mensagem cobre os dois quando o vínculo estava em jogo.
+   */
+  private mapUniqueViolation(error: unknown, linkInvolved = false): unknown {
+    if (!isUniqueConstraintViolation(error)) {
+      return error;
+    }
+    return new ConflictException(
+      linkInvolved
+        ? "Já existe um usuário com este e-mail ou com este profissional vinculado"
+        : "Já existe um usuário com este e-mail",
+    );
+  }
+
+  /**
+   * O profissional do vínculo deve ser uma pessoa ativa do tipo PROFESSIONAL da
+   * empresa do usuário e não pode estar ligado a outro usuário ativo.
+   */
+  private async ensureLinkableProfessional(
+    peopleId: string,
+    companyId: string,
+    userId?: string,
+  ): Promise<void> {
+    const professional = await this.prisma.people.findFirst({
+      where: {
+        id: peopleId,
+        companyId,
+        type: PeopleType.PROFESSIONAL,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!professional) {
+      throw new BadRequestException(
+        "peopleId deve ser um profissional ativo da empresa do usuário",
+      );
+    }
+
+    const linkedUser = await this.prisma.user.findFirst({
+      where: {
+        peopleId,
+        deletedAt: null,
+        ...(userId && { id: { not: userId } }),
+      },
+      select: { id: true },
+    });
+    if (linkedUser) {
+      throw new ConflictException(
+        "O profissional já está vinculado a outro usuário",
+      );
+    }
+  }
+
+  // Auditoria do vínculo: quem alterou (ator), qual usuário e quando; o alvo é o usuário.
+  private recordLinkChange(
+    target: PublicUser,
+    actor: AuthenticatedUser,
+    ip: string | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    return this.auditService.record(
+      {
+        companyId: target.companyId,
+        userId: actor.id,
+        action: AuditAction.USER_LINK_CHANGED,
+        entityType: "USER",
+        entityId: target.id,
+        ip,
+      },
+      tx,
+    );
   }
 }

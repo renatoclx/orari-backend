@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Ip,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -33,8 +34,10 @@ export class UserController {
   create(
     @Body() dto: CreateUserDto,
     @CurrentUser() currentUser: AuthenticatedUser,
+    // Registrado na auditoria quando o vínculo com o profissional muda.
+    @Ip() ip: string,
   ) {
-    return this.userService.create(dto, currentUser);
+    return this.userService.create(dto, currentUser, ip);
   }
 
   @Get()
@@ -58,8 +61,9 @@ export class UserController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
     @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
   ) {
-    return this.userService.update(id, dto, currentUser);
+    return this.userService.update(id, dto, currentUser, ip);
   }
 
   @Patch(":id/password")

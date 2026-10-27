@@ -25,6 +25,7 @@ import { AuthController } from "../../src/modules/auth/auth.controller";
 import { JwtAuthGuard } from "../../src/modules/auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../../src/modules/auth/guards/roles.guard";
 import { JwtStrategy } from "../../src/modules/auth/strategies/jwt.strategy";
+import { AuditController } from "../../src/modules/audit/audit.controller";
 import { BusinessHourController } from "../../src/modules/business-hour/business-hour.controller";
 import { CityController } from "../../src/modules/city/city.controller";
 import { ClientPlanController } from "../../src/modules/client-plan/client-plan.controller";
@@ -52,6 +53,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   AppController,
   AddressController,
   AppointmentController,
+  AuditController,
   AuthController,
   BusinessHourController,
   CityController,

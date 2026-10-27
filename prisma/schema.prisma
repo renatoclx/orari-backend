@@ -21,15 +21,21 @@ model User {
   password  String
   type      UserType
   companyId String
+  // Profissional (People do tipo PROFESSIONAL) que este usuário representa; dá acesso à anamnese.
+  peopleId  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime?
   deletedAt DateTime?
 
   company       Company        @relation(fields: [companyId], references: [id])
+  people        People?        @relation(fields: [peopleId], references: [id])
   refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
+  // Um profissional pertence a no máximo um usuário ativo (usuários sem vínculo não conflitam).
+  @@unique([peopleId], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
   @@map("users")
 }
@@ -136,6 +142,7 @@ model Company {
   paymentMethods        PaymentMethod[]
   businessHours         BusinessHour[]
   notifications         Notification[]
+  auditLogs             AuditLog[]
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
@@ -173,6 +180,7 @@ model People {
   recurringAsClient          RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                ClientPlan[]
+  users                      User[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
@@ -567,4 +575,36 @@ model Notification {
 
   @@index([companyId, resolvedAt])
   @@map("notifications")
+}
+
+// Ações sensíveis registradas na auditoria. Cresce junto com as funcionalidades
+// que gravam o registro (a anamnese acrescentará as suas).
+enum AuditAction {
+  USER_LINK_CHANGED
+}
+
+/**
+ * Registro de uma ação sensível: quem fez o quê, em qual alvo e quando. Só
+ * recebe inserções (sem deletedAt nem updatedAt): não é alterado nem excluído
+ * pela API (ver docs/database.md).
+ */
+model AuditLog {
+  id         String      @id @default(uuid())
+  companyId  String
+  userId     String
+  action     AuditAction
+  // Tipo e código do alvo da ação (ex.: USER e o id do usuário alterado).
+  entityType String
+  entityId   String
+  // Cliente a que a ação se refere, quando houver (sem relação: o registro vale mesmo se o cliente for removido).
+  clientId   String?
+  ip         String?
+  createdAt  DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([companyId, clientId])
+  @@map("audit_logs")
 }

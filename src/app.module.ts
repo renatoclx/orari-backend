@@ -4,7 +4,9 @@ import { AppController } from "./app.controller";
 import { validateEnv } from "./config/env.validation";
 import { AppService } from "./app.service";
 import { AddressModule } from "./modules/address/address.module";
+import { AnamnesisModule } from "./modules/anamnesis/anamnesis.module";
 import { AppointmentModule } from "./modules/appointment/appointment.module";
+import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BusinessHourModule } from "./modules/business-hour/business-hour.module";
 import { ClientPlanModule } from "./modules/client-plan/client-plan.module";
@@ -30,6 +32,8 @@ import { ScheduleModule } from "@nestjs/schedule";
       validate: validateEnv,
     }),
     PrismaModule,
+    AuditModule,
+    AnamnesisModule,
     AuthModule,
     StateModule,
     CityModule,
