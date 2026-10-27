@@ -12,6 +12,7 @@ import {
 } from "../../../generated/prisma/enums";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { toZonedParts } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -29,11 +30,13 @@ import { AnamnesisCryptoService } from "./anamnesis-crypto.service";
 import { CreateAnamnesisEntryDto } from "./dto/create-anamnesis-entry.dto";
 import { CreateAnamnesisDto } from "./dto/create-anamnesis.dto";
 import { FindAnamnesesQueryDto } from "./dto/find-anamneses-query.dto";
+import { FindAnamnesisClientsQueryDto } from "./dto/find-anamnesis-clients-query.dto";
 import { FindEntryAppointmentsQueryDto } from "./dto/find-entry-appointments-query.dto";
 
 const AUDIT_ANAMNESIS = "ANAMNESIS";
 const AUDIT_ENTRY = "ANAMNESIS_ENTRY";
 const AUDIT_CLIENT = "CLIENT";
+const AUDIT_COMPANY = "COMPANY";
 
 // Perguntas como o front as recebe (as mesmas do modelo, na versão da ficha).
 const questionSelect = {
@@ -112,6 +115,13 @@ export interface AnamnesisSummary {
   templateVersion: number;
   entriesCount: number;
   lastConsultationDate: Date | null;
+}
+
+export interface AnamnesisClientSummary {
+  clientId: string;
+  clientName: string;
+  isActive: boolean;
+  anamnesisCount: number;
 }
 
 /**
@@ -222,6 +232,66 @@ export class AnamnesisService {
         ? new ConflictException("O cliente já tem uma ficha deste modelo")
         : error;
     }
+  }
+
+  /**
+   * Clientes da empresa que têm ficha, com a quantidade (a tela "Fichas dos
+   * clientes"). Não há listagem geral de fichas: aqui vão só nome e contagem,
+   * nenhum conteúdo. Uma única consulta de auditoria cobre a página inteira, em
+   * vez de uma por cliente.
+   */
+  async findClients(
+    { page, limit, name }: FindAnamnesisClientsQueryDto,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+  ): Promise<PaginatedResult<AnamnesisClientSummary>> {
+    await this.accessService.ensureAccess(currentUser);
+    const { companyId } = currentUser;
+
+    // Cliente inativo entra: as fichas dele continuam legíveis.
+    const where: Prisma.PeopleWhereInput = {
+      companyId,
+      type: PeopleType.CLIENT,
+      anamnesesAsClient: { some: {} },
+      normalizedName: name ? { contains: normalizeForSearch(name) } : undefined,
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.people.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          deletedAt: true,
+          _count: { select: { anamnesesAsClient: true } },
+        },
+        orderBy: { name: "asc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.people.count({ where }),
+    ]);
+
+    // O registro de auditoria vem antes da resposta: se falhar, nada é entregue.
+    await this.auditService.record({
+      companyId,
+      userId: currentUser.id,
+      action: AuditAction.ANAMNESIS_LISTED,
+      entityType: AUDIT_COMPANY,
+      entityId: companyId,
+      ip,
+    });
+
+    return {
+      items: items.map((client) => ({
+        clientId: client.id,
+        clientName: client.name,
+        isActive: client.deletedAt === null,
+        anamnesisCount: client._count.anamnesesAsClient,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   /** Fichas de um cliente (resumo, sem respostas). */
