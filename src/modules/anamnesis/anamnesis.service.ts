@@ -235,8 +235,8 @@ export class AnamnesisService {
   }
 
   /**
-   * Clientes da empresa que têm ficha, com a quantidade (a tela "Fichas dos
-   * clientes"). Não há listagem geral de fichas: aqui vão só nome e contagem,
+   * Clientes da empresa que têm ficha, com a quantidade (a tela "Fichas
+   * preenchidas"). Não há listagem geral de fichas: aqui vão só nome e contagem,
    * nenhum conteúdo. Uma única consulta de auditoria cobre a página inteira, em
    * vez de uma por cliente.
    */
