@@ -54,6 +54,23 @@ describe("LocalFileStorage", () => {
     await expect(readFile(outside, "utf8")).resolves.toBe("não apagar");
     await rm(outside, { force: true });
   });
+
+  it("deve ler o arquivo de um caminho público", async () => {
+    const path = await storage.save("companies", Buffer.from("logo"), "png");
+
+    expect((await storage.read(path))?.toString()).toBe("logo");
+  });
+
+  it("read devolve null para arquivo inexistente e para caminho fora da pasta de uploads", async () => {
+    await expect(
+      storage.read("/uploads/companies/nao-existe.png"),
+    ).resolves.toBeNull();
+    await expect(storage.read("/uploads/../.env")).resolves.toBeNull();
+    await expect(storage.read("/etc/passwd")).resolves.toBeNull();
+    await expect(
+      storage.read("https://exemplo.com/logo.png"),
+    ).resolves.toBeNull();
+  });
 });
 
 describe("detectImageExtension", () => {

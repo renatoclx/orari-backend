@@ -383,8 +383,11 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 ### PDF para impressão
 
 - A ficha é exportada em PDF, **gerado no backend**; a impressão é feita pelo frontend.
-- O PDF traz os dados da clínica e do cliente, o modelo e a versão, a situação atual de cada pergunta, o histórico de acompanhamentos (data, profissional, evolução e respostas alteradas), as linhas de assinatura do cliente e do profissional, a data e hora da emissão no fuso da empresa e a paginação. A assinatura é conferida manualmente.
-- Cada geração de PDF fica registrada na auditoria.
+- O PDF tem duas partes. A **ficha** é o que o cliente assina: traz os dados da clínica (nome, CPF/CNPJ, contato e endereço principais), os do cliente (nome, idade, CPF, telefone e endereço principais), o modelo e a versão, e as respostas do **registro inicial** (não as atualizações posteriores, para que o papel assinado reflita o que o cliente declarou), com a linha de assinatura **só do cliente**. A assinatura é conferida manualmente.
+- O **histórico de acompanhamento** vem em página própria: cada registro com a data da consulta, o profissional (ou o usuário, sem vínculo), a evolução e as respostas atualizadas. É controle do profissional, anotado conforme a evolução do cliente, e **não leva assinatura**. A ficha continua como foi assinada: o histórico só cresce, com novos acompanhamentos.
+- Como o histórico é do profissional, o PDF pode ser emitido **sem ele** (`includeHistory=false`), para a via do cliente. O padrão é incluí-lo.
+- Todas as páginas trazem o nome da clínica, a data e hora da emissão no fuso da empresa e a paginação. A **logomarca** da clínica aparece no cabeçalho de todas as páginas, quando existe e é PNG ou JPEG (o único formato aceito no upload). Sem logo, ou com um valor que não seja um arquivo de logo válido, o PDF sai só com o nome da clínica, sem erro.
+- Cada geração de PDF fica registrada na auditoria, e o arquivo só é entregue se o registro for gravado. O PDF não é guardado em cache.
 
 ### Fora desta versão
 

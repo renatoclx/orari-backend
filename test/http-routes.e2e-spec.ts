@@ -9,6 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { AnamnesisPdfService } from "../src/modules/anamnesis/anamnesis-pdf.service";
 import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
 import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
@@ -369,6 +370,50 @@ describe("Rotas HTTP", () => {
         .get(`/anamnesis/${ANY_UUID}`)
         .set("Authorization", auth(http, "user"))
         .expect(200);
+    });
+
+    it("ficha de anamnese: o PDF sai com tipo, nome genérico e sem cache", async () => {
+      const pdf = http.mockOf(AnamnesisPdfService);
+      pdf.generate.mockClear();
+      pdf.generate.mockResolvedValue(Buffer.from("%PDF-1.4 teste"));
+
+      const response = await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf`)
+        .set("Authorization", auth(http, "user"))
+        .expect(200);
+
+      expect(response.headers["content-type"]).toContain("application/pdf");
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(response.headers["content-disposition"]).toMatch(
+        /^inline; filename="ficha-anamnese-\d{4}-\d{2}-\d{2}\.pdf"$/,
+      );
+      // O histórico é impresso por padrão; includeHistory=false o omite.
+      expect(pdf.generate).toHaveBeenLastCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ includeHistory: true }),
+        expect.objectContaining({ id: USERS.user.id }),
+        expect.any(String),
+      );
+
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf?includeHistory=false`)
+        .set("Authorization", auth(http, "admin"))
+        .expect(200);
+      expect(pdf.generate).toHaveBeenLastCalledWith(
+        ANY_UUID,
+        expect.objectContaining({ includeHistory: false }),
+        expect.anything(),
+        expect.anything(),
+      );
+
+      await request(server())
+        .get(`/anamnesis/${ANY_UUID}/pdf?includeHistory=talvez`)
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
+      await request(server())
+        .get("/anamnesis/nao-e-uuid/pdf")
+        .set("Authorization", auth(http, "admin"))
+        .expect(400);
     });
 
     it("ficha de anamnese: não tem edição nem exclusão e valida a entrada (400)", async () => {

@@ -290,15 +290,26 @@ export class AnamnesisService {
     };
   }
 
+  /**
+   * Ficha completa decifrada, com o controle de acesso mas **sem auditar**: quem
+   * a entrega (a leitura ou o PDF) registra a própria ação.
+   */
+  async getView(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<AnamnesisView> {
+    await this.accessService.ensureAccess(currentUser);
+
+    return this.buildView(id, currentUser.companyId);
+  }
+
   /** Ficha completa: perguntas, situação atual e histórico. */
   async findOne(
     id: string,
     currentUser: AuthenticatedUser,
     ip?: string,
   ): Promise<AnamnesisView> {
-    await this.accessService.ensureAccess(currentUser);
-
-    const view = await this.buildView(id, currentUser.companyId);
+    const view = await this.getView(id, currentUser);
 
     await this.auditService.record({
       companyId: currentUser.companyId,

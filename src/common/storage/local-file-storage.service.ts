@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 // Prefixo público dos arquivos: é por onde a API os serve (ver main.ts).
@@ -43,8 +43,34 @@ export class LocalFileStorage {
    * segurança (ex.: "/uploads/../.env").
    */
   async remove(publicPath: string): Promise<void> {
+    const filePath = this.resolveInsideUploads(publicPath);
+    if (filePath) {
+      await rm(filePath, { force: true });
+    }
+  }
+
+  /**
+   * Lê o arquivo de um caminho público devolvido por save. Devolve null se o
+   * caminho está fora da pasta de uploads (mesma proteção do remove) ou se o
+   * arquivo não existe.
+   */
+  async read(publicPath: string): Promise<Buffer | null> {
+    const filePath = this.resolveInsideUploads(publicPath);
+    if (!filePath) {
+      return null;
+    }
+
+    try {
+      return await readFile(filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  // Caminho no disco de um caminho público, só se ele cair dentro da pasta de uploads.
+  private resolveInsideUploads(publicPath: string): string | null {
     if (!publicPath.startsWith(`${UPLOADS_PUBLIC_PREFIX}/`)) {
-      return;
+      return null;
     }
 
     const root = uploadsRoot();
@@ -52,10 +78,7 @@ export class LocalFileStorage {
       root,
       publicPath.slice(UPLOADS_PUBLIC_PREFIX.length + 1),
     );
-    if (!filePath.startsWith(root + sep)) {
-      return;
-    }
 
-    await rm(filePath, { force: true });
+    return filePath.startsWith(root + sep) ? filePath : null;
   }
 }
