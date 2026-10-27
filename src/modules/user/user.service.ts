@@ -134,7 +134,23 @@ export class UserService {
         });
 
         if (dto.peopleId) {
-          await this.recordLinkChange(created, currentUser, ip, tx);
+          await this.recordUserChange(
+            AuditAction.USER_LINK_CHANGED,
+            created,
+            currentUser,
+            ip,
+            tx,
+          );
+        }
+        // Nascer ADMIN já dá acesso aos dados de saúde (anamnese).
+        if (dto.type === UserType.ADMIN) {
+          await this.recordUserChange(
+            AuditAction.USER_TYPE_CHANGED,
+            created,
+            currentUser,
+            ip,
+            tx,
+          );
         }
 
         return created;
@@ -193,7 +209,8 @@ export class UserService {
   ): Promise<PublicUser> {
     const user = await this.findOne(id, currentUser);
 
-    if (dto.type !== undefined && dto.type !== user.type) {
+    const typeChanged = dto.type !== undefined && dto.type !== user.type;
+    if (dto.type !== undefined && typeChanged) {
       // Rebaixar a própria conta poderia deixar a empresa (ou a plataforma) sem administrador.
       if (id === currentUser.id) {
         throw new ForbiddenException("Não é possível alterar o próprio tipo");
@@ -217,7 +234,23 @@ export class UserService {
         });
 
         if (linkChanged) {
-          await this.recordLinkChange(updated, currentUser, ip, tx);
+          await this.recordUserChange(
+            AuditAction.USER_LINK_CHANGED,
+            updated,
+            currentUser,
+            ip,
+            tx,
+          );
+        }
+        // Toda mudança de tipo, inclusive a retirada do ADMIN (quem revogou também importa).
+        if (typeChanged) {
+          await this.recordUserChange(
+            AuditAction.USER_TYPE_CHANGED,
+            updated,
+            currentUser,
+            ip,
+            tx,
+          );
         }
 
         return updated;
@@ -253,13 +286,14 @@ export class UserService {
   async restore(
     id: string,
     currentUser: AuthenticatedUser,
+    ip?: string,
   ): Promise<PublicUser> {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
         ...this.visibleTo(currentUser, undefined, { includeDeleted: true }),
       },
-      select: { deletedAt: true },
+      select: { deletedAt: true, type: true, peopleId: true },
     });
 
     if (!user) {
@@ -273,16 +307,27 @@ export class UserService {
       // A reativação começa sem sessões: um refresh token emitido antes da
       // inativação não volta a valer (a inativação já os revoga; isto cobre os
       // usuários inativados antes dessa regra).
-      const [restored] = await this.prisma.$transaction([
-        this.prisma.user.update({
+      return await this.prisma.$transaction(async (tx) => {
+        const restored = await tx.user.update({
           where: { id },
           data: { deletedAt: null, updatedAt: new Date() },
           omit: omitPassword,
-        }),
-        this.revokeSessions(id),
-      ]);
+        });
+        await this.revokeSessions(id, tx);
 
-      return restored;
+        // Reativar um ADMIN ou um usuário vinculado devolve o acesso à anamnese.
+        if (user.type === UserType.ADMIN || user.peopleId) {
+          await this.recordUserChange(
+            AuditAction.USER_RESTORED,
+            restored,
+            currentUser,
+            ip,
+            tx,
+          );
+        }
+
+        return restored;
+      });
     } catch (error) {
       // E-mail e profissional vinculado são únicos só entre ativos: outro
       // usuário pode ter assumido um deles.
@@ -318,9 +363,13 @@ export class UserService {
    *
    * Grava a tabela de tokens direto pelo Prisma: o AuthModule depende do
    * UserModule, e usar o AuthService aqui criaria dependência circular.
+   * O `client` permite participar de uma transação interativa (`tx`).
    */
-  private revokeSessions(userId: string) {
-    return this.prisma.refreshToken.updateMany({
+  private revokeSessions(
+    userId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ) {
+    return client.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
@@ -446,8 +495,14 @@ export class UserService {
     }
   }
 
-  // Auditoria do vínculo: quem alterou (ator), qual usuário e quando; o alvo é o usuário.
-  private recordLinkChange(
+  /**
+   * Auditoria das mudanças que dão ou tiram acesso aos dados de saúde (vínculo,
+   * tipo e reativação): quem alterou (ator), qual usuário e quando. O registro
+   * fica na empresa do usuário alterado, para o ADMIN dela enxergar, inclusive
+   * as ações do SUPER_ADMIN.
+   */
+  private recordUserChange(
+    action: AuditAction,
     target: PublicUser,
     actor: AuthenticatedUser,
     ip: string | undefined,
@@ -457,7 +512,7 @@ export class UserService {
       {
         companyId: target.companyId,
         userId: actor.id,
-        action: AuditAction.USER_LINK_CHANGED,
+        action,
         entityType: "USER",
         entityId: target.id,
         ip,

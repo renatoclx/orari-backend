@@ -34,7 +34,7 @@ export class UserController {
   create(
     @Body() dto: CreateUserDto,
     @CurrentUser() currentUser: AuthenticatedUser,
-    // Registrado na auditoria quando o vínculo com o profissional muda.
+    // Registrado na auditoria quando há vínculo com pessoa ou o tipo é ADMIN.
     @Ip() ip: string,
   ) {
     return this.userService.create(dto, currentUser, ip);
@@ -80,8 +80,10 @@ export class UserController {
   restore(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
+    // Registrado na auditoria quando a reativação devolve o acesso à anamnese.
+    @Ip() ip: string,
   ) {
-    return this.userService.restore(id, currentUser);
+    return this.userService.restore(id, currentUser, ip);
   }
 
   @Delete(":id")

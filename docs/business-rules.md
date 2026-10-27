@@ -373,6 +373,7 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - As respostas e o texto da evolução são **criptografados** no aplicativo (AES-256-GCM), com uma chave guardada no servidor (`ANAMNESIS_ENCRYPTION_KEY`). A API não sobe em produção sem ela.
 - A chave **não** entra no backup do banco e precisa ser guardada à parte: sem ela, as fichas não podem ser lidas. O backup do banco contém só dados criptografados.
 - Toda ação sensível é gravada na **auditoria**: leitura de ficha, histórico e lista de fichas do cliente, criação de registro, geração de PDF, criação e edição de modelo e alteração do vínculo. O registro de auditoria não é alterado nem excluído pela API. A consulta a ela está descrita abaixo.
+- Também são auditadas as ações que dão ou tiram o acesso aos dados de saúde: a **criação de usuário do tipo ADMIN**, **toda mudança de tipo** de um usuário (inclusive a retirada do ADMIN) e a **reativação** de um usuário ADMIN ou vinculado a uma pessoa. Valem para o ADMIN e para o SUPER_ADMIN, e o registro fica na empresa do usuário alterado: o ADMIN dela vê, por exemplo, quando o SUPER_ADMIN cria um administrador. O registro diz quem alterou, qual usuário, quando e de qual IP; o tipo anterior e o novo não são guardados.
 - Não há exclusão de ficha pela API. O prazo de guarda e a exclusão a pedido do titular (LGPD) dependem de definição com o conselho da categoria ou com um jurídico **(adiado)**: ficam para uma atualização futura da funcionalidade.
 
 ### Consulta à auditoria
