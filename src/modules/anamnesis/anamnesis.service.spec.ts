@@ -39,7 +39,7 @@ describe("AnamnesisService", () => {
       findMany: vi.fn(),
       count: vi.fn(),
     },
-    anamnesisEntry: { create: vi.fn() },
+    anamnesisEntry: { create: vi.fn(), findMany: vi.fn() },
     anamnesisTemplate: { findFirst: vi.fn() },
     people: { findFirst: vi.fn() },
   };
@@ -439,6 +439,43 @@ describe("AnamnesisService", () => {
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(auditMock.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findAppointmentsWithEntry", () => {
+    it("devolve só os agendamentos que têm acompanhamento, da empresa", async () => {
+      prismaMock.anamnesisEntry.findMany.mockResolvedValue([
+        { appointmentId: "appointment-1" },
+      ]);
+
+      const result = await service.findAppointmentsWithEntry(
+        { appointmentIds: ["appointment-1", "appointment-2"] },
+        adminUser,
+      );
+
+      expect(result).toEqual({ appointmentIds: ["appointment-1"] });
+      expect(prismaMock.anamnesisEntry.findMany).toHaveBeenCalledWith(
+        containing({
+          where: {
+            appointmentId: { in: ["appointment-1", "appointment-2"] },
+            anamnesis: { companyId: COMPANY_ID },
+          },
+        }),
+      );
+      // Só ids de agendamento: não é leitura de ficha, então não audita.
+      expect(auditMock.record).not.toHaveBeenCalled();
+    });
+
+    it("sem acesso à anamnese é 403 e nem consulta", async () => {
+      accessMock.ensureAccess.mockRejectedValue(new ForbiddenException());
+
+      await expect(
+        service.findAppointmentsWithEntry(
+          { appointmentIds: ["appointment-1"] },
+          regularUser,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.anamnesisEntry.findMany).not.toHaveBeenCalled();
     });
   });
 
