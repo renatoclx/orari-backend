@@ -18,6 +18,7 @@ import { AnamnesisService } from "./anamnesis.service";
 import { CreateAnamnesisEntryDto } from "./dto/create-anamnesis-entry.dto";
 import { CreateAnamnesisDto } from "./dto/create-anamnesis.dto";
 import { FindAnamnesesQueryDto } from "./dto/find-anamneses-query.dto";
+import { FindEntryAppointmentsQueryDto } from "./dto/find-entry-appointments-query.dto";
 import { FindAnamnesisPdfQueryDto } from "./dto/find-anamnesis-pdf-query.dto";
 
 // Sem PATCH nem DELETE: os registros são imutáveis (ver business-rules.md). O
@@ -49,6 +50,15 @@ export class AnamnesisController {
     @Ip() ip: string,
   ) {
     return this.anamnesisService.findByClient(query, currentUser, ip);
+  }
+
+  // Usada pela agenda (cartão de hover). Declarada antes de ":id", senão "appointments-with-entry" seria lido como id.
+  @Get("appointments-with-entry")
+  findAppointmentsWithEntry(
+    @Query() query: FindEntryAppointmentsQueryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.anamnesisService.findAppointmentsWithEntry(query, currentUser);
   }
 
   // Dado de saúde: o arquivo não pode ficar em cache de navegador nem de proxy. O

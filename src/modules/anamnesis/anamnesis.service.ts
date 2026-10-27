@@ -29,6 +29,7 @@ import { AnamnesisCryptoService } from "./anamnesis-crypto.service";
 import { CreateAnamnesisEntryDto } from "./dto/create-anamnesis-entry.dto";
 import { CreateAnamnesisDto } from "./dto/create-anamnesis.dto";
 import { FindAnamnesesQueryDto } from "./dto/find-anamneses-query.dto";
+import { FindEntryAppointmentsQueryDto } from "./dto/find-entry-appointments-query.dto";
 
 const AUDIT_ANAMNESIS = "ANAMNESIS";
 const AUDIT_ENTRY = "ANAMNESIS_ENTRY";
@@ -287,6 +288,37 @@ export class AnamnesisService {
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * Quais dos agendamentos informados já têm acompanhamento (a agenda
+   * do frontend avisa, no cartão de hover, os atendimentos que ainda não têm).
+   * Devolve só ids de agendamento: nenhum conteúdo da ficha, nem o cliente ou o
+   * modelo, por isso não entra na auditoria (a agenda consultaria a cada
+   * carregamento). Exige o acesso à anamnese: quem não o tem
+   * não pode saber se um cliente tem ficha.
+   */
+  async findAppointmentsWithEntry(
+    { appointmentIds }: FindEntryAppointmentsQueryDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<{ appointmentIds: string[] }> {
+    await this.accessService.ensureAccess(currentUser);
+
+    // A empresa vem da ficha: id de agendamento de outra empresa não casa.
+    const entries = await this.prisma.anamnesisEntry.findMany({
+      where: {
+        appointmentId: { in: appointmentIds },
+        anamnesis: { companyId: currentUser.companyId },
+      },
+      select: { appointmentId: true },
+      distinct: ["appointmentId"],
+    });
+
+    return {
+      appointmentIds: entries.flatMap((entry) =>
+        entry.appointmentId ? [entry.appointmentId] : [],
+      ),
     };
   }
 
