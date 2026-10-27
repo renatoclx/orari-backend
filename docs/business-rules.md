@@ -327,7 +327,7 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 ### Modelos de ficha
 
 - Um modelo pertence à empresa do usuário que o cadastrou; a empresa não é informada no payload.
-- O nome do modelo é obrigatório e único entre os modelos da mesma empresa, sem diferenciar maiúsculas nem acentos.
+- O nome do modelo é obrigatório, com até 100 caracteres, e único entre os modelos da mesma empresa, sem diferenciar maiúsculas nem acentos. A descrição é opcional, com até 1000 caracteres.
 - Não há exclusão: o modelo é inativado (`isActive`) e pode ser reativado. Um modelo inativo não inicia novas fichas; as fichas já existentes continuam acessíveis e recebendo acompanhamentos.
 - Cada modelo tem **versões** numeradas a partir de 1. Criar o modelo cria a versão 1. Editar as perguntas cria uma nova versão (a lista informada substitui a anterior); reenviar a mesma lista também cria uma nova versão. Uma versão existente nunca muda. Renomear ou inativar o modelo não cria versão.
 - Quem cria, edita e inativa modelos é **somente o ADMIN**. Os profissionais consultam os modelos e os usam para preencher fichas.

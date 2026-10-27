@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { Injectable } from "@nestjs/common";
 // O pdfmake exporta uma instância (module.exports); só o `import =` a mantém inteira.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -144,11 +144,14 @@ export class AnamnesisPdfService {
    * ausente ou de outro formato) resulta em PDF sem ela, nunca em erro.
    */
   private async logoDataUrl(logoUrl: string | null): Promise<string | null> {
-    if (!logoUrl?.startsWith(LOGO_PUBLIC_PREFIX)) {
+    // Normaliza antes de conferir a pasta: "/uploads/companies/../people/x.png"
+    // começa com o prefixo, mas aponta para a pasta das fotos de pessoas.
+    const path = logoUrl && posix.normalize(logoUrl);
+    if (!path?.startsWith(LOGO_PUBLIC_PREFIX)) {
       return null;
     }
 
-    const content = await this.storage.read(logoUrl);
+    const content = await this.storage.read(path);
     const extension = content && detectImageExtension(content);
     if (!content || !extension) {
       return null;

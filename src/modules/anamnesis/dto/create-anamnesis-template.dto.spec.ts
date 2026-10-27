@@ -81,6 +81,22 @@ describe("CreateAnamnesisTemplateDto", () => {
     ).resolves.toEqual([]);
   });
 
+  it("limita o nome a 100 caracteres e a descrição a 1000", async () => {
+    await expect(
+      errorsFor({ ...base, name: "a".repeat(101) }),
+    ).resolves.toEqual(["name"]);
+    await expect(
+      errorsFor({ ...base, description: "a".repeat(1001) }),
+    ).resolves.toEqual(["description"]);
+    await expect(
+      errorsFor({
+        ...base,
+        name: "a".repeat(100),
+        description: "a".repeat(1000),
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it("não aceita a empresa nem isActive na criação", async () => {
     await expect(errorsFor({ ...base, companyId: "x" })).resolves.toEqual([
       "companyId",

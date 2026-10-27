@@ -198,14 +198,16 @@ describe("AnamnesisPdfService", () => {
     it.each([
       ["URL externa", "https://exemplo.com/logo.png"],
       ["foto de pessoa", "/uploads/people/foto.png"],
+      // Começa com o prefixo das logos, mas aponta para a pasta das fotos.
       ["fora da pasta", "/uploads/companies/../people/foto.png"],
     ])("ignora logo que é %s, sem ler arquivo nem falhar", async (_, url) => {
-      // O último caso passa pelo prefixo, mas o armazenamento recusa o caminho (null).
       withLogo(url);
-      storageMock.read.mockResolvedValue(null);
+      // Se o arquivo fosse lido, a imagem existiria e entraria no PDF.
+      storageMock.read.mockResolvedValue(PNG);
 
       const pdf = await generate();
 
+      expect(storageMock.read).not.toHaveBeenCalled();
       expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
       expect(hasImage(pdf)).toBe(false);
     });
