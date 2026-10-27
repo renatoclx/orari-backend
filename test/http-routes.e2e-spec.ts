@@ -9,6 +9,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { AuditService } from "../src/modules/audit/audit.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentService } from "../src/modules/payment/payment.service";
@@ -134,6 +135,8 @@ describe("Rotas HTTP", () => {
       ["PATCH /users/:id", ["SUPER_ADMIN", "ADMIN"]],
       ["PATCH /users/:id/restore", ["SUPER_ADMIN", "ADMIN"]],
       ["DELETE /users/:id", ["SUPER_ADMIN", "ADMIN"]],
+      // Auditoria: só o ADMIN; o SUPER_ADMIN não lê dados de saúde de outras empresas.
+      ["GET /audit-logs", ["ADMIN"]],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 
@@ -239,6 +242,63 @@ describe("Rotas HTTP", () => {
       await request(server())
         .get("/payments/nao-e-uuid")
         .set("Authorization", auth(http, "admin"))
+        .expect(400);
+    });
+
+    it("auditoria: o ADMIN consulta só a própria empresa e o SUPER_ADMIN é recusado", async () => {
+      const audit = http.mockOf(AuditService);
+      audit.findAll.mockClear();
+
+      await request(server())
+        .get("/audit-logs?action=USER_LINK_CHANGED&page=1&limit=5")
+        .set("Authorization", auth(http, "superAdmin"))
+        .expect(403);
+      expect(audit.findAll).not.toHaveBeenCalled();
+
+      await request(server())
+        .get("/audit-logs?action=USER_LINK_CHANGED&page=1&limit=5")
+        .set("Authorization", auth(http, "admin"))
+        .expect(200);
+      expect(audit.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "USER_LINK_CHANGED", limit: 5 }),
+        COMPANY_A,
+      );
+    });
+
+    it("auditoria: recusa filtro inválido e empresa vinda da query (400)", async () => {
+      for (const query of [
+        "action=QUALQUER",
+        "clientId=nao-e-uuid",
+        "from=ontem",
+        `companyId=${COMPANY_B}`,
+      ]) {
+        await request(server())
+          .get(`/audit-logs?${query}`)
+          .set("Authorization", auth(http, "admin"))
+          .expect(400);
+      }
+    });
+
+    it("usuário: aceita peopleId UUID ou null e recusa outro valor (400)", async () => {
+      const user = http.mockOf(UserService);
+      user.update.mockClear();
+
+      await request(server())
+        .patch(`/users/${ANY_UUID}`)
+        .set("Authorization", auth(http, "admin"))
+        .send({ peopleId: ANY_UUID })
+        .expect(200);
+      await request(server())
+        .patch(`/users/${ANY_UUID}`)
+        .set("Authorization", auth(http, "admin"))
+        .send({ peopleId: null })
+        .expect(200);
+      expect(user.update).toHaveBeenCalledTimes(2);
+
+      await request(server())
+        .patch(`/users/${ANY_UUID}`)
+        .set("Authorization", auth(http, "admin"))
+        .send({ peopleId: "abc" })
         .expect(400);
     });
 

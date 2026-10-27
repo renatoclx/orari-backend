@@ -15,6 +15,7 @@ import {
 } from "../../../test/fixtures/authenticated-users";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 import { CompanyService } from "../company/company.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UserService } from "./user.service";
@@ -24,6 +25,8 @@ vi.mock("bcrypt", () => ({
 }));
 
 const anyDate: unknown = expect.any(Date);
+const containing = (expected: object): unknown =>
+  expect.objectContaining(expected);
 const omit = { password: true };
 
 // Filtros esperados de "usuários visíveis" para cada tipo (ver UserService.visibleTo).
@@ -47,8 +50,12 @@ const withDeleted = (filter: Record<string, unknown>) =>
 describe("UserService", () => {
   let userService: UserService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Aceita as duas formas: lista de operações e função com o cliente da transação.
+    $transaction: vi.fn(
+      (operations: Promise<unknown>[] | ((tx: unknown) => unknown)) =>
+        typeof operations === "function"
+          ? operations(prismaMock)
+          : Promise.all(operations),
     ),
     user: {
       create: vi.fn(),
@@ -58,7 +65,9 @@ describe("UserService", () => {
       update: vi.fn(),
     },
     refreshToken: { updateMany: vi.fn() },
+    people: { findFirst: vi.fn() },
   };
+  const auditServiceMock = { record: vi.fn() };
   // Revogação de todas as sessões do usuário-alvo.
   const revokeSessionsOf = (userId: string) => ({
     where: { userId, revokedAt: null },
@@ -94,6 +103,7 @@ describe("UserService", () => {
         UserService,
         { provide: PrismaService, useValue: prismaMock },
         { provide: CompanyService, useValue: companyServiceMock },
+        { provide: AuditService, useValue: auditServiceMock },
       ],
     }).compile();
 
@@ -119,6 +129,7 @@ describe("UserService", () => {
           name: true,
           email: true,
           type: true,
+          people: { select: { id: true, name: true, deletedAt: true } },
           company: {
             select: {
               id: true,
@@ -159,6 +170,69 @@ describe("UserService", () => {
           companyId: COMPANY_ID,
         },
         omit,
+      });
+    });
+
+    describe("vínculo com o profissional", () => {
+      const peopleId = "11111111-1111-4111-8111-111111111111";
+      const linkedDto = { ...dto, peopleId };
+
+      it("cria vinculado ao profissional e audita na mesma transação", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.create.mockResolvedValue({ ...storedUser, peopleId });
+
+        await userService.create(linkedDto, adminUser, "10.0.0.1");
+
+        // Só profissional ativo da empresa do usuário é aceito.
+        expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
+          where: {
+            id: peopleId,
+            companyId: COMPANY_ID,
+            type: "PROFESSIONAL",
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        expect(auditServiceMock.record).toHaveBeenCalledWith(
+          {
+            companyId: COMPANY_ID,
+            userId: adminUser.id,
+            action: "USER_LINK_CHANGED",
+            entityType: "USER",
+            entityId: storedUser.id,
+            ip: "10.0.0.1",
+          },
+          prismaMock,
+        );
+      });
+
+      it("recusa pessoa que não é profissional ativo da empresa (400)", async () => {
+        prismaMock.people.findFirst.mockResolvedValue(null);
+
+        await expect(
+          userService.create(linkedDto, adminUser),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("recusa profissional já vinculado a outro usuário ativo (409)", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue({ id: "user-9" });
+
+        await expect(
+          userService.create(linkedDto, adminUser),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("sem vínculo, não consulta profissional nem audita", async () => {
+        prismaMock.user.create.mockResolvedValue(storedUser);
+
+        await userService.create(dto, adminUser);
+
+        expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
+        expect(auditServiceMock.record).not.toHaveBeenCalled();
       });
     });
 
@@ -300,6 +374,108 @@ describe("UserService", () => {
         where: { id: "user-2" },
         data: { type: "ADMIN", updatedAt: anyDate },
         omit,
+      });
+    });
+
+    describe("vínculo com o profissional", () => {
+      const peopleId = "11111111-1111-4111-8111-111111111111";
+
+      it("troca o vínculo, confere o profissional (ignorando o próprio usuário) e audita", async () => {
+        prismaMock.user.findFirst
+          .mockResolvedValueOnce({ ...storedUser, peopleId: null })
+          .mockResolvedValueOnce(null);
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.update.mockResolvedValue({ ...storedUser, peopleId });
+
+        await userService.update("user-2", { peopleId }, adminUser, "10.0.0.1");
+
+        expect(prismaMock.user.findFirst).toHaveBeenLastCalledWith({
+          where: { peopleId, deletedAt: null, id: { not: "user-2" } },
+          select: { id: true },
+        });
+        expect(auditServiceMock.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: adminUser.id,
+            action: "USER_LINK_CHANGED",
+            entityId: "user-2",
+            ip: "10.0.0.1",
+          }),
+          prismaMock,
+        );
+      });
+
+      it("null desfaz o vínculo, sem consultar profissional, e audita", async () => {
+        prismaMock.user.findFirst.mockResolvedValue({
+          ...storedUser,
+          peopleId,
+        });
+        prismaMock.user.update.mockResolvedValue({
+          ...storedUser,
+          peopleId: null,
+        });
+
+        await userService.update("user-2", { peopleId: null }, adminUser);
+
+        expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
+        expect(prismaMock.user.update).toHaveBeenCalledWith({
+          where: { id: "user-2" },
+          data: { peopleId: null, updatedAt: anyDate },
+          omit,
+        });
+        expect(auditServiceMock.record).toHaveBeenCalledTimes(1);
+      });
+
+      it("reenviar o mesmo vínculo não valida de novo nem audita", async () => {
+        prismaMock.user.findFirst.mockResolvedValue({
+          ...storedUser,
+          peopleId,
+        });
+
+        await userService.update("user-2", { peopleId }, adminUser);
+
+        expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
+        expect(auditServiceMock.record).not.toHaveBeenCalled();
+      });
+
+      it("recusa profissional já vinculado a outro usuário ativo (409)", async () => {
+        prismaMock.user.findFirst
+          .mockResolvedValueOnce({ ...storedUser, peopleId: null })
+          .mockResolvedValueOnce({ id: "user-9" });
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+
+        await expect(
+          userService.update("user-2", { peopleId }, adminUser),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.user.update).not.toHaveBeenCalled();
+      });
+
+      it("SUPER_ADMIN valida o profissional na empresa do usuário alterado", async () => {
+        prismaMock.user.findFirst
+          .mockResolvedValueOnce({
+            ...storedUser,
+            companyId: OTHER_COMPANY_ID,
+            peopleId: null,
+          })
+          .mockResolvedValueOnce(null);
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.update.mockResolvedValue({
+          ...storedUser,
+          companyId: OTHER_COMPANY_ID,
+          peopleId,
+        });
+
+        await userService.update("user-2", { peopleId }, superAdminUser);
+
+        expect(prismaMock.people.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: containing({ companyId: OTHER_COMPANY_ID }),
+          }),
+        );
+        // A auditoria fica na empresa do usuário, para o ADMIN dela enxergar.
+        expect(auditServiceMock.record).toHaveBeenCalledWith(
+          expect.objectContaining({ companyId: OTHER_COMPANY_ID }),
+          prismaMock,
+        );
       });
     });
 

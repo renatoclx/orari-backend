@@ -32,6 +32,8 @@ export interface MeResponse {
   name: string;
   email: string;
   type: UserType;
+  // Profissional vinculado ativo (o front mostra o menu de anamnese por ele); null se não houver.
+  professional: { id: string; name: string } | null;
   company: {
     id: string;
     // Nome fantasia; sem ele, a razão social.
@@ -85,10 +87,15 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    const { company, ...user } = profile;
+    const { company, people, ...user } = profile;
 
     return {
       ...user,
+      // Profissional inativo não conta como vínculo.
+      professional:
+        people && !people.deletedAt
+          ? { id: people.id, name: people.name }
+          : null,
       company: {
         id: company.id,
         name: company.fantasyName ?? company.corporateReason,

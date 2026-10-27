@@ -21,7 +21,8 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | State                | — (somente leitura, seed IBGE)               | 27 estados                                                                                       |
 | City                 | — (somente leitura, seed IBGE)               | 5.571 cidades; busca por nome sem acento                                                         |
 | Company              | **Não é excluída**, é inativada (`isActive`) | CNPJ numérico ou alfanumérico com dígitos verificadores                                          |
-| User                 | Soft delete                                  | Tipos `SUPER_ADMIN`, `ADMIN`, `USER`                                                             |
+| User                 | Soft delete                                  | Tipos `SUPER_ADMIN`, `ADMIN`, `USER`; vínculo opcional com um profissional (`peopleId`)          |
+| AuditLog             | **Sem exclusão nem alteração** (só insere)   | Registro de ações sensíveis; consulta só pelo ADMIN                                              |
 | People               | Soft delete                                  | CPF com dígitos verificadores; tipos `CLIENT`, `EMPLOYEE`, `PROFESSIONAL`                        |
 | Contact              | Soft delete                                  | Dono exclusivo (empresa **ou** pessoa); telefone e/ou e-mail                                     |
 | Address              | Soft delete                                  | Dono exclusivo; pertence a uma cidade                                                            |
@@ -57,6 +58,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Client plans                  | `POST`, `GET` (`?clientId`, `?planId`, `?status`), `GET /:id`, `PATCH /:id/cancel`                                                                                                                                                                  | Qualquer tipo, só na própria empresa                                                 |
 | Payments                      | CRUD + `GET` (`?status`, `?appointmentId`, `?clientPlanId`, `?paymentMethodId`, `?clientId`, `?recurringAppointmentId`, `?overdue`, `?dueFrom`, `?dueTo`)                                                                                           | Qualquer tipo, só na própria empresa                                                 |
 | Business hours                | CRUD + `GET` (`?weekDay`)                                                                                                                                                                                                                           | Qualquer tipo, só na própria empresa                                                 |
+| Audit logs                    | `GET /audit-logs` (`?clientId`, `?userId`, `?action`, `?from`, `?to`)                                                                                                                                                                               | Só ADMIN, na própria empresa                                                         |
 | Notifications                 | `GET` (`?onlyUnread`, `?includeResolved`), `GET /:id`, `PATCH /:id/read`                                                                                                                                                                            | Qualquer tipo, só na própria empresa                                                 |
 
 Listagens são paginadas (`page`, `limit` ≤ 100, `total`, `items`). Os status HTTP seguem o `coding-standards.md` (201/200/204).
@@ -443,3 +445,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - Migração `20261023120000_company_document`: renomeia a coluna (e o índice único), troca `CHAR(14)` por `VARCHAR(14)` (o `CHAR` completaria um CPF com espaços) e remove o `NOT NULL` da data. Os dados existentes são preservados.
 - Seed: `SEED_COMPANY_CNPJ` virou `SEED_COMPANY_DOCUMENT`, e `SEED_COMPANY_FOUNDATION_DATE` passou a ser opcional (não conta como variável ausente).
 - Mudança de contrato: o corpo de `POST`/`PATCH /companies` e a resposta usam `document` no lugar de `cnpj`.
+
+## 2.38 Anamnese, etapa 2: vínculo, permissão e auditoria
+
+- **Vínculo usuário × profissional:** `users.peopleId` opcional, com índice único parcial (um profissional por usuário ativo). `POST`/`PATCH /users` aceitam `peopleId` (`null` desfaz). O `UserService` confere que a pessoa é um profissional ativo da empresa do usuário (400) e não está ligada a outro usuário ativo (409); a reativação de um usuário também pode dar 409 pelo mesmo índice.
+- **`/auth/me`:** devolve `professional` (`{ id, name }` ou `null`; profissional inativo conta como `null`).
+- **Permissão:** `AnamnesisAccessService` (módulo `anamnesis`): ADMIN, ou usuário vinculado a um profissional ativo da empresa. `ensureAccess` recusa com 403. Ainda não é usado por nenhuma rota; as próximas etapas o chamam.
+- **Auditoria:** tabela `audit_logs` e módulo global `audit`. `AuditService.record` aceita o cliente da transação, para gravar junto com a operação (a falha da auditoria desfaz a operação). Por ora só a ação `USER_LINK_CHANGED`, gravada ao criar com vínculo ou alterar/desfazer o vínculo; o alvo é o usuário alterado e o registro fica na empresa dele. `GET /audit-logs` é só leitura, paginado do mais recente ao mais antigo, só para o ADMIN (o SUPER_ADMIN recebe 403).
+- Migration `20261027120000_anamnese_user_link_audit_log`.

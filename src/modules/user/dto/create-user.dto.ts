@@ -40,4 +40,14 @@ export class CreateUserDto {
   @IsOptional()
   @IsUUID()
   companyId?: string;
+
+  /**
+   * Profissional que o usuário representa (dá acesso à anamnese). Deve ser uma
+   * pessoa ativa do tipo PROFESSIONAL da empresa do usuário; no PATCH, `null`
+   * desfaz o vínculo.
+   */
+  // A checagem no banco (tipo, empresa, vínculo único) fica no UserService.
+  @IsOptional()
+  @IsUUID()
+  peopleId?: string | null;
 }

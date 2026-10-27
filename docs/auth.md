@@ -46,7 +46,10 @@
 ## Usuário autenticado
 
 - `GET /auth/me` (protegida) devolve o usuário do access token enviado: `id`,
-  `name`, `email`, `type` e `company` (`id`, `name`, `timezone`, `logoUrl`).
+  `name`, `email`, `type`, `professional` (`id` e `name` do profissional
+  vinculado ao usuário, ou `null` sem vínculo ou com o profissional inativo;
+  é por ele que o front mostra o menu de anamnese) e `company` (`id`, `name`,
+  `timezone`, `logoUrl`).
   O `name` da empresa é o nome fantasia ou, sem ele, a razão social; o
   `timezone` permite ao front exibir os horários no fuso da empresa.
 - Os dados vêm do banco a cada chamada, não do token: refletem alterações

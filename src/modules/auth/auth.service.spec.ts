@@ -70,6 +70,11 @@ describe("AuthService", () => {
       name: "Ana",
       email: "ana@orari.local",
       type: "ADMIN",
+      people: null as {
+        id: string;
+        name: string;
+        deletedAt: Date | null;
+      } | null,
       company: {
         id: "company-1",
         corporateReason: "Clínica Bem Estar LTDA",
@@ -87,6 +92,7 @@ describe("AuthService", () => {
         name: "Ana",
         email: "ana@orari.local",
         type: "ADMIN",
+        professional: null,
         company: {
           id: "company-1",
           name: "Bem Estar",
@@ -106,6 +112,31 @@ describe("AuthService", () => {
       const result = await authService.me("user-1");
 
       expect(result.company.name).toBe("Clínica Bem Estar LTDA");
+    });
+
+    it("deve informar o profissional vinculado ativo", async () => {
+      userServiceMock.findProfile.mockResolvedValue({
+        ...profile,
+        people: { id: "people-1", name: "Dra. Paula", deletedAt: null },
+      });
+
+      const result = await authService.me("user-1");
+
+      expect(result.professional).toEqual({
+        id: "people-1",
+        name: "Dra. Paula",
+      });
+    });
+
+    it("não deve informar o profissional vinculado inativo", async () => {
+      userServiceMock.findProfile.mockResolvedValue({
+        ...profile,
+        people: { id: "people-1", name: "Dra. Paula", deletedAt: new Date() },
+      });
+
+      const result = await authService.me("user-1");
+
+      expect(result.professional).toBeNull();
     });
 
     it("deve recusar com 401 quando o usuário não existe mais", async () => {
