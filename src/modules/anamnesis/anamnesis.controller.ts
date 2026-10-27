@@ -53,7 +53,7 @@ export class AnamnesisController {
     return this.anamnesisService.findByClient(query, currentUser, ip);
   }
 
-  // Clientes com ficha (tela "Fichas dos clientes"). Declarada antes de ":id".
+  // Clientes com ficha (tela "Fichas preenchidas"). Declarada antes de ":id".
   @Get("clients")
   findClients(
     @Query() query: FindAnamnesisClientsQueryDto,
