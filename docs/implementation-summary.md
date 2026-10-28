@@ -500,3 +500,9 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Ações novas** (migration `20261027200000_user_type_audit`): `USER_TYPE_CHANGED` (criação com tipo ADMIN e toda mudança de tipo no `PATCH /users/:id`) e `USER_RESTORED` (reativação de usuário ADMIN ou com pessoa vinculada).
 - **Como:** mesmo molde do `USER_LINK_CHANGED`, agora num método único (`recordUserChange`), na mesma transação da alteração e na empresa do usuário alterado. O `restore` passou a usar transação interativa (o `revokeSessions` aceita o `tx`) e recebe o IP no controller.
 - **Fora do escopo:** guardar o tipo anterior e o novo (exigiria um campo de detalhes no `AuditLog`).
+
+## 2.44 Filtro por nome na listagem de usuários
+
+- **`GET /users?name=`:** busca parcial pelo nome, sem diferenciar maiúsculas (acentos contam: "joao" não acha "João"). O termo é aparado e o filtro vem **somado** à visibilidade de quem consulta (o ADMIN continua sem ver SUPER_ADMINs nem outras empresas). Sem `name`, nada muda.
+- **Como:** `name` opcional e não vazio no `FindUsersQueryDto`; `UserService.findAll` usa `contains` com `mode: "insensitive"`. Sem migration.
+- **Fora do escopo:** busca sem acento (exigiria uma coluna `normalizedName` em `User`, como a de pessoas, com migration e preenchimento dos existentes).
