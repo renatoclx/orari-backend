@@ -161,14 +161,17 @@ export class UserService {
   }
 
   async findAll(
-    { page, limit, companyId }: FindUsersQueryDto,
+    { page, limit, companyId, name }: FindUsersQueryDto,
     currentUser: AuthenticatedUser,
   ): Promise<PaginatedResult<UserListItem>> {
     // A listagem traz ativos e inativos (o status vem do deletedAt), para que
     // um usuário inativado possa ser reativado.
-    const where = this.visibleTo(currentUser, companyId, {
-      includeDeleted: true,
-    });
+    const where = {
+      ...this.visibleTo(currentUser, companyId, { includeDeleted: true }),
+      ...(name && {
+        name: { contains: name.trim(), mode: "insensitive" as const },
+      }),
+    };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
