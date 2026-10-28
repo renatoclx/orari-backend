@@ -44,6 +44,16 @@ const BLOCKING_STATUSES = { not: AppointmentStatus.CANCELLED } as const;
 
 // Só um atendimento que ainda não aconteceu pode ser remanejado ou cancelado
 // pela recorrência.
+// De onde se marca a falta: o que já iniciou, inclusive o já concluído (a falta
+// só é anotada depois do horário). O cancelado é final e o que já é falta não
+// muda de novo.
+const NO_SHOW_FROM_STATUSES: AppointmentStatus[] = [
+  AppointmentStatus.SCHEDULED,
+  AppointmentStatus.CONFIRMED,
+  AppointmentStatus.IN_PROGRESS,
+  AppointmentStatus.COMPLETED,
+];
+
 const UPCOMING_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.SCHEDULED,
   AppointmentStatus.CONFIRMED,
@@ -228,13 +238,24 @@ export class AppointmentService {
   ): Promise<AppointmentWithRelations> {
     const appointment = await this.findOne(id, companyId);
 
-    await this.ensureNotLockedByPayment(appointment);
+    // Estados finais (cancelado e falta) não mudam de status.
+    this.ensureNotReopened(appointment, dto);
+
+    // Marcar a falta passa pela regra própria, e não pelo bloqueio por
+    // pagamento: o atendimento concluído sem pagamento recebido pode virar falta
+    // (a falta não cobra; o pagamento pendente é cancelado abaixo).
+    const marksNoShow =
+      dto.status === AppointmentStatus.NO_SHOW &&
+      appointment.status !== AppointmentStatus.NO_SHOW;
+    if (marksNoShow) {
+      await this.ensureCanBeMarkedNoShow(appointment, dto);
+    } else {
+      await this.ensureNotLockedByPayment(appointment);
+    }
 
     if (appointment.recurringAppointmentId) {
       this.ensureRecurrenceTermsUnchanged(dto);
     }
-
-    this.ensureNotReopened(appointment, dto);
 
     // A transição para CANCELLED olha o estado atual, antes de qualquer outra
     // mudança do mesmo PATCH (ex.: um novo startAt não "desfaz" o início).
@@ -271,8 +292,9 @@ export class AppointmentService {
     let overBooking = appointment.overBooking;
 
     // Um agendamento cancelado não disputa horário nem precisa caber na janela
-    // de atendimento; os demais, sim.
-    if (status !== AppointmentStatus.CANCELLED) {
+    // de atendimento; os demais, sim. Marcar a falta só muda o status: o horário
+    // (já passado) não é reavaliado.
+    if (status !== AppointmentStatus.CANCELLED && !marksNoShow) {
       if (dto.serviceId || dto.startAt) {
         overBooking = await this.resolveOverBooking(
           companyId,
@@ -292,7 +314,9 @@ export class AppointmentService {
 
     const data = { ...dto, endAt, overBooking, updatedAt: new Date() };
 
-    if (!cancels) {
+    // Cancelar e marcar a falta não cobram: o pagamento pendente é cancelado na
+    // mesma transação.
+    if (!cancels && !marksNoShow) {
       return this.prisma.appointment.update({
         where: { id },
         data,
@@ -301,20 +325,28 @@ export class AppointmentService {
     }
 
     /*
-     * Cancelar o avulso cancela junto o pagamento ainda PENDING dele (o PAID não
-     * muda: não há reembolso), na mesma transação. Exceção à regra de que só o
-     * módulo dono grava a tabela: o AppointmentService não pode usar o
-     * PaymentService, que já depende dele (dependência circular). É o mesmo
-     * recurso usado no cadastro completo de pessoas.
+     * Cancelar ou marcar a falta cancela junto o pagamento ainda PENDING do
+     * agendamento (o PAID não muda: não há reembolso), na mesma transação.
+     * Exceção à regra de que só o módulo dono grava a tabela: o
+     * AppointmentService não pode usar o PaymentService, que já depende dele
+     * (dependência circular). É o mesmo recurso usado no cadastro completo de
+     * pessoas.
      */
     return this.prisma.$transaction(async (tx) => {
       // O status lido no início vai no filtro: se o job de status (ou outra
       // requisição) mudou o agendamento nesse intervalo, nada é cancelado. Sem
-      // isso, um atendimento que acabou de começar seria cancelado.
+      // isso, um atendimento que acabou de começar seria cancelado. Na falta o
+      // filtro é a lista de onde ela vale (o job pode concluir o atendimento
+      // nesse intervalo e a falta continua válida; um cancelado não é reaberto).
       let cancelled: AppointmentWithRelations;
       try {
         cancelled = await tx.appointment.update({
-          where: { id, status: appointment.status },
+          where: {
+            id,
+            status: marksNoShow
+              ? { in: NO_SHOW_FROM_STATUSES }
+              : appointment.status,
+          },
           data,
           include: withRelations,
         });
@@ -461,22 +493,69 @@ export class AppointmentService {
   }
 
   /**
-   * Cancelado é estado final: o cancelamento também cancelou o pagamento
-   * pendente, e reabrir o agendamento deixaria a cobrança sem atendimento. Para
-   * marcar de novo, cria-se outro agendamento. Repetir CANCELLED cai na regra
-   * do cancelamento ("já está cancelado").
+   * Cancelado e falta são estados finais. O cancelamento também cancelou o
+   * pagamento pendente, e reabrir o agendamento deixaria a cobrança sem
+   * atendimento; a falta fez o mesmo (a falta não cobra) e não se desfaz. Para
+   * marcar de novo, cria-se outro agendamento (a sessão de pacote tem a reposição,
+   * que é outro caminho). Repetir o mesmo status não é reabrir: CANCELLED cai na
+   * regra do cancelamento ("já está cancelado").
    */
   private ensureNotReopened(
     { status }: Appointment,
     dto: UpdateAppointmentDto,
   ) {
+    const refusal: Partial<Record<AppointmentStatus, string>> = {
+      [AppointmentStatus.CANCELLED]:
+        "Agendamento cancelado não pode mudar de status",
+      [AppointmentStatus.NO_SHOW]:
+        "Agendamento em que o cliente não compareceu não pode mudar de status",
+    };
+    const message = refusal[status];
     if (
-      status === AppointmentStatus.CANCELLED &&
+      message &&
       dto.status !== undefined &&
+      dto.status !== status &&
+      // Pedir o cancelamento tem a mensagem própria, na regra do cancelamento.
       dto.status !== AppointmentStatus.CANCELLED
     ) {
+      throw new BadRequestException(message);
+    }
+  }
+
+  /**
+   * Regras de marcar a falta (o cliente não compareceu):
+   * - só o status (e a observação) mudam: a falta fecha o atendimento;
+   * - só se marca o que já iniciou. Vale o horário, e não só o status, porque o
+   *   job de status roda a cada 5 minutos;
+   * - com pagamento já recebido não se marca: não há reembolso. O pagamento
+   *   pendente, ao contrário, é cancelado junto (a falta não cobra).
+   */
+  private async ensureCanBeMarkedNoShow(
+    { id, status, startAt }: Appointment,
+    dto: UpdateAppointmentDto,
+  ) {
+    if (dto.clientId || dto.professionalId || dto.serviceId || dto.startAt) {
       throw new BadRequestException(
-        "Agendamento cancelado não pode mudar de status",
+        "Para marcar a falta, informe só o status (e, se quiser, a observação)",
+      );
+    }
+
+    const started =
+      status === AppointmentStatus.IN_PROGRESS ||
+      status === AppointmentStatus.COMPLETED ||
+      startAt <= new Date();
+    if (!started) {
+      throw new BadRequestException(
+        "Só se marca falta de atendimento que já iniciou",
+      );
+    }
+
+    const received = await this.prisma.payment.count({
+      where: { appointmentId: id, deletedAt: null, status: PaymentStatus.PAID },
+    });
+    if (received > 0) {
+      throw new BadRequestException(
+        "Agendamento com pagamento recebido não pode ser marcado como falta",
       );
     }
   }

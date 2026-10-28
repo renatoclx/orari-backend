@@ -941,7 +941,7 @@ describe("AppointmentService", () => {
 
     it.each([
       ["observação", { note: "ajuste" }],
-      ["status", { status: "NO_SHOW" as const }],
+      ["status", { status: "CONFIRMED" as const }],
       ["serviço", { serviceId: "service-2" }],
       ["cliente", { clientId: "client-2" }],
       ["horário", { startAt: new Date(Date.now() + 86_400_000) }],
@@ -1002,6 +1002,212 @@ describe("AppointmentService", () => {
       );
 
       expect(prismaMock.payment.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("falta (o cliente não compareceu): não cobra", () => {
+    const started = new Date(Date.now() - 60 * 60_000);
+    const future = new Date(Date.now() + 2 * 3_600_000);
+    const markNoShow = (current: Record<string, unknown>, extra = {}) => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce({
+        ...appointment,
+        ...current,
+      });
+      return appointmentService.update(
+        "appointment-1",
+        { status: "NO_SHOW", ...extra },
+        COMPANY_ID,
+      );
+    };
+
+    it.each(["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"])(
+      "deve marcar a falta de %s que já iniciou e cancelar o pagamento PENDING, na mesma transação",
+      async (status) => {
+        prismaMock.payment.count.mockResolvedValue(0);
+
+        await markNoShow({ status, startAt: started });
+
+        expect(prismaMock.$transaction).toHaveBeenCalledWith(
+          expect.any(Function),
+        );
+        expect(prismaMock.appointment.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            // A falta vale de qualquer status em que o atendimento já iniciou.
+            where: {
+              id: "appointment-1",
+              status: {
+                in: ["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"],
+              },
+            },
+            data: expect.objectContaining({ status: "NO_SHOW" }) as unknown,
+          }),
+        );
+        // Só o PENDING: a falta não cobra. O PAID nunca chega aqui (é recusado).
+        expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+          where: {
+            appointmentId: "appointment-1",
+            status: "PENDING",
+            deletedAt: null,
+          },
+          data: { status: "CANCELLED", updatedAt: anyDate },
+        });
+      },
+    );
+
+    it("deve marcar a falta do concluído mesmo com pagamento pendente (antes ficava travado)", async () => {
+      // Só o pagamento recebido é consultado: o pendente não impede.
+      prismaMock.payment.count.mockResolvedValue(0);
+
+      await markNoShow({ status: "COMPLETED", startAt: started });
+
+      expect(prismaMock.payment.count).toHaveBeenCalledTimes(1);
+      expect(prismaMock.payment.count).toHaveBeenCalledWith({
+        where: {
+          appointmentId: "appointment-1",
+          deletedAt: null,
+          status: "PAID",
+        },
+      });
+    });
+
+    it("deve permitir uma observação junto com a falta", async () => {
+      prismaMock.payment.count.mockResolvedValue(0);
+
+      await markNoShow(
+        { status: "COMPLETED", startAt: started },
+        { note: "Avisou que não viria" },
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: "NO_SHOW",
+            note: "Avisou que não viria",
+          }) as unknown,
+        }),
+      );
+    });
+
+    it.each(["SCHEDULED", "CONFIRMED"])(
+      "deve recusar a falta de %s que ainda não iniciou, sem alterar nada",
+      async (status) => {
+        await expect(markNoShow({ status, startAt: future })).rejects.toThrow(
+          "Só se marca falta de atendimento que já iniciou",
+        );
+        expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+        expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it("deve usar o horário, e não só o status, para saber se iniciou (o job roda a cada 5 minutos)", async () => {
+      prismaMock.payment.count.mockResolvedValue(0);
+
+      // Ainda SCHEDULED no banco, mas o horário de início já passou.
+      await markNoShow({ status: "SCHEDULED", startAt: started });
+
+      expect(prismaMock.appointment.update).toHaveBeenCalled();
+    });
+
+    it("deve recusar a falta quando o pagamento já foi recebido (não há reembolso)", async () => {
+      prismaMock.payment.count.mockResolvedValue(1);
+
+      await expect(
+        markNoShow({ status: "COMPLETED", startAt: started }),
+      ).rejects.toThrow(
+        "Agendamento com pagamento recebido não pode ser marcado como falta",
+      );
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["cliente", { clientId: "client-2" }],
+      ["profissional", { professionalId: "professional-2" }],
+      ["serviço", { serviceId: "service-2" }],
+      ["horário", { startAt: new Date(Date.now() + 86_400_000) }],
+    ])("deve recusar a falta junto com a mudança de %s", async (_n, change) => {
+      await expect(
+        markNoShow({ status: "COMPLETED", startAt: started }, change),
+      ).rejects.toThrow("Para marcar a falta, informe só o status");
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("deve recusar a falta de um cancelado (estado final)", async () => {
+      await expect(
+        markNoShow({ status: "CANCELLED", startAt: started }),
+      ).rejects.toThrow("Agendamento cancelado não pode mudar de status");
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("não deve checar conflito de horário ao marcar a falta (o horário não muda)", async () => {
+      prismaMock.payment.count.mockResolvedValue(0);
+
+      await markNoShow({ status: "COMPLETED", startAt: started });
+
+      // Só a leitura do agendamento: nenhuma busca de conflito.
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it("deve recusar com 409, sem cancelar o pagamento, se o agendamento foi cancelado entre a leitura e a gravação", async () => {
+      prismaMock.payment.count.mockResolvedValue(0);
+      // O filtro por status não encontra a linha (cancelada no meio do caminho).
+      prismaMock.appointment.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Record not found", {
+          code: "P2025",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        markNoShow({ status: "IN_PROGRESS", startAt: started }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+    });
+
+    describe("a falta é definitiva", () => {
+      const noShow = { ...appointment, status: "NO_SHOW", startAt: started };
+
+      it.each(["SCHEDULED", "CONFIRMED", "IN_PROGRESS", "COMPLETED"] as const)(
+        "não deve mudar de NO_SHOW para %s",
+        async (status) => {
+          prismaMock.appointment.findFirst.mockResolvedValueOnce(noShow);
+
+          await expect(
+            appointmentService.update("appointment-1", { status }, COMPANY_ID),
+          ).rejects.toThrow(
+            "Agendamento em que o cliente não compareceu não pode mudar de status",
+          );
+          expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it("deve continuar permitindo alterar a observação de quem faltou", async () => {
+        prismaMock.appointment.findFirst
+          .mockResolvedValueOnce(noShow)
+          .mockResolvedValueOnce(null);
+
+        await appointmentService.update(
+          "appointment-1",
+          { note: "Remarcou por telefone" },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.appointment.update).toHaveBeenCalled();
+      });
+
+      it("repetir NO_SHOW não muda nada e não mexe no pagamento", async () => {
+        prismaMock.appointment.findFirst
+          .mockResolvedValueOnce(noShow)
+          .mockResolvedValueOnce(null);
+
+        await appointmentService.update(
+          "appointment-1",
+          { status: "NO_SHOW" },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+      });
     });
   });
 

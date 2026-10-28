@@ -281,7 +281,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 - CONFIRMED - Confirmado
 - COMPLETED - Completo
 - CANCELLED - Cancelado
-- NO_SHOW - Não comparecimento
+- NO_SHOW - Não comparecimento (não cobra e é definitivo; ver `business-rules.md`)
 
 ### Atributos
 
