@@ -379,6 +379,20 @@ describe("UserService", () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
+    it("filtra pelo nome (parcial, sem diferenciar maiúsculas) dentro do que o usuário enxerga", async () => {
+      await userService.findAll(
+        { page: 1, limit: 10, name: " mar " },
+        adminUser,
+      );
+
+      expect(prismaMock.user.count).toHaveBeenCalledWith({
+        where: {
+          ...withDeleted(visibleToAdmin),
+          name: { contains: "mar", mode: "insensitive" },
+        },
+      });
+    });
+
     it("SUPER_ADMIN lista usuários de empresas ativas, com filtro opcional", async () => {
       await userService.findAll({ page: 1, limit: 10 }, superAdminUser);
       await userService.findAll(
