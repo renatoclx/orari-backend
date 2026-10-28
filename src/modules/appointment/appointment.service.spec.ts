@@ -16,12 +16,14 @@ import { CreateAppointmentDto } from "./dto/create-appointment.dto";
 
 const anyDate: unknown = expect.any(Date);
 
-// Cliente, profissional e serviço devolvidos junto com cada agendamento.
+// Cliente, profissional, serviço, origem e situação do pagamento devolvidos
+// junto com cada agendamento.
 const relations = {
   client: { select: { id: true, name: true, photoUrl: true } },
   professional: { select: { id: true, name: true, photoUrl: true } },
   service: { select: { id: true, name: true, color: true, duration: true } },
   recurringAppointment: { select: { id: true, clientPlanId: true } },
+  payment: { select: { status: true, deletedAt: true } },
 };
 
 describe("AppointmentService", () => {
@@ -1434,6 +1436,8 @@ describe("AppointmentService", () => {
         "id",
         "clientPlanId",
       ]);
+      // Do pagamento, só a situação (e se foi excluído): nada de valor ou método.
+      expect(fields(relations.payment.select)).toEqual(["status", "deletedAt"]);
     });
   });
 

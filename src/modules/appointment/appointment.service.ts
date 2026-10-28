@@ -33,6 +33,10 @@ const withRelations = {
   service: { select: { id: true, name: true, color: true, duration: true } },
   // Origem: diz se o agendamento veio de uma recorrência e se ela é de um pacote.
   recurringAppointment: { select: { id: true, clientPlanId: true } },
+  // Situação do pagamento (o avulso e a sessão de recorrência têm um; a sessão de
+  // pacote não): a tela só oferece "Marcar falta" enquanto o pagamento não foi
+  // recebido. O `deletedAt` deixa ignorar o excluído, como a regra da falta faz.
+  payment: { select: { status: true, deletedAt: true } },
 } satisfies Prisma.AppointmentInclude;
 
 export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
@@ -42,8 +46,6 @@ export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
 // Um agendamento cancelado libera o horário do cliente e do profissional.
 const BLOCKING_STATUSES = { not: AppointmentStatus.CANCELLED } as const;
 
-// Só um atendimento que ainda não aconteceu pode ser remanejado ou cancelado
-// pela recorrência.
 // De onde se marca a falta: o que já iniciou, inclusive o já concluído (a falta
 // só é anotada depois do horário). O cancelado é final e o que já é falta não
 // muda de novo.
@@ -54,6 +56,8 @@ const NO_SHOW_FROM_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.COMPLETED,
 ];
 
+// Só um atendimento que ainda não aconteceu pode ser remanejado ou cancelado
+// pela recorrência.
 const UPCOMING_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.SCHEDULED,
   AppointmentStatus.CONFIRMED,
