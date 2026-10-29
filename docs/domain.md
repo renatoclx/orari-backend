@@ -232,21 +232,23 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 ### Atributos
 
-| Nome        | Descrição                             |
-| ----------- | ------------------------------------- |
-| id          | Identificador único                   |
-| name        | Nome do serviço                       |
-| description | Descrição do serviço (opcional)       |
-| price       | Valor cobrado pelo serviço (opcional) |
-| duration    | Duração do serviço em minutos         |
-| companyId   | Empresa a qual pertence o serviço     |
-| isActive    | Serviço Ativo ou inativo              |
-| color       | Cor associada ao serviço (opcional)   |
+| Nome          | Descrição                                        |
+| ------------- | ------------------------------------------------ |
+| id            | Identificador único                              |
+| name          | Nome do serviço                                  |
+| description   | Descrição do serviço (opcional)                  |
+| price         | Valor cobrado pelo serviço (opcional)            |
+| duration      | Duração do serviço em minutos                    |
+| companyId     | Empresa a qual pertence o serviço                |
+| isActive      | Serviço Ativo ou inativo                         |
+| color         | Cor associada ao serviço (opcional)              |
+| allowsClasses | Aceita atendimento em turma (padrão: não aceita) |
 
 ### Relacionamentos
 
 - Uma empresa pode ter vários serviços.
 - Um serviço pode estar em vários agendamentos e agendamentos recorrentes.
+- Um serviço que aceita turma pode estar em várias turmas (ClassGroup).
 
 ---
 
@@ -541,6 +543,51 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 ### Relacionamentos
 
 - Uma notificação pertence a uma empresa.
+
+---
+
+## ClassGroup
+
+- Representa uma turma fixa: um horário semanal de atendimento em turma, com vagas
+  (ver `turmas.md`).
+
+### Atributos
+
+| Nome           | Descrição                                    |
+| -------------- | -------------------------------------------- |
+| id             | Identificador único                          |
+| companyId      | Código da empresa                            |
+| name           | Nome da turma (opcional, não único)          |
+| normalizedName | Nome sem acentos e em minúsculas, para busca |
+| serviceId      | Serviço da turma (que aceita turma)          |
+| professionalId | Profissional da turma (deriva de pessoa)     |
+| capacity       | Quantidade máxima de alunos por sessão       |
+| isActive       | Turma ativa ou inativa                       |
+
+### Relacionamentos
+
+- Uma turma pertence a uma empresa, realiza um serviço e tem um profissional.
+- Uma turma possui um ou mais dias e horários (ClassGroupDay).
+
+---
+
+## ClassGroupDay
+
+- Representa um dia e horário da turma fixa.
+
+### Atributos
+
+| Nome         | Descrição                |
+| ------------ | ------------------------ |
+| id           | Identificador único      |
+| classGroupId | Código da turma          |
+| weekDay      | Dia da semana (WeekDays) |
+| startTime    | Horário de início        |
+
+### Relacionamentos
+
+- Os dias fazem referência a uma turma. O fim de cada horário é o início somado à
+  duração do serviço da turma.
 
 ---
 

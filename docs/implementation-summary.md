@@ -515,3 +515,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Verificado:** 23 testes novos no `appointment.service.spec.ts` e conferência numa segunda instância do backend, contra o banco local (futuro recusado, pago recusado, concluído com pendente vira falta e o pagamento fica `CANCELLED`, falta não volta nem cancela).
 - **Pagamento na resposta:** `payment: { status, deletedAt } | null` passou a vir em toda resposta de agendamento (`withRelations`), para a tela esconder "Marcar falta" no atendimento já pago (a API continua recusando, 400). Do pagamento só a situação: nada de valor ou método.
 - **Fora do escopo:** o botão "Marcar falta" e a reposição de sessão no frontend (próxima etapa); desfazer a falta; cobrar a falta (multa) por empresa ou serviço.
+
+## 2.46 Turmas, etapa 1: serviço que aceita turma e cadastro de turmas fixas
+
+- **Desenho:** `docs/turmas.md` (um agendamento por aluno; a turma agrupa os agendamentos por sessão). Esta etapa cobre só o cadastro das turmas fixas; sessões e encaixes vêm nas próximas.
+- **Banco** (migration `20261029120000_class_groups`): `services.allowsClasses` (padrão `false`), `class_groups` (nome opcional com `normalizedName` e índice GIN trigram, serviço, profissional, vagas, `isActive`) e `class_group_days` (dia da semana e início; o fim vem da duração do serviço).
+- **Serviço:** aceita `allowsClasses`; desmarcar com turma ativa responde 409; a exclusão passa a contar as turmas como relacionamento.
+- **Módulo `class-group`** (`/class-groups`, só ADMIN): criação, listagem (mais recente primeiro; filtros nome, `isActive`, serviço, profissional, `from`/`to` de cadastro em dias inteiros no fuso da empresa), consulta e edição de nome, vagas e situação. Validações: serviço ativo que aceita turma, profissional `PROFESSIONAL`, vagas de 2 a 100, 1 a 21 horários sem sobreposição no mesmo dia, cada horário dentro do funcionamento e sem sobrepor outra turma ativa do mesmo profissional. A reativação repete essas conferências.
+- **Funcionamento:** `BusinessHourService.isWeeklySlotWithinBusinessHours` confere um horário semanal sem data; `isWithinBusinessHours` passou a usar a mesma conferência por dentro, sem mudar o comportamento.

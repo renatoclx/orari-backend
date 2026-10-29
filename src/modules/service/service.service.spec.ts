@@ -24,6 +24,7 @@ describe("ServiceService", () => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    classGroup: { count: vi.fn() },
   };
 
   const dto: CreateServiceDto = { name: "Depilação", duration: 30 };
@@ -144,6 +145,64 @@ describe("ServiceService", () => {
         omit,
       });
     });
+
+    describe("deixar de aceitar turma", () => {
+      it("recusa com 409 quando há turma ativa do serviço", async () => {
+        prismaMock.service.findFirst.mockResolvedValue({
+          ...service,
+          allowsClasses: true,
+        });
+        prismaMock.classGroup.count.mockResolvedValue(1);
+
+        await expect(
+          serviceService.update(
+            "service-1",
+            { allowsClasses: false },
+            COMPANY_ID,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.classGroup.count).toHaveBeenCalledWith({
+          where: { serviceId: "service-1", isActive: true },
+        });
+        expect(prismaMock.service.update).not.toHaveBeenCalled();
+      });
+
+      it("permite sem turma ativa", async () => {
+        prismaMock.service.findFirst.mockResolvedValue({
+          ...service,
+          allowsClasses: true,
+        });
+        prismaMock.classGroup.count.mockResolvedValue(0);
+
+        await serviceService.update(
+          "service-1",
+          { allowsClasses: false },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.service.update).toHaveBeenCalled();
+      });
+
+      it("não consulta turmas ao marcar, nem quando o serviço já não aceitava", async () => {
+        prismaMock.service.findFirst.mockResolvedValue({
+          ...service,
+          allowsClasses: false,
+        });
+
+        await serviceService.update(
+          "service-1",
+          { allowsClasses: true },
+          COMPANY_ID,
+        );
+        await serviceService.update(
+          "service-1",
+          { allowsClasses: false },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.classGroup.count).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("remove", () => {
@@ -152,6 +211,7 @@ describe("ServiceService", () => {
         appointments: 0,
         recurringAppointments: 0,
         planItems: 0,
+        classGroups: 0,
         ...counts,
       },
     });
@@ -161,7 +221,7 @@ describe("ServiceService", () => {
       prismaMock.service.findUniqueOrThrow.mockResolvedValue(relations());
     });
 
-    it("deve contar agendamentos, recorrências e itens de plano, sem filtrar status", async () => {
+    it("deve contar agendamentos, recorrências, itens de plano e turmas, sem filtrar status", async () => {
       await serviceService.remove("service-1", COMPANY_ID);
 
       expect(prismaMock.service.findUniqueOrThrow).toHaveBeenCalledWith({
@@ -172,6 +232,7 @@ describe("ServiceService", () => {
               appointments: true,
               recurringAppointments: true,
               planItems: true,
+              classGroups: true,
             },
           },
         },
@@ -182,6 +243,7 @@ describe("ServiceService", () => {
       ["agendamentos", { appointments: 1 }],
       ["recorrências", { recurringAppointments: 2 }],
       ["itens de plano", { planItems: 1 }],
+      ["turmas", { classGroups: 1 }],
     ])(
       "deve recusar com 409 e não alterar nada quando há %s",
       async (_name, counts) => {
@@ -192,7 +254,7 @@ describe("ServiceService", () => {
         await expect(
           serviceService.remove("service-1", COMPANY_ID),
         ).rejects.toThrow(
-          "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+          "O serviço possui agendamentos, recorrências, planos ou turmas vinculados. Inative-o em vez de excluir.",
         );
         await expect(
           serviceService.remove("service-1", COMPANY_ID),

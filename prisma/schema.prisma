@@ -152,6 +152,7 @@ model Company {
   plans                 Plan[]
   payments              Payment[]
   clientPlans           ClientPlan[]
+  classGroups           ClassGroup[]
 
   @@map("companies")
 }
@@ -187,6 +188,7 @@ model People {
   users                      User[]
   anamnesesAsClient          Anamnesis[]            @relation("AnamnesisClient")
   anamnesisEntriesAsAuthor   AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
+  classGroupsAsProfessional  ClassGroup[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
@@ -294,6 +296,8 @@ model Service {
   duration       Int
   companyId      String
   isActive       Boolean   @default(true)
+  // Aceita atendimento em turma (ver ClassGroup).
+  allowsClasses  Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
   deletedAt      DateTime?
@@ -302,6 +306,7 @@ model Service {
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   planItems             PlanItem[]
+  classGroups           ClassGroup[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -763,4 +768,50 @@ model AnamnesisAnswer {
 
   @@unique([entryId, questionId])
   @@map("anamnesis_answers")
+}
+
+/**
+ * Turma fixa: um horário de atendimento em turma, com vagas (ver docs/turmas.md).
+ * Serviço, profissional e dias não mudam depois do cadastro; não há exclusão: a
+ * turma é inativada por isActive.
+ */
+model ClassGroup {
+  id             String    @id @default(uuid())
+  companyId      String
+  // Opcional e não único: serve só para identificar a turma.
+  name           String?
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String?
+  serviceId      String
+  professionalId String
+  // Quantidade máxima de alunos por sessão.
+  capacity       Int
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company      Company         @relation(fields: [companyId], references: [id])
+  service      Service         @relation(fields: [serviceId], references: [id])
+  professional People          @relation(fields: [professionalId], references: [id])
+  days         ClassGroupDay[]
+
+  @@index([companyId, createdAt])
+  @@index([professionalId])
+  @@index([serviceId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("class_groups")
+}
+
+// Dia e horário da turma fixa. O fim é o início mais a duração do serviço, como nos agendamentos.
+model ClassGroupDay {
+  id           String   @id @default(uuid())
+  classGroupId String
+  weekDay      WeekDay
+  startTime    DateTime @db.Time(0)
+  createdAt    DateTime @default(now())
+
+  classGroup ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+
+  @@index([classGroupId])
+  @@map("class_group_days")
 }

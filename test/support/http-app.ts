@@ -30,6 +30,7 @@ import { JwtStrategy } from "../../src/modules/auth/strategies/jwt.strategy";
 import { AuditController } from "../../src/modules/audit/audit.controller";
 import { BusinessHourController } from "../../src/modules/business-hour/business-hour.controller";
 import { CityController } from "../../src/modules/city/city.controller";
+import { ClassGroupController } from "../../src/modules/class-group/class-group.controller";
 import { ClientPlanController } from "../../src/modules/client-plan/client-plan.controller";
 import { CompanyController } from "../../src/modules/company/company.controller";
 import { CompanyService } from "../../src/modules/company/company.service";
@@ -61,6 +62,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   AuthController,
   BusinessHourController,
   CityController,
+  ClassGroupController,
   ClientPlanController,
   CompanyController,
   ContactController,

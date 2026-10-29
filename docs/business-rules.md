@@ -96,7 +96,8 @@
 - A duração é informada em minutos e é o que define o fim dos agendamentos desse serviço.
 - Serviços inativos não podem ser usados em novos agendamentos nem em recorrências.
 - A cor (`color`), quando informada, deve ser uma string hexadecimal válida (`#RGB` ou `#RRGGBB`).
-- Um serviço só pode ser excluído se não tiver nenhum relacionamento: agendamentos, agendamentos recorrentes ou itens de plano. Contam todos os registros, inclusive cancelados ou encerrados, porque o histórico precisa continuar apontando para o serviço.
+- O serviço pode aceitar atendimento em turma (`allowsClasses`, padrão: não aceita). Um serviço com turma ativa não pode deixar de aceitar turma (409): as turmas precisam ser inativadas antes.
+- Um serviço só pode ser excluído se não tiver nenhum relacionamento: agendamentos, agendamentos recorrentes, itens de plano ou turmas. Contam todos os registros, inclusive cancelados ou encerrados, porque o histórico precisa continuar apontando para o serviço.
 - Com relacionamento, a exclusão é recusada (409), nada é alterado, e o caminho é inativar o serviço (`isActive` falso). Serviço inexistente ou de outra empresa responde 404.
 - Um plano não é excluído (só inativado), e os serviços de um plano editado deixam de ser seus itens: por isso um serviço que consta na composição de qualquer plano, ativo ou não, não pode ser excluído.
 
@@ -322,6 +323,22 @@
 - Cada comanda traz: `appointments` (os atendimentos de hoje, por horário, com serviço, profissional, `recurringAppointmentId`, `clientPlanId` quando é sessão de pacote e `payment`, que é o pagamento do atendimento ou `null` quando ainda não existe, como na sessão de pacote); `previousPayments` (pagamentos do cliente, de atendimento ou de contratação, que não são dos atendimentos listados: `PENDING` com vencimento até hoje, inclusive; `PENDING` de contratação integral sem vencimento; e `PAID` hoje, por vencimento crescente e sem vencimento por último, cada um com a origem); e os totais em texto com duas casas.
 - Totais: `todayPending` (pendentes dos atendimentos de hoje), `previousPending` (pendentes dos anteriores) e `paidToday` (pagos hoje, nas duas listas). Um atendimento de hoje já pago em outro dia aparece com o pagamento pago, mas não entra em nenhum total. Pagamentos `CANCELLED` e excluídos nunca entram em lista nem total.
 - `PATCH /payments/settle` dá baixa nos pagamentos escolhidos (`paymentIds`, ao menos um, sem repetir), com um `paymentMethodId` e `paidAt` opcional (padrão: o momento da requisição), tudo numa só transação. Todos precisam ser da empresa, não excluídos, `PENDING` e do mesmo cliente: inexistente (pagamento ou método) responde 404, algum fora de `PENDING` responde 409 e clientes diferentes respondem 400. O método precisa existir (não excluído) na empresa.
+
+## Turmas
+
+> **Em desenho:** o desenho completo está em `turmas.md`. Valem na API, por enquanto, só as regras abaixo (etapa 1: cadastro de turmas fixas).
+
+- Uma turma fixa é um horário semanal de atendimento em turma, com vagas: serviço, profissional, um ou mais dias e horários, quantidade de vagas e um nome opcional (não único, até 100 caracteres). Pertence à empresa do usuário; a empresa não é informada no payload.
+- **Só o ADMIN** cadastra, consulta, altera, inativa e reativa turmas. Os demais perfis, inclusive o SUPER_ADMIN, recebem 403. Turma de outra empresa responde 404.
+- O serviço precisa ser da empresa, estar ativo e aceitar turma (400). O profissional precisa ser uma pessoa ativa da empresa do tipo `PROFESSIONAL` (400).
+- As vagas vão de 2 a 100. A turma tem de 1 a 21 horários. Cada horário informa o dia da semana e o início (`HH:MM`); o fim é o início somado à duração do serviço.
+- Dois horários da mesma turma não podem se sobrepor no mesmo dia da semana (podem se encostar) (400).
+- Cada horário precisa caber inteiro em uma janela de atendimento da empresa: a turma fixa não tem encaixe (400). Enquanto a empresa não cadastrar janelas, o horário não é restringido.
+- O profissional não pode ter duas turmas **ativas** com horários que se sobreponham no mesmo dia da semana (409, citando a outra turma).
+- Serviço, profissional e dias não mudam depois do cadastro (400): para mudá-los, inativa-se a turma e cria-se outra. Nome (`null` remove) e vagas podem ser alterados.
+- Não há exclusão: a turma é inativada (`isActive`) e pode ser reativada. A reativação confere de novo o serviço, o profissional, o funcionamento e as outras turmas ativas do profissional.
+- A listagem é paginada, da turma cadastrada mais recentemente para a mais antiga, e filtra por nome (parcial, sem diferenciar acentos nem maiúsculas), situação (`isActive`), serviço, profissional e período de cadastro (`from` e `to`, datas AAAA-MM-DD; dias inteiros no fuso da empresa, os dois incluídos).
+- Toda resposta de turma traz o serviço (`id`, `name`, `color`, `duration`), o profissional (`id`, `name`, `photoUrl`) e os dias (`weekDay`, `startTime` e `endTime` em HH:MM).
 
 ## Anamnese
 

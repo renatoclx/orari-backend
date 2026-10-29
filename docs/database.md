@@ -69,6 +69,8 @@ Todas as entidades persistentes devem possuir:
 - **Appointment**: não possui exclusão; o ciclo de vida é controlado pelo `status`. Não utiliza `deletedAt`.
 - **RecurringAppointment**: não possui exclusão; é desativado por `isActive`. Não utiliza `deletedAt`.
 - **RecurringDay**: faz parte do agendamento recorrente e é substituído em bloco junto com ele, por isso usa exclusão física (`onDelete: Cascade`). Não utiliza `deletedAt`.
+- **ClassGroup**: não possui exclusão; é inativada (`isActive`). Não utiliza `deletedAt`.
+- **ClassGroupDay**: faz parte da turma e não muda depois do cadastro; segue a turma (`onDelete: Cascade`). Não utiliza `deletedAt` nem `updatedAt`.
 - **Notification**: não possui exclusão; é resolvida (`resolvedAt`). Não utiliza `deletedAt`.
 - **AuditLog**: registro de auditoria; só recebe inserções e não é alterado nem excluído pela API. Não utiliza `deletedAt` nem `updatedAt`. Não tem relação com o cliente (`clientId`): o registro vale mesmo que o cliente seja removido.
 - **AnamnesisTemplate**: não possui exclusão; é inativado (`isActive`). Não utiliza `deletedAt`.
@@ -90,5 +92,5 @@ Criar índices para campos frequentemente utilizados em:
 - Para isso, a entidade mantém uma coluna `normalizedName` (nome sem acentos e em minúsculas), preenchida pela aplicação com `normalizeForSearch()` a cada criação ou alteração do nome, e nunca aceita do cliente nem retornada pela API.
 - A busca compara o termo normalizado com essa coluna (`LIKE '%termo%'`), acelerada por índice GIN trigram: `@@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)`.
 - Ao adicionar a coluna em uma tabela com dados, a migration deve preenchê-la antes de torná-la obrigatória.
-- Entidades com busca por nome: City, People, Service e PaymentMethod.
+- Entidades com busca por nome: City, People, Service, PaymentMethod e ClassGroup (nome opcional: sem nome, a coluna fica vazia).
 - Horários de janelas (BusinessHour) e de recorrências (RecurringDay) são comparados no fuso da empresa (`Company.timezone`), com as conversões em `common/time/time-zone.ts`. Datas puras (colunas `date`, como o período da recorrência) são tratadas pelo calendário, sem conversão.

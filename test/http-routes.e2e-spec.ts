@@ -144,6 +144,11 @@ describe("Rotas HTTP", () => {
       // service confere o acesso (ADMIN ou profissional vinculado).
       ["POST /anamnesis-templates", ["ADMIN"]],
       ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
+      // Turmas: só o ADMIN (ver docs/turmas.md).
+      ["POST /class-groups", ["ADMIN"]],
+      ["GET /class-groups", ["ADMIN"]],
+      ["GET /class-groups/:id", ["ADMIN"]],
+      ["PATCH /class-groups/:id", ["ADMIN"]],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 

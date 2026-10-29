@@ -9,6 +9,7 @@ import { AppointmentModule } from "./modules/appointment/appointment.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { BusinessHourModule } from "./modules/business-hour/business-hour.module";
+import { ClassGroupModule } from "./modules/class-group/class-group.module";
 import { ClientPlanModule } from "./modules/client-plan/client-plan.module";
 import { CityModule } from "./modules/city/city.module";
 import { CompanyModule } from "./modules/company/company.module";
@@ -43,6 +44,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     AddressModule,
     ServiceModule,
     BusinessHourModule,
+    ClassGroupModule,
     // forRoot(0) Inicializa o motor do agendamento uma vez na aplicação quando
     //houver um provider com @Cron()
     ScheduleModule.forRoot(),
