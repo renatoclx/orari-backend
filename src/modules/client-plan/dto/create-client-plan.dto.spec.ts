@@ -60,3 +60,21 @@ describe("CreateClientPlanDto (primeiro vencimento)", () => {
     ).resolves.toEqual(["firstDueDate"]);
   });
 });
+
+describe("CreateClientPlanDto (turma)", () => {
+  const withClassGroup = (classGroupId: unknown) => ({
+    ...base,
+    billingType: "INTEGRAL",
+    schedules: [{ ...base.schedules[0], classGroupId }],
+  });
+
+  it("aceita a agenda de um serviço encaixada numa turma", async () => {
+    await expect(errorsFor(withClassGroup(uuid))).resolves.toEqual([]);
+  });
+
+  it("recusa turma que não é UUID", async () => {
+    await expect(errorsFor(withClassGroup("turma"))).resolves.toEqual([
+      "schedules",
+    ]);
+  });
+});

@@ -36,6 +36,14 @@ export class CreateRecurringAppointmentDto {
   @IsNotEmpty()
   note?: string;
 
+  /**
+   * Encaixa a recorrência numa turma fixa: serviço e profissional precisam ser
+   * os da turma, e cada dia, um dos horários dela (ver docs/turmas.md).
+   */
+  @IsOptional()
+  @IsUUID()
+  classGroupId?: string;
+
   /** Sem dias, a recorrência não reserva horário nenhum. */
   @IsArray()
   @ArrayMinSize(1)

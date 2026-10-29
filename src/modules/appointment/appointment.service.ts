@@ -80,6 +80,8 @@ const CLASS_SESSION_LOCKED_FIELDS = RECURRENCE_LOCKED_FIELDS;
 export interface AppointmentOccurrence {
   startAt: Date;
   endAt: Date;
+  // Sessão da turma, quando a recorrência está encaixada numa (já reservada por quem chama).
+  classSessionId?: string;
 }
 
 // Dados que a recorrência repete em todos os agendamentos que gera.
@@ -450,6 +452,9 @@ export class AppointmentService {
       data: {
         startAt,
         endAt,
+        // Sessão de turma remanejada sai da turma: vira atendimento individual
+        // no novo horário e libera a vaga (ver docs/turmas.md).
+        classSessionId: null,
         // Sem status no data, o Prisma mantém o atual (o remanejamento comum não o muda).
         status: isReplacement ? AppointmentStatus.SCHEDULED : undefined,
         updatedAt: new Date(),
@@ -807,16 +812,17 @@ export class AppointmentService {
     timeZone: string,
     note?: string | null,
   ): Promise<Pick<Appointment, "id" | "startAt">[]> {
-    for (const { startAt, endAt } of occurrences) {
+    for (const { startAt, endAt, classSessionId } of occurrences) {
       try {
         await this.businessHourService.ensureWithinBusinessHours(
           data.companyId,
           startAt,
           endAt,
         );
+        // Na turma, os colegas da mesma sessão não conflitam com o profissional.
         await this.ensureSlotIsFree(
           db,
-          { ...data, startAt, endAt }, // Pega tudo que existe em data e adiciona startAt e endAt
+          { ...data, startAt, endAt, classSessionId }, // Pega tudo que existe em data e adiciona o horário
           data.companyId,
         );
       } catch (error) {

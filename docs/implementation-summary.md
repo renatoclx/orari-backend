@@ -531,3 +531,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Vagas com trava:** `ClassSessionService` trava a linha da sessão (`SELECT ... FOR UPDATE`) antes de contar os alunos; a sessão da turma fixa é criada com `INSERT ... ON CONFLICT DO NOTHING` na mesma transação. Primeiro SQL cru do projeto (convenção registrada no `database.md`). Verificado com duas inclusões simultâneas na última vaga: uma passa, a outra recebe 409.
 - **AppointmentService:** a resposta traz `classSession`; `ensureSlotIsFree` ignora, para o profissional, os colegas da mesma sessão (inclusive no `PATCH` de observação, que também confere a agenda); `createInClassSession` e `attachToClassSession` (este barra duas conversões simultâneas) mantêm as regras de agenda no módulo de agendamentos, sem depender do de turmas; agendamento de turma não muda horário, serviço, cliente nem profissional pela edição comum.
 - **Turma fixa:** mudar as vagas aplica às sessões futuras (travadas) e é recusado se alguma já tiver mais alunos.
+
+## 2.48 Turmas, etapa 3: recorrência e plano encaixados em turma
+
+- **Banco** (migration `20261029160000_recurring_class_group`): `recurring_appointments.classGroupId`.
+- **Entrada:** `classGroupId` opcional em `POST /recurring-appointments` e em cada item de `schedules` de `POST /client-plans`. Serviço e profissional continuam no payload e precisam ser os da turma; os dias precisam ser horários dela (`ClassSessionService.ensureRecurrenceFitsClassGroup`).
+- **Geração:** `createSchedule` passa as ocorrências por `ClassSessionService.reserveForOccurrences` (sessão criada se faltar, travada e com a vaga conferida, na transação da recorrência/contratação); `createFromRecurrence` grava a sessão em cada agendamento e confere a agenda sem os colegas. O `RecurringAppointmentModule` importa o `ClassGroupModule` (sem ciclo: este só depende do `AppointmentModule`).
+- **Remanejamento** (decisão A de `turmas.md`): `rescheduleFromRecurrence` limpa o `classSessionId`; o atendimento vai individual para o novo horário e a vaga fica livre.
+- **Respostas:** recorrência e contratação trazem `classGroupId`.

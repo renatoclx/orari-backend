@@ -22,6 +22,7 @@ import {
 import { CompanyService } from "../company/company.service";
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { PaymentService } from "../payment/payment.service";
+import { ClassSessionService } from "../class-group/class-session.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
@@ -43,6 +44,8 @@ export interface RecurringAppointmentResponse {
   isActive: boolean;
   // Preenchido quando a recorrência é a agenda de um serviço de um plano contratado.
   clientPlanId: string | null;
+  // Turma fixa em que a recorrência está encaixada.
+  classGroupId: string | null;
   createdAt: Date;
   updatedAt: Date | null;
   days: RecurringDayDto[];
@@ -65,6 +68,7 @@ export interface ClientPlanSchedule {
   startDate: Date;
   endDate: Date;
   days: RecurringDayDto[];
+  classGroupId?: string;
 }
 
 // O que toda recorrência grava, seja avulsa ou de plano.
@@ -77,6 +81,7 @@ interface ScheduleData {
   endDate: Date;
   note?: string;
   clientPlanId?: string;
+  classGroupId?: string;
   days: RecurringDayDto[];
 }
 
@@ -130,6 +135,7 @@ export class RecurringAppointmentService {
     private readonly appointmentService: AppointmentService,
     private readonly companyService: CompanyService,
     private readonly paymentService: PaymentService,
+    private readonly classSessionService: ClassSessionService,
   ) {}
 
   async create(
@@ -148,6 +154,13 @@ export class RecurringAppointmentService {
     // Valida o período antes de gravar: a data final não pode vir antes da inicial.
     this.ensurePeriodIsValid(dto.startDate, dto.endDate);
     this.ensureDaysAreValid(dto.days, service.duration);
+    if (dto.classGroupId) {
+      await this.classSessionService.ensureRecurrenceFitsClassGroup(
+        dto.classGroupId,
+        dto,
+        companyId,
+      );
+    }
 
     const timeZone = await this.companyService.getTimeZone(companyId);
 
@@ -204,6 +217,13 @@ export class RecurringAppointmentService {
       companyId,
     );
     this.ensureDaysAreValid(schedule.days, service.duration);
+    if (schedule.classGroupId) {
+      await this.classSessionService.ensureRecurrenceFitsClassGroup(
+        schedule.classGroupId,
+        schedule,
+        companyId,
+      );
+    }
 
     const { recurring } = await this.createSchedule(
       tx,
@@ -465,6 +485,15 @@ export class RecurringAppointmentService {
       ...withDetails,
     });
 
+    const occurrences = this.buildOccurrences(
+      days,
+      recurring.startDate,
+      data.endDate,
+      serviceDuration,
+      timeZone,
+      new Date(),
+    );
+
     const appointments = await this.appointmentService.createFromRecurrence(
       tx,
       {
@@ -474,14 +503,16 @@ export class RecurringAppointmentService {
         professionalId: recurring.professionalId,
         serviceId: recurring.serviceId,
       },
-      this.buildOccurrences(
-        days,
-        recurring.startDate,
-        data.endDate,
-        serviceDuration,
-        timeZone,
-        new Date(),
-      ),
+      // Na turma, cada ocorrência vai para a sessão do horário, com a vaga
+      // reservada (e travada) até o fim da transação.
+      data.classGroupId
+        ? await this.classSessionService.reserveForOccurrences(
+            tx,
+            data.classGroupId,
+            occurrences,
+            timeZone,
+          )
+        : occurrences,
       timeZone,
       recurring.note,
     );

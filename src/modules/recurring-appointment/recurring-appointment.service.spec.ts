@@ -9,6 +9,7 @@ import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
 import { CompanyService } from "../company/company.service";
+import { ClassSessionService } from "../class-group/class-session.service";
 import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
@@ -50,6 +51,10 @@ describe("RecurringAppointmentService", () => {
     moveDueDate: vi.fn(),
     cancelPendingForAppointment: vi.fn(),
     settlePendingForRecurrence: vi.fn(),
+  };
+  const classSessionServiceMock = {
+    ensureRecurrenceFitsClassGroup: vi.fn(),
+    reserveForOccurrences: vi.fn(),
   };
   // Os testes de geração usam UTC para facilitar a leitura das datas.
   const companyServiceMock = { getTimeZone: vi.fn().mockResolvedValue("UTC") };
@@ -141,6 +146,7 @@ describe("RecurringAppointmentService", () => {
         { provide: AppointmentService, useValue: appointmentServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
         { provide: PaymentService, useValue: paymentServiceMock },
+        { provide: ClassSessionService, useValue: classSessionServiceMock },
       ],
     }).compile();
 
@@ -945,6 +951,104 @@ describe("RecurringAppointmentService", () => {
       await expect(
         recurringService.update("recurring-1", { isActive: false }, COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("encaixe em turma fixa", () => {
+    const reserved = [
+      {
+        startAt: new Date("2026-10-06T14:00:00.000Z"),
+        endAt: new Date("2026-10-06T15:00:00.000Z"),
+        classSessionId: "session-1",
+      },
+    ];
+
+    beforeEach(() => {
+      classSessionServiceMock.reserveForOccurrences.mockResolvedValue(reserved);
+    });
+
+    it("confere os dias na turma, grava a turma e gera os agendamentos nas sessões reservadas", async () => {
+      await recurringService.create(
+        { ...dto, classGroupId: "group-1" },
+        COMPANY_ID,
+      );
+
+      expect(
+        classSessionServiceMock.ensureRecurrenceFitsClassGroup,
+      ).toHaveBeenCalledWith(
+        "group-1",
+        expect.objectContaining({ serviceId: "service-1", days: dto.days }),
+        COMPANY_ID,
+      );
+      expect(prismaMock.recurringAppointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ classGroupId: "group-1" }) as unknown,
+        }),
+      );
+      // As ocorrências geradas vão para a reserva, dentro da mesma transação.
+      const [, groupId, occurrences] = classSessionServiceMock
+        .reserveForOccurrences.mock.calls[0] as [unknown, string, unknown[]];
+      expect(groupId).toBe("group-1");
+      expect(occurrences.length).toBeGreaterThan(0);
+      expect(appointmentServiceMock.createFromRecurrence.mock.calls[0][2]).toBe(
+        reserved,
+      );
+    });
+
+    it("não grava nada quando os dias não cabem na turma", async () => {
+      classSessionServiceMock.ensureRecurrenceFitsClassGroup.mockRejectedValueOnce(
+        new BadRequestException(
+          "A turma não tem horário na terça-feira às 14:00",
+        ),
+      );
+
+      await expect(
+        recurringService.create(
+          { ...dto, classGroupId: "group-1" },
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("A turma não tem horário");
+      expect(prismaMock.recurringAppointment.create).not.toHaveBeenCalled();
+    });
+
+    it("sem turma, não confere nem reserva sessões", async () => {
+      await recurringService.create(dto, COMPANY_ID);
+
+      expect(
+        classSessionServiceMock.ensureRecurrenceFitsClassGroup,
+      ).not.toHaveBeenCalled();
+      expect(
+        classSessionServiceMock.reserveForOccurrences,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("a agenda de plano também pode ser encaixada na turma", async () => {
+      await recurringService.createForClientPlan(
+        prismaMock as never,
+        {
+          clientPlanId: "client-plan-1",
+          clientId: "client-1",
+          professionalId: "professional-1",
+          serviceId: "service-1",
+          startDate: new Date("2026-10-01"),
+          endDate: new Date("2026-10-31"),
+          days: dto.days,
+          classGroupId: "group-1",
+        },
+        COMPANY_ID,
+        "UTC",
+      );
+
+      expect(
+        classSessionServiceMock.ensureRecurrenceFitsClassGroup,
+      ).toHaveBeenCalled();
+      expect(
+        classSessionServiceMock.reserveForOccurrences,
+      ).toHaveBeenCalledWith(prismaMock, "group-1", expect.any(Array), "UTC");
+      // A agenda de plano não gera pagamento por agendamento, com ou sem turma.
+      expect(
+        paymentServiceMock.createPendingForAppointments,
+      ).not.toHaveBeenCalled();
     });
   });
 });

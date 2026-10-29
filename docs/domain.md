@@ -329,12 +329,14 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | startDate      | Data de início do agendamento recorrente                   |
 | endDate        | Data final do agendamento recorrente (obrigatória)         |
 | clientPlanId   | Contratação de plano que originou a recorrência (opcional) |
+| classGroupId   | Turma fixa em que a recorrência está encaixada (opcional)  |
 | note           | Observação (opcional)                                      |
 | isActive       | Ativa ou inativa o agendamento recorrente                  |
 
 ### Relacionamentos
 
 - Um agendamento recorrente pode ser originado por uma contratação de plano (ClientPlan).
+- Um agendamento recorrente pode estar encaixado numa turma fixa (ClassGroup).
 - Um agendamento recorrente contém um cliente e um profissional.
 - Um agendamento recorrente realiza um serviço.
 - Um agendamento recorrente poderá conter uma observação opcional.

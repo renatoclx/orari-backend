@@ -411,4 +411,148 @@ describe("ClassSessionService", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
+
+  describe("recorrência e plano na turma", () => {
+    describe("ensureRecurrenceFitsClassGroup", () => {
+      const recurrence = {
+        serviceId: "service-1",
+        professionalId: "professional-1",
+        days: [{ weekDay: "MONDAY" as const, startTime: "08:00" }],
+      };
+
+      it("aceita dias que são horários da turma", async () => {
+        await expect(
+          service.ensureRecurrenceFitsClassGroup(
+            "group-1",
+            recurrence,
+            COMPANY_ID,
+          ),
+        ).resolves.toBeUndefined();
+        expect(prismaMock.classGroup.findFirst).toHaveBeenCalledWith(
+          containing({ where: { id: "group-1", companyId: COMPANY_ID } }),
+        );
+      });
+
+      it.each([
+        [
+          "dia que não é da turma",
+          { days: [{ weekDay: "TUESDAY" as const, startTime: "08:00" }] },
+          "A turma não tem horário na terça-feira às 08:00",
+        ],
+        [
+          "início diferente do da turma",
+          { days: [{ weekDay: "MONDAY" as const, startTime: "08:30" }] },
+          "A turma não tem horário na segunda-feira às 08:30",
+        ],
+        [
+          "serviço diferente do da turma",
+          { serviceId: "service-2" },
+          "serviceId e professionalId devem ser os da turma",
+        ],
+        [
+          "profissional diferente do da turma",
+          { professionalId: "professional-2" },
+          "serviceId e professionalId devem ser os da turma",
+        ],
+      ])("recusa %s (400)", async (_, change, message) => {
+        await expect(
+          service.ensureRecurrenceFitsClassGroup(
+            "group-1",
+            { ...recurrence, ...change },
+            COMPANY_ID,
+          ),
+        ).rejects.toThrow(message);
+      });
+
+      it("recusa turma inativa (409) e de outra empresa (404)", async () => {
+        prismaMock.classGroup.findFirst.mockResolvedValueOnce({
+          ...classGroup,
+          isActive: false,
+        });
+        await expect(
+          service.ensureRecurrenceFitsClassGroup(
+            "group-1",
+            recurrence,
+            COMPANY_ID,
+          ),
+        ).rejects.toBeInstanceOf(ConflictException);
+
+        prismaMock.classGroup.findFirst.mockResolvedValueOnce(null);
+        await expect(
+          service.ensureRecurrenceFitsClassGroup(
+            "group-1",
+            recurrence,
+            COMPANY_ID,
+          ),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+    });
+
+    describe("reserveForOccurrences", () => {
+      const occurrences = [
+        { startAt, endAt },
+        {
+          startAt: new Date(startAt.getTime() + 7 * 86_400_000),
+          endAt: new Date(endAt.getTime() + 7 * 86_400_000),
+        },
+      ];
+
+      beforeEach(() => {
+        (txMock as Record<string, unknown>).classGroup = {
+          findUniqueOrThrow: vi.fn().mockResolvedValue(classGroup),
+        };
+      });
+
+      it("trava a sessão de cada horário e devolve as ocorrências com a sessão", async () => {
+        txMock.$queryRaw
+          .mockResolvedValueOnce([locked])
+          .mockResolvedValueOnce([{ ...locked, id: "session-2" }]);
+
+        const result = await service.reserveForOccurrences(
+          txMock as never,
+          "group-1",
+          occurrences,
+          "America/Sao_Paulo",
+        );
+
+        expect(txMock.$executeRaw).toHaveBeenCalledTimes(2);
+        expect(result.map((item) => item.classSessionId)).toEqual([
+          "session-1",
+          "session-2",
+        ]);
+      });
+
+      it("sem vaga em uma data, recusa citando a data (409)", async () => {
+        txMock.appointment.count
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(3);
+
+        await expect(
+          service.reserveForOccurrences(
+            txMock as never,
+            "group-1",
+            occurrences,
+            "America/Sao_Paulo",
+          ),
+        ).rejects.toThrow(
+          /^Sem vaga na turma em \d{2}\/\d{2}\/\d{4} às 08:00$/,
+        );
+      });
+
+      it("sessão cancelada em uma data, recusa (409)", async () => {
+        txMock.$queryRaw.mockResolvedValueOnce([
+          { ...locked, cancelledAt: new Date() },
+        ]);
+
+        await expect(
+          service.reserveForOccurrences(
+            txMock as never,
+            "group-1",
+            occurrences,
+            "America/Sao_Paulo",
+          ),
+        ).rejects.toThrow("foi cancelada");
+      });
+    });
+  });
 });

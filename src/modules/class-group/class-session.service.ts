@@ -6,7 +6,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "../../../generated/prisma/client";
-import { AppointmentStatus, PeopleType } from "../../../generated/prisma/enums";
+import {
+  AppointmentStatus,
+  PeopleType,
+  WeekDay,
+} from "../../../generated/prisma/enums";
 import {
   formatTimeOfDay,
   WEEK_DAY_BY_INDEX,
@@ -25,7 +29,11 @@ import { BusinessHourService } from "../business-hour/business-hour.service";
 import { CompanyService } from "../company/company.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
-import { formatZonedDateTime, minutesOf } from "./class-group-schedule";
+import {
+  formatZonedDateTime,
+  minutesOf,
+  WEEK_DAY_LABEL,
+} from "./class-group-schedule";
 import {
   CreateClassSessionDto,
   UpdateClassSessionDto,
@@ -150,23 +158,12 @@ export class ClassSessionService {
     );
 
     return this.prisma.$transaction(async (tx) => {
-      // Cria a sessão do horário se ainda não existir, sem erro quando outra
-      // requisição a criou ao mesmo tempo (o índice único decide), e trava a
-      // linha. Um erro de unicidade abortaria a transação no Postgres; o
-      // ON CONFLICT evita isso. Os valores vão como parâmetros, sem concatenar texto.
-      await tx.$executeRaw`
-        INSERT INTO "class_sessions"
-          ("id", "companyId", "classGroupId", "serviceId", "professionalId",
-           "startAt", "endAt", "capacity", "overBooking")
-        VALUES
-          (${randomUUID()}, ${companyId}, ${classGroup.id}, ${classGroup.serviceId},
-           ${classGroup.professionalId}, ${dto.startAt}, ${endAt}, ${classGroup.capacity}, false)
-        ON CONFLICT ("classGroupId", "startAt") WHERE "classGroupId" IS NOT NULL
-        DO NOTHING`;
-      const [locked] = await tx.$queryRaw<LockedSession[]>`
-        SELECT "id", "capacity", "cancelledAt" FROM "class_sessions"
-        WHERE "classGroupId" = ${classGroup.id} AND "startAt" = ${dto.startAt}
-        FOR UPDATE`;
+      const locked = await this.lockClassGroupSession(
+        tx,
+        classGroup,
+        dto.startAt,
+        endAt,
+      );
 
       return this.enrollLocked(tx, locked, dto, {
         id: locked.id,
@@ -178,6 +175,105 @@ export class ClassSessionService {
         overBooking: false,
       });
     });
+  }
+
+  /**
+   * Antes de gravar uma recorrência (avulsa ou de plano) encaixada na turma:
+   * a turma é da empresa e está ativa, serviço e profissional são os dela, o
+   * serviço continua aceitando turma e cada dia é um dos horários da turma.
+   */
+  async ensureRecurrenceFitsClassGroup(
+    classGroupId: string,
+    {
+      serviceId,
+      professionalId,
+      days,
+    }: {
+      serviceId: string;
+      professionalId: string;
+      days: { weekDay: WeekDay; startTime: string }[];
+    },
+    companyId: string,
+  ): Promise<void> {
+    const classGroup = await this.prisma.classGroup.findFirst({
+      where: { id: classGroupId, companyId },
+      include: { days: { select: { weekDay: true, startTime: true } } },
+    });
+    if (!classGroup) {
+      throw new NotFoundException("Turma não encontrada");
+    }
+    if (!classGroup.isActive) {
+      throw new ConflictException("A turma está inativa");
+    }
+    if (
+      classGroup.serviceId !== serviceId ||
+      classGroup.professionalId !== professionalId
+    ) {
+      throw new BadRequestException(
+        "serviceId e professionalId devem ser os da turma",
+      );
+    }
+    await this.ensureServiceAcceptsClasses(serviceId, companyId);
+
+    const outside = days.find(
+      (day) =>
+        !classGroup.days.some(
+          (slot) =>
+            slot.weekDay === day.weekDay &&
+            formatTimeOfDay(slot.startTime) === day.startTime,
+        ),
+    );
+    if (outside) {
+      throw new BadRequestException(
+        `A turma não tem horário na ${WEEK_DAY_LABEL[outside.weekDay]} às ${outside.startTime}`,
+      );
+    }
+  }
+
+  /**
+   * Reserva as sessões da turma para as ocorrências de uma recorrência, dentro
+   * da transação de quem chama: cria a sessão de cada horário se faltar, trava
+   * e confere a vaga. Devolve as ocorrências com a sessão de cada uma, para o
+   * AppointmentService gravar os agendamentos já ligados a ela. As travas
+   * seguram as vagas até o fim da transação.
+   */
+  async reserveForOccurrences(
+    tx: Prisma.TransactionClient,
+    classGroupId: string,
+    occurrences: { startAt: Date; endAt: Date }[],
+    timeZone: string,
+  ): Promise<{ startAt: Date; endAt: Date; classSessionId: string }[]> {
+    const classGroup = await tx.classGroup.findUniqueOrThrow({
+      where: { id: classGroupId },
+    });
+
+    const reserved: { startAt: Date; endAt: Date; classSessionId: string }[] =
+      [];
+    for (const occurrence of occurrences) {
+      const locked = await this.lockClassGroupSession(
+        tx,
+        classGroup,
+        occurrence.startAt,
+        occurrence.endAt,
+      );
+      const when = formatZonedDateTime(occurrence.startAt, timeZone);
+
+      if (locked.cancelledAt) {
+        throw new ConflictException(
+          `A sessão da turma em ${when} foi cancelada`,
+        );
+      }
+      const occupied = await tx.appointment.count({
+        where: { classSessionId: locked.id, status: OCCUPYING },
+      });
+      if (occupied >= locked.capacity) {
+        throw new ConflictException(`Sem vaga na turma em ${when}`);
+      }
+
+      reserved.push({ ...occurrence, classSessionId: locked.id });
+    }
+
+    return reserved;
   }
 
   /** Encaixe numa sessão que já existe, de turma fixa ou avulsa. */
@@ -340,6 +436,42 @@ export class ClassSessionService {
       overBooking: session.overBooking,
       note: dto.note,
     });
+  }
+
+  /**
+   * Sessão de um horário da turma fixa, travada até o fim da transação. Cria a
+   * sessão se ainda não existir, sem erro quando outra requisição a criou ao
+   * mesmo tempo (o índice único decide): um erro de unicidade abortaria a
+   * transação no Postgres, e o ON CONFLICT evita isso. Os valores vão como
+   * parâmetros, sem concatenar texto.
+   */
+  private async lockClassGroupSession(
+    tx: Prisma.TransactionClient,
+    classGroup: {
+      id: string;
+      companyId: string;
+      serviceId: string;
+      professionalId: string;
+      capacity: number;
+    },
+    startAt: Date,
+    endAt: Date,
+  ): Promise<LockedSession> {
+    await tx.$executeRaw`
+      INSERT INTO "class_sessions"
+        ("id", "companyId", "classGroupId", "serviceId", "professionalId",
+         "startAt", "endAt", "capacity", "overBooking")
+      VALUES
+        (${randomUUID()}, ${classGroup.companyId}, ${classGroup.id}, ${classGroup.serviceId},
+         ${classGroup.professionalId}, ${startAt}, ${endAt}, ${classGroup.capacity}, false)
+      ON CONFLICT ("classGroupId", "startAt") WHERE "classGroupId" IS NOT NULL
+      DO NOTHING`;
+    const [locked] = await tx.$queryRaw<LockedSession[]>`
+      SELECT "id", "capacity", "cancelledAt" FROM "class_sessions"
+      WHERE "classGroupId" = ${classGroup.id} AND "startAt" = ${startAt}
+      FOR UPDATE`;
+
+    return locked;
   }
 
   // Trava a linha da sessão até o fim da transação (as outras inclusões esperam).

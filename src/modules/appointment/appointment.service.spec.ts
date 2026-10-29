@@ -569,6 +569,8 @@ describe("AppointmentService", () => {
         data: {
           startAt: newStartAt,
           endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+          // Remanejar tira o aluno da sessão de turma, se houver (vira atendimento individual).
+          classSessionId: null,
           updatedAt: anyDate,
         },
       });
@@ -644,6 +646,7 @@ describe("AppointmentService", () => {
           data: {
             startAt: newStartAt,
             endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+            classSessionId: null,
             status: "SCHEDULED",
             updatedAt: anyDate,
           },
@@ -1718,6 +1721,50 @@ describe("AppointmentService", () => {
           "session-1",
         ),
       ).rejects.toThrow("O agendamento já pertence a uma turma");
+    });
+  });
+
+  describe("recorrência na turma (createFromRecurrence com sessão)", () => {
+    it("confere a agenda sem os colegas da sessão e grava a sessão em cada agendamento", async () => {
+      prismaMock.appointment.createManyAndReturn.mockResolvedValue([]);
+
+      await appointmentService.createFromRecurrence(
+        prismaMock as never,
+        {
+          companyId: COMPANY_ID,
+          recurringAppointmentId: "recurring-1",
+          clientId: "client-1",
+          professionalId: "professional-1",
+          serviceId: "service-1",
+        },
+        [{ startAt, endAt, classSessionId: "session-1" }],
+        "UTC",
+      );
+
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
+        where: containingWhere({
+          OR: [
+            {
+              professionalId: "professional-1",
+              OR: [
+                { classSessionId: null },
+                { classSessionId: { not: "session-1" } },
+              ],
+            },
+            { clientId: "client-1" },
+          ],
+        }),
+        select: { professionalId: true },
+      });
+      expect(prismaMock.appointment.createManyAndReturn).toHaveBeenCalledWith({
+        data: [
+          containingWhere({
+            recurringAppointmentId: "recurring-1",
+            classSessionId: "session-1",
+          }),
+        ],
+        select: { id: true, startAt: true },
+      });
     });
   });
 });

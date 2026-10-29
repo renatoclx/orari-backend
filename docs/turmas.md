@@ -164,6 +164,11 @@ abrir.
   plano (ex.: aluno de 2x por semana em turma de segunda, quarta e sexta).
 - A geração liga cada agendamento à sessão do dia e confere a vaga. Continua tudo ou nada:
   sem vaga em alguma data, nada é gravado e o erro informa a data e o horário.
+- Na recorrência e no plano, serviço e profissional continuam sendo informados e precisam
+  ser os da turma.
+- Remanejar uma sessão de turma (inclusive a reposição de falta de pacote) tira o aluno da
+  sessão: vira atendimento individual no novo horário e libera a vaga. A reposição numa
+  sessão de outra turma entra na etapa 4.
 
 ### Atendimento que vira turma
 
@@ -215,7 +220,7 @@ abrir.
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules.md`, "Turmas")                           |
 | 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento — **feita** |
-| 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma)                                                                   |
+| 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma) — **feita**                                                       |
 | 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano                                                                   |
 | 5     | Consulta da agenda por sessão, para o frontend                                                                                                |
 

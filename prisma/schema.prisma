@@ -371,6 +371,8 @@ model RecurringAppointment {
   isActive       Boolean   @default(true)
   // Preenchido quando a recorrência é a agenda de um serviço de um plano contratado.
   clientPlanId   String?
+  // Turma fixa em que a recorrência está encaixada (os dias são horários dela).
+  classGroupId   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
@@ -379,6 +381,7 @@ model RecurringAppointment {
   client       People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
   professional People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
   service      Service        @relation(fields: [serviceId], references: [id])
+  classGroup   ClassGroup?    @relation(fields: [classGroupId], references: [id])
   days         RecurringDay[]
   appointments Appointment[]
 
@@ -387,6 +390,7 @@ model RecurringAppointment {
   @@index([clientId])
   @@index([serviceId])
   @@index([clientPlanId])
+  @@index([classGroupId])
   @@map("recurring_appointments")
 }
 
@@ -797,11 +801,12 @@ model ClassGroup {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
-  company      Company         @relation(fields: [companyId], references: [id])
-  service      Service         @relation(fields: [serviceId], references: [id])
-  professional People          @relation(fields: [professionalId], references: [id])
-  days         ClassGroupDay[]
-  sessions     ClassSession[]
+  company               Company                @relation(fields: [companyId], references: [id])
+  service               Service                @relation(fields: [serviceId], references: [id])
+  professional          People                 @relation(fields: [professionalId], references: [id])
+  days                  ClassGroupDay[]
+  sessions              ClassSession[]
+  recurringAppointments RecurringAppointment[]
 
   @@index([companyId, createdAt])
   @@index([professionalId])

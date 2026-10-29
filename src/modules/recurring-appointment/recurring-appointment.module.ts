@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AppointmentModule } from "../appointment/appointment.module";
+import { ClassGroupModule } from "../class-group/class-group.module";
 import { CompanyModule } from "../company/company.module";
 import { PaymentModule } from "../payment/payment.module";
 import { PeopleModule } from "../people/people.module";
@@ -10,6 +11,7 @@ import { RecurringAppointmentService } from "./recurring-appointment.service";
 @Module({
   imports: [
     AppointmentModule,
+    ClassGroupModule,
     CompanyModule,
     PaymentModule,
     PeopleModule,
