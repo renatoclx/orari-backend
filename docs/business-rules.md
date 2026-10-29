@@ -123,7 +123,7 @@
   - a falta é **estado final**, como o cancelamento: não volta a nenhum outro status (400) nem é cancelada. A observação continua editável. O job de cobrança só gera pagamento para o `COMPLETED`, então a falta não gera pagamento. A sessão de pacote tem a reposição (ver Planos), que é um caminho próprio e não passa por este `PATCH`;
   - vale para agendamento avulso e para sessão de recorrência (cujo pagamento pendente nasce com a recorrência); a sessão de pacote não tem pagamento próprio.
 - O agendamento precisa caber inteiro em uma janela de atendimento da empresa (ver "Horário de funcionamento"), exceto quando é um encaixe autorizado. Cancelar um agendamento não passa por essa verificação.
-- Toda resposta de agendamento (listagem, consulta, criação e alteração) traz, além dos códigos, o cliente e o profissional (`id`, `name`, `photoUrl`) e o serviço (`id`, `name`, `color`, `duration`), e nenhum outro dado deles. Traz também a origem (`recurringAppointment`: `id` e `clientPlanId`) e a situação do pagamento (`payment`: só `status` e `deletedAt`, ou `null` quando não há; a sessão de pacote não tem pagamento próprio), que a tela usa para não oferecer a falta de quem já pagou.
+- Toda resposta de agendamento (listagem, consulta, criação e alteração) traz, além dos códigos, o cliente e o profissional (`id`, `name`, `photoUrl`) e o serviço (`id`, `name`, `color`, `duration`), e nenhum outro dado deles. Traz também a origem (`recurringAppointment`: `id` e `clientPlanId`) e a situação do pagamento (`payment`: só `status` e `deletedAt`, ou `null` quando não há; a sessão de pacote não tem pagamento próprio), que a tela usa para não oferecer a falta de quem já pagou. E a sessão da turma (`classSession`: `id`, `classGroupId` e `capacity`, ou `null` fora de turma).
 - Uma pessoa ou serviço excluídos depois continuam aparecendo com o nome nos agendamentos que já os usavam: o histórico não perde o nome.
 - A listagem é ordenada pelo início do agendamento, do mais antigo para o mais novo; com `order=desc`, do mais novo para o mais antigo (ex.: atendimentos anteriores do cliente). Horários iguais seguem uma ordem fixa, na mesma direção, para a paginação não repetir nem perder registros.
 - A resposta do agendamento informa a origem: `recurringAppointment` com o `id` da recorrência e o `clientPlanId` (preenchido quando ela é de um pacote), ou nulo no agendamento avulso.
@@ -326,7 +326,7 @@
 
 ## Turmas
 
-> **Em desenho:** o desenho completo está em `turmas.md`. Valem na API, por enquanto, só as regras abaixo (etapa 1: cadastro de turmas fixas).
+> **Em desenho:** o desenho completo está em `turmas.md`. Valem na API, por enquanto, só as regras abaixo (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso).
 
 - Uma turma fixa é um horário semanal de atendimento em turma, com vagas: serviço, profissional, um ou mais dias e horários, quantidade de vagas e um nome opcional (não único, até 100 caracteres). Pertence à empresa do usuário; a empresa não é informada no payload.
 - **Só o ADMIN** cadastra, consulta, altera, inativa e reativa turmas. Os demais perfis, inclusive o SUPER_ADMIN, recebem 403. Turma de outra empresa responde 404.
@@ -339,6 +339,22 @@
 - Não há exclusão: a turma é inativada (`isActive`) e pode ser reativada. A reativação confere de novo o serviço, o profissional, o funcionamento e as outras turmas ativas do profissional.
 - A listagem é paginada, da turma cadastrada mais recentemente para a mais antiga, e filtra por nome (parcial, sem diferenciar acentos nem maiúsculas), situação (`isActive`), serviço, profissional e período de cadastro (`from` e `to`, datas AAAA-MM-DD; dias inteiros no fuso da empresa, os dois incluídos).
 - Toda resposta de turma traz o serviço (`id`, `name`, `color`, `duration`), o profissional (`id`, `name`, `photoUrl`) e os dias (`weekDay`, `startTime` e `endTime` em HH:MM).
+- Mudar as vagas da turma vale também para as **sessões futuras** dela (não iniciadas e não canceladas). Se alguma já tiver mais alunos do que as novas vagas, a mudança é recusada (409, citando a data da sessão) e nada muda.
+
+### Sessões e encaixe
+
+- Cada aluno tem o **próprio agendamento**, ligado a uma **sessão** da turma (`classSessionId`): pagamento, falta, plano e comanda continuam sendo de cada aluno, com as regras atuais.
+- A sessão é uma ocorrência com serviço, profissional, início, fim e vagas. Na turma fixa, nasce no primeiro encaixe daquele horário (uma por horário) com as vagas da turma; a sessão avulsa nasce de um agendamento que vira turma.
+- Só o ADMIN encaixa alunos, transforma agendamento em turma, consulta a sessão e altera as vagas dela (os demais recebem 403).
+- **Encaixe na turma fixa** (`POST /class-groups/:id/participants`, com `clientId`, `startAt` e `note` opcional): o início precisa cair num dia e horário da turma, no fuso da empresa (400); a turma precisa estar ativa (409) e a sessão precisa caber numa janela de atendimento (400). Cria um agendamento avulso do aluno.
+- **Encaixe numa sessão existente** (`POST /class-sessions/:id/participants`, com `clientId` e `note` opcional), de turma fixa (que precisa estar ativa) ou avulsa.
+- Em todo encaixe: a sessão ainda não começou (400) e não está cancelada (409); o serviço continua ativo e aceitando turma; o aluno é uma pessoa `CLIENT` da empresa; o mesmo cliente não aparece duas vezes na sessão (409); e há vaga (409 "A sessão está cheia").
+- **Vagas:** ocupam vaga todos os agendamentos da sessão, menos os cancelados (a falta ocupa). A conferência trava a sessão até o fim da gravação: dois encaixes ao mesmo tempo na última vaga não passam juntos.
+- **Agenda do profissional:** os agendamentos da mesma sessão não conflitam entre si; com qualquer outro compromisso do profissional, o conflito continua. Para o cliente, a regra de conflito não muda.
+- **Agendamento que vira turma** (`POST /class-sessions`, com `appointmentId` e `capacity` de 2 a 100): o agendamento precisa estar em `SCHEDULED` ou `CONFIRMED`, não ter começado, ter serviço ativo que aceita turma e ainda não ser de uma sessão (409). A sessão avulsa copia o horário, o serviço, o profissional e o encaixe (`overBooking`) dele, e os alunos encaixados depois herdam esse encaixe. Se o agendamento original for cancelado, a sessão continua com os demais alunos.
+- **Vagas da sessão** (`PATCH /class-sessions/:id`, `capacity` de 2 a 100): só antes do início e nunca abaixo do número de alunos dela (409). Vale para sessão fixa e avulsa; uma mudança posterior nas vagas da turma fixa sobrescreve as das suas sessões futuras.
+- **Agendamento de turma:** pela edição comum (`PATCH /appointments/:id`), não muda horário, serviço, cliente nem profissional (400); status, observação, cancelamento e falta seguem as regras atuais. O aluno sai da sessão cancelando o agendamento, o que libera a vaga.
+- A consulta da sessão (`GET /class-sessions/:id`) traz a turma (`id`, `name`, ou `null` na avulsa), o serviço, o profissional, as vagas (`capacity`, `occupied`, `available`) e os agendamentos dos alunos (`id`, `status` e cliente), inclusive os cancelados.
 
 ## Anamnese
 

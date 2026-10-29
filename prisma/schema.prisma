@@ -153,6 +153,7 @@ model Company {
   payments              Payment[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
+  classSessions         ClassSession[]
 
   @@map("companies")
 }
@@ -180,15 +181,16 @@ model People {
   addresses Address[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
-  appointmentsAsClient       Appointment[]          @relation("AppointmentClient")
-  appointmentsAsProfessional Appointment[]          @relation("AppointmentProfessional")
-  recurringAsClient          RecurringAppointment[] @relation("RecurringAppointmentClient")
-  recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
-  clientPlans                ClientPlan[]
-  users                      User[]
-  anamnesesAsClient          Anamnesis[]            @relation("AnamnesisClient")
-  anamnesisEntriesAsAuthor   AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
-  classGroupsAsProfessional  ClassGroup[]
+  appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
+  appointmentsAsProfessional  Appointment[]          @relation("AppointmentProfessional")
+  recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
+  recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
+  clientPlans                 ClientPlan[]
+  users                       User[]
+  anamnesesAsClient           Anamnesis[]            @relation("AnamnesisClient")
+  anamnesisEntriesAsAuthor    AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
+  classGroupsAsProfessional   ClassGroup[]
+  classSessionsAsProfessional ClassSession[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
@@ -307,6 +309,7 @@ model Service {
   recurringAppointments RecurringAppointment[]
   planItems             PlanItem[]
   classGroups           ClassGroup[]
+  classSessions         ClassSession[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -331,6 +334,8 @@ model Appointment {
   overBooking            Boolean           @default(false)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
+  // Preenchido quando o agendamento é de um aluno numa sessão de turma.
+  classSessionId         String?
   createdAt              DateTime          @default(now())
   updatedAt              DateTime?
 
@@ -341,6 +346,7 @@ model Appointment {
   payment              Payment?
   anamnesisEntries     AnamnesisEntry[]
   recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
+  classSession         ClassSession?         @relation(fields: [classSessionId], references: [id])
 
   @@index([companyId, startAt])
   @@index([professionalId, startAt])
@@ -348,6 +354,7 @@ model Appointment {
   @@index([status, endAt])
   @@index([serviceId])
   @@index([recurringAppointmentId])
+  @@index([classSessionId])
   @@map("appointments")
 }
 
@@ -794,6 +801,7 @@ model ClassGroup {
   service      Service         @relation(fields: [serviceId], references: [id])
   professional People          @relation(fields: [professionalId], references: [id])
   days         ClassGroupDay[]
+  sessions     ClassSession[]
 
   @@index([companyId, createdAt])
   @@index([professionalId])
@@ -814,4 +822,41 @@ model ClassGroupDay {
 
   @@index([classGroupId])
   @@map("class_group_days")
+}
+
+/**
+ * Sessão da turma: uma ocorrência de atendimento em turma (ver docs/turmas.md).
+ * Nasce de uma turma fixa, quando o primeiro aluno é encaixado naquele horário,
+ * ou de um agendamento que vira turma (sessão avulsa, sem classGroupId). Cada
+ * aluno tem o próprio agendamento, ligado a ela.
+ */
+model ClassSession {
+  id             String    @id @default(uuid())
+  companyId      String
+  // Vazio na sessão avulsa (agendamento que virou turma).
+  classGroupId   String?
+  serviceId      String
+  professionalId String
+  startAt        DateTime
+  endAt          DateTime
+  // Quantidade máxima de alunos (não contam os agendamentos cancelados).
+  capacity       Int
+  // Na sessão avulsa, repete o encaixe do agendamento que a originou; na turma fixa, sempre falso.
+  overBooking    Boolean   @default(false)
+  // Cancelamento da sessão inteira (etapa 4 de docs/turmas.md).
+  cancelledAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  classGroup   ClassGroup?   @relation(fields: [classGroupId], references: [id])
+  service      Service       @relation(fields: [serviceId], references: [id])
+  professional People        @relation(fields: [professionalId], references: [id])
+  appointments Appointment[]
+
+  // Na turma fixa, uma sessão por horário (as avulsas não entram).
+  @@unique([classGroupId, startAt], where: raw("\"classGroupId\" IS NOT NULL"))
+  @@index([companyId, startAt])
+  @@index([professionalId, startAt])
+  @@map("class_sessions")
 }

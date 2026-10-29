@@ -21,9 +21,14 @@ const containing = (expected: object): unknown =>
 describe("ClassGroupService", () => {
   let service: ClassGroupService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Aceita as duas formas: lista de operações e função com o cliente da transação.
+    $transaction: vi.fn(
+      (operations: Promise<unknown>[] | ((tx: unknown) => unknown)) =>
+        typeof operations === "function"
+          ? operations(prismaMock)
+          : Promise.all(operations),
     ),
+    $queryRaw: vi.fn(),
     classGroup: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -31,6 +36,8 @@ describe("ClassGroupService", () => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    classSession: { updateMany: vi.fn() },
+    appointment: { groupBy: vi.fn() },
   };
   const serviceServiceMock = { findActive: vi.fn() };
   const peopleServiceMock = { findOne: vi.fn() };
@@ -82,6 +89,9 @@ describe("ClassGroupService", () => {
     );
     companyServiceMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
     prismaMock.classGroup.findMany.mockResolvedValue([]);
+    // Padrão: a turma não tem sessões futuras (as vagas não esbarram em nada).
+    prismaMock.$queryRaw.mockResolvedValue([]);
+    prismaMock.appointment.groupBy.mockResolvedValue([]);
     prismaMock.classGroup.create.mockResolvedValue(stored);
     prismaMock.classGroup.update.mockResolvedValue(stored);
 
@@ -343,6 +353,57 @@ describe("ClassGroupService", () => {
   });
 
   describe("update", () => {
+    describe("vagas da turma e das sessões futuras", () => {
+      beforeEach(() => {
+        prismaMock.classGroup.findFirst.mockResolvedValue(stored);
+        prismaMock.$queryRaw.mockResolvedValue([
+          { id: "session-1", startAt: new Date("2026-11-02T11:00:00Z") },
+          { id: "session-2", startAt: new Date("2026-11-09T11:00:00Z") },
+        ]);
+      });
+
+      it("aplica as novas vagas às sessões futuras, travadas", async () => {
+        prismaMock.appointment.groupBy.mockResolvedValue([
+          { classSessionId: "session-1", _count: { _all: 3 } },
+        ]);
+
+        await service.update("class-1", { capacity: 3 }, COMPANY_ID);
+
+        const sql = (
+          prismaMock.$queryRaw.mock.calls[0][0] as TemplateStringsArray
+        ).join("?");
+        expect(sql).toContain('"startAt" >');
+        expect(sql).toContain('"cancelledAt" IS NULL');
+        expect(sql).toContain("FOR UPDATE");
+        expect(prismaMock.classSession.updateMany).toHaveBeenCalledWith({
+          where: { id: { in: ["session-1", "session-2"] } },
+          data: { capacity: 3, updatedAt: expect.any(Date) as unknown },
+        });
+        expect(prismaMock.classGroup.update).toHaveBeenCalled();
+      });
+
+      it("recusa vagas abaixo dos alunos de uma sessão futura (409), citando a data", async () => {
+        prismaMock.appointment.groupBy.mockResolvedValue([
+          { classSessionId: "session-2", _count: { _all: 4 } },
+        ]);
+
+        await expect(
+          service.update("class-1", { capacity: 3 }, COMPANY_ID),
+        ).rejects.toThrow(
+          "A sessão de 09/11/2026 às 08:00 já tem 4 alunos: as vagas não podem ficar abaixo disso",
+        );
+        expect(prismaMock.classSession.updateMany).not.toHaveBeenCalled();
+        expect(prismaMock.classGroup.update).not.toHaveBeenCalled();
+      });
+
+      it("sem mudar as vagas, não consulta as sessões", async () => {
+        await service.update("class-1", { capacity: 5 }, COMPANY_ID);
+        await service.update("class-1", { name: "Outro" }, COMPANY_ID);
+
+        expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+      });
+    });
+
     it("altera nome e vagas, mantendo a busca em sincronia", async () => {
       prismaMock.classGroup.findFirst.mockResolvedValue(stored);
 

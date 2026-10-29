@@ -174,6 +174,11 @@ abrir.
 - Depois disso, outros clientes são encaixados na sessão como em qualquer sessão.
 - Os agendamentos encaixados seguem a marcação de encaixe (`overBooking`) do agendamento
   original.
+- Se o agendamento original for cancelado, a sessão continua com os demais alunos.
+- As vagas de uma sessão (fixa ou avulsa) podem mudar antes do início, nunca abaixo do
+  número de alunos dela.
+- Remover um aluno da sessão é cancelar o agendamento dele, pela edição comum do
+  agendamento (qualquer perfil, como hoje).
 
 ### Cancelamento da sessão
 
@@ -206,13 +211,13 @@ abrir.
 
 ## Etapas
 
-| Etapa | Conteúdo                                                                                                                          |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules.md`, "Turmas")               |
-| 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento |
-| 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma)                                                       |
-| 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano                                                       |
-| 5     | Consulta da agenda por sessão, para o frontend                                                                                    |
+| Etapa | Conteúdo                                                                                                                                      |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules.md`, "Turmas")                           |
+| 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento — **feita** |
+| 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma)                                                                   |
+| 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano                                                                   |
+| 5     | Consulta da agenda por sessão, para o frontend                                                                                                |
 
 ## Fora desta versão
 

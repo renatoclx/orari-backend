@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma } from "../../../generated/prisma/client";
-import { PeopleType, WeekDay } from "../../../generated/prisma/enums";
+import {
+  AppointmentStatus,
+  PeopleType,
+  WeekDay,
+} from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { formatTimeOfDay, parseTimeOfDay } from "../../common/time/time-of-day";
@@ -19,17 +23,12 @@ import { ClassGroupDayDto } from "./dto/class-group-day.dto";
 import { CreateClassGroupDto } from "./dto/create-class-group.dto";
 import { FindClassGroupsQueryDto } from "./dto/find-class-groups-query.dto";
 import { UpdateClassGroupDto } from "./dto/update-class-group.dto";
-
-// Nome do dia nas mensagens de erro.
-const WEEK_DAY_LABEL: Record<WeekDay, string> = {
-  MONDAY: "segunda-feira",
-  TUESDAY: "terça-feira",
-  WEDNESDAY: "quarta-feira",
-  THURSDAY: "quinta-feira",
-  FRIDAY: "sexta-feira",
-  SATURDAY: "sábado",
-  SUNDAY: "domingo",
-};
+import {
+  formatMinutes,
+  formatZonedDateTime,
+  minutesOf,
+  WEEK_DAY_LABEL,
+} from "./class-group-schedule";
 
 // Serviço, profissional e dias vêm junto com a turma; a coluna de busca fica de fora.
 const withDetails = {
@@ -65,11 +64,6 @@ interface WeeklySlot {
   start: number;
   end: number;
 }
-
-const minutesOf = (hhmm: string) => {
-  const [hours, minutes] = hhmm.split(":").map(Number);
-  return hours * 60 + minutes;
-};
 
 /**
  * Turmas fixas (ver docs/turmas.md): um horário semanal de atendimento em turma,
@@ -183,20 +177,79 @@ export class ClassGroupService {
       await this.ensureCanReactivate(current, companyId);
     }
 
-    const classGroup = await this.prisma.classGroup.update({
-      where: { id },
-      data: {
-        ...dto,
-        // Mantém a coluna de busca em sincronia sempre que o nome muda.
-        ...(dto.name !== undefined && {
-          normalizedName: dto.name ? normalizeForSearch(dto.name) : null,
-        }),
-        updatedAt: new Date(),
-      },
-      ...withDetails,
+    const classGroup = await this.prisma.$transaction(async (tx) => {
+      if (dto.capacity !== undefined && dto.capacity !== current.capacity) {
+        await this.applyCapacityToFutureSessions(
+          tx,
+          id,
+          dto.capacity,
+          companyId,
+        );
+      }
+
+      return tx.classGroup.update({
+        where: { id },
+        data: {
+          ...dto,
+          // Mantém a coluna de busca em sincronia sempre que o nome muda.
+          ...(dto.name !== undefined && {
+            normalizedName: dto.name ? normalizeForSearch(dto.name) : null,
+          }),
+          updatedAt: new Date(),
+        },
+        ...withDetails,
+      });
     });
 
     return this.toResponse(classGroup);
+  }
+
+  /**
+   * A mudança de vagas vale para as sessões futuras da turma (ainda não
+   * iniciadas e não canceladas), que são travadas para nenhum encaixe passar no
+   * meio. Nenhuma pode ficar com menos vagas do que alunos (409).
+   */
+  private async applyCapacityToFutureSessions(
+    tx: Prisma.TransactionClient,
+    classGroupId: string,
+    capacity: number,
+    companyId: string,
+  ): Promise<void> {
+    const now = new Date();
+    const sessions = await tx.$queryRaw<{ id: string; startAt: Date }[]>`
+      SELECT "id", "startAt" FROM "class_sessions"
+      WHERE "classGroupId" = ${classGroupId} AND "startAt" > ${now}
+        AND "cancelledAt" IS NULL
+      ORDER BY "startAt"
+      FOR UPDATE`;
+    if (sessions.length === 0) {
+      return;
+    }
+
+    const occupied = await tx.appointment.groupBy({
+      by: ["classSessionId"],
+      where: {
+        classSessionId: { in: sessions.map((session) => session.id) },
+        status: { not: AppointmentStatus.CANCELLED },
+      },
+      _count: { _all: true },
+    });
+    // A primeira sessão, em ordem de data, com mais alunos do que as novas vagas.
+    const countOf = (sessionId: string) =>
+      occupied.find((row) => row.classSessionId === sessionId)?._count._all ??
+      0;
+    const full = sessions.find((session) => countOf(session.id) > capacity);
+    if (full) {
+      const timeZone = await this.companyService.getTimeZone(companyId);
+      throw new ConflictException(
+        `A sessão de ${formatZonedDateTime(full.startAt, timeZone)} já tem ${countOf(full.id)} alunos: as vagas não podem ficar abaixo disso`,
+      );
+    }
+
+    await tx.classSession.updateMany({
+      where: { id: { in: sessions.map((session) => session.id) } },
+      data: { capacity, updatedAt: now },
+    });
   }
 
   private async findInCompany(
@@ -318,7 +371,7 @@ export class ClassGroupService {
 
       if (!fits) {
         throw new BadRequestException(
-          `O horário de ${WEEK_DAY_LABEL[slot.weekDay]} às ${this.formatMinutes(slot.start)} está fora do funcionamento da empresa`,
+          `O horário de ${WEEK_DAY_LABEL[slot.weekDay]} às ${formatMinutes(slot.start)} está fora do funcionamento da empresa`,
         );
       }
     }
@@ -367,7 +420,7 @@ export class ClassGroupService {
 
       if (clash) {
         throw new ConflictException(
-          `O profissional já tem ${other.name ? `a turma "${other.name}"` : "outra turma"} na ${WEEK_DAY_LABEL[clash.weekDay]} às ${this.formatMinutes(clash.start)}`,
+          `O profissional já tem ${other.name ? `a turma "${other.name}"` : "outra turma"} na ${WEEK_DAY_LABEL[clash.weekDay]} às ${formatMinutes(clash.start)}`,
         );
       }
     }
@@ -406,11 +459,6 @@ export class ClassGroupService {
     };
   }
 
-  private formatMinutes(minutes: number): string {
-    const pad = (value: number) => String(value).padStart(2, "0");
-    return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-  }
-
   private toResponse(classGroup: ClassGroupWithDetails): ClassGroupResponse {
     const { days, ...rest } = classGroup;
     const { duration } = classGroup.service;
@@ -421,8 +469,8 @@ export class ClassGroupService {
         const start = minutesOf(formatTimeOfDay(day.startTime));
         return {
           weekDay: day.weekDay,
-          startTime: this.formatMinutes(start),
-          endTime: this.formatMinutes((start + duration) % (24 * 60)),
+          startTime: formatMinutes(start),
+          endTime: formatMinutes((start + duration) % (24 * 60)),
         };
       }),
     };

@@ -37,6 +37,8 @@ const withRelations = {
   // pacote não): a tela só oferece "Marcar falta" enquanto o pagamento não foi
   // recebido. O `deletedAt` deixa ignorar o excluído, como a regra da falta faz.
   payment: { select: { status: true, deletedAt: true } },
+  // Sessão da turma a que o agendamento pertence (ver docs/turmas.md), ou null.
+  classSession: { select: { id: true, classGroupId: true, capacity: true } },
 } satisfies Prisma.AppointmentInclude;
 
 export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
@@ -71,6 +73,9 @@ const RECURRENCE_LOCKED_FIELDS = [
   "professionalId",
 ] as const;
 
+// O que a sessão da turma fixa para cada aluno: só o cancelamento e a falta mudam.
+const CLASS_SESSION_LOCKED_FIELDS = RECURRENCE_LOCKED_FIELDS;
+
 // Um horário que a recorrência quer ocupar.
 export interface AppointmentOccurrence {
   startAt: Date;
@@ -93,6 +98,19 @@ export interface RecurrenceAppointmentData {
 // — nunca com o `this.prisma` direto, ou ficariam fora da transação.
 // Pick previne re repetir dados manualmente
 type PrismaClientLike = Pick<PrismaService, "appointment">;
+
+// Agendamento de um aluno numa sessão de turma (ver createInClassSession).
+export interface ClassSessionAppointmentData {
+  companyId: string;
+  classSessionId: string;
+  clientId: string;
+  professionalId: string;
+  serviceId: string;
+  startAt: Date;
+  endAt: Date;
+  overBooking: boolean;
+  note?: string;
+}
 
 // Campos que o job de cobrança precisa para gerar o pagamento de um agendamento
 // avulso concluído.
@@ -260,6 +278,9 @@ export class AppointmentService {
     if (appointment.recurringAppointmentId) {
       this.ensureRecurrenceTermsUnchanged(dto);
     }
+    if (appointment.classSessionId) {
+      this.ensureClassSessionTermsUnchanged(dto);
+    }
 
     // A transição para CANCELLED olha o estado atual, antes de qualquer outra
     // mudança do mesmo PATCH (ex.: um novo startAt não "desfaz" o início).
@@ -308,9 +329,16 @@ export class AppointmentService {
         );
       }
 
+      // Na turma, os colegas da mesma sessão não conflitam com o profissional.
       await this.ensureSlotIsFree(
         this.prisma,
-        { clientId, professionalId, startAt, endAt },
+        {
+          clientId,
+          professionalId,
+          startAt,
+          endAt,
+          classSessionId: appointment.classSessionId,
+        },
         companyId,
         id,
       );
@@ -466,6 +494,20 @@ export class AppointmentService {
     if (dto.status === AppointmentStatus.CANCELLED) {
       throw new BadRequestException(
         "Agendamento de recorrência é cancelado pelo cancelamento da recorrência",
+      );
+    }
+  }
+
+  // Horário, serviço, cliente e profissional são os da sessão: o aluno sai cancelando o agendamento.
+  private ensureClassSessionTermsUnchanged(dto: UpdateAppointmentDto) {
+    const locked = CLASS_SESSION_LOCKED_FIELDS.filter(
+      (field) => dto[field] !== undefined,
+    );
+
+    if (locked.length > 0) {
+      throw new BadRequestException(
+        `Agendamento de turma não aceita ${locked.join(", ")}: ` +
+          "o horário, o serviço e o profissional são os da sessão",
       );
     }
   }
@@ -693,6 +735,10 @@ export class AppointmentService {
    * termina depois de o outro começar; os limites que apenas se encostam
    * (fim == início) são permitidos. Agendamentos cancelados são ignorados, e na
    * edição o próprio agendamento é excluído da checagem.
+   *
+   * Turma: com `classSessionId`, os agendamentos da mesma sessão não conflitam
+   * com o profissional (são os colegas da turma); com qualquer outro
+   * compromisso dele, sim. Para o cliente, a regra não muda.
    */
   private async ensureSlotIsFree(
     db: PrismaClientLike,
@@ -701,15 +747,28 @@ export class AppointmentService {
       professionalId,
       startAt,
       endAt,
+      classSessionId,
     }: {
       clientId: string;
       professionalId: string;
       startAt: Date;
       endAt: Date;
+      classSessionId?: string | null;
     },
     companyId: string,
     ignoreId?: string, // recebe o id de um agendamento, onde ele ignora o id na consulta
   ) {
+    // O "diferente" do SQL não casa com NULL: o agendamento sem sessão entra à parte.
+    const professionalBusy: Prisma.AppointmentWhereInput = classSessionId
+      ? {
+          professionalId,
+          OR: [
+            { classSessionId: null },
+            { classSessionId: { not: classSessionId } },
+          ],
+        }
+      : { professionalId };
+
     const conflict = await db.appointment.findFirst({
       where: {
         companyId,
@@ -717,7 +776,7 @@ export class AppointmentService {
         id: ignoreId ? { not: ignoreId } : undefined,
         startAt: { lt: endAt },
         endAt: { gt: startAt },
-        OR: [{ professionalId }, { clientId }],
+        OR: [professionalBusy, { clientId }],
       },
       select: { professionalId: true },
     });
@@ -775,6 +834,49 @@ export class AppointmentService {
       })),
       select: { id: true, startAt: true },
     });
+  }
+
+  /**
+   * Cria o agendamento de um aluno numa sessão de turma, dentro da transação de
+   * quem chama (o ClassSessionService, que já travou a sessão e conferiu a
+   * vaga). Valem a data futura e a agenda livre do cliente e do profissional,
+   * sem contar os colegas da mesma sessão. O funcionamento é conferido por quem
+   * chama: a sessão avulsa repete o encaixe do agendamento original.
+   */
+  async createInClassSession(
+    db: PrismaClientLike,
+    { note, ...data }: ClassSessionAppointmentData,
+  ): Promise<AppointmentWithRelations> {
+    this.ensureIsNotInThePast(data.startAt);
+    await this.ensureSlotIsFree(db, data, data.companyId);
+
+    return db.appointment.create({
+      data: { ...data, note: note ?? null },
+      include: withRelations,
+    });
+  }
+
+  /**
+   * Liga um agendamento a uma sessão de turma (o agendamento que vira turma),
+   * dentro da transação de quem chama. Só a ligação muda: horário, serviço e
+   * profissional já são os da sessão. O filtro pela sessão vazia barra duas
+   * conversões simultâneas do mesmo agendamento (409).
+   */
+  async attachToClassSession(
+    db: PrismaClientLike,
+    id: string,
+    classSessionId: string,
+  ): Promise<void> {
+    try {
+      await db.appointment.update({
+        where: { id, classSessionId: null },
+        data: { classSessionId, updatedAt: new Date() },
+      });
+    } catch (error) {
+      throw isRecordNotFound(error)
+        ? new ConflictException("O agendamento já pertence a uma turma")
+        : error;
+    }
   }
 
   /**

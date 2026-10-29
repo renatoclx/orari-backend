@@ -14,7 +14,9 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClassGroupService } from "./class-group.service";
+import { ClassSessionService } from "./class-session.service";
 import { CreateClassGroupDto } from "./dto/create-class-group.dto";
+import { EnrollClassGroupParticipantDto } from "./dto/enroll-class-participant.dto";
 import { FindClassGroupsQueryDto } from "./dto/find-class-groups-query.dto";
 import { UpdateClassGroupDto } from "./dto/update-class-group.dto";
 
@@ -24,7 +26,10 @@ import { UpdateClassGroupDto } from "./dto/update-class-group.dto";
 @Roles(UserType.ADMIN)
 @Controller("class-groups")
 export class ClassGroupController {
-  constructor(private readonly classGroupService: ClassGroupService) {}
+  constructor(
+    private readonly classGroupService: ClassGroupService,
+    private readonly classSessionService: ClassSessionService,
+  ) {}
 
   @Post()
   create(
@@ -58,5 +63,19 @@ export class ClassGroupController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.classGroupService.update(id, dto, currentUser.companyId);
+  }
+
+  // Encaixe avulso: o horário escolhe a sessão da turma (criada no primeiro encaixe).
+  @Post(":id/participants")
+  enroll(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: EnrollClassGroupParticipantDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.classSessionService.enrollInClassGroup(
+      id,
+      dto,
+      currentUser.companyId,
+    );
   }
 }

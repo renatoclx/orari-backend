@@ -149,6 +149,11 @@ describe("Rotas HTTP", () => {
       ["GET /class-groups", ["ADMIN"]],
       ["GET /class-groups/:id", ["ADMIN"]],
       ["PATCH /class-groups/:id", ["ADMIN"]],
+      ["POST /class-groups/:id/participants", ["ADMIN"]],
+      ["POST /class-sessions", ["ADMIN"]],
+      ["GET /class-sessions/:id", ["ADMIN"]],
+      ["PATCH /class-sessions/:id", ["ADMIN"]],
+      ["POST /class-sessions/:id/participants", ["ADMIN"]],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 

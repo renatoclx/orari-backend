@@ -300,6 +300,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | note                   | Observação (opcional)                             |
 | overBooking            | Encaixe: marcado fora do horário de funcionamento |
 | recurringAppointmentId | Agendamento recorrente que o originou (opcional)  |
+| classSessionId         | Sessão da turma a que pertence (opcional)         |
 
 ### Relacionamentos
 
@@ -308,6 +309,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 - Um agendamento poderá conter uma observação opcional.
 - Um agendamento pode ter sido originado por um agendamento recorrente.
 - Um agendamento pode ter um pagamento.
+- Um agendamento pode pertencer a uma sessão de turma (ClassSession).
 
 ---
 
@@ -588,6 +590,35 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 - Os dias fazem referência a uma turma. O fim de cada horário é o início somado à
   duração do serviço da turma.
+
+---
+
+## ClassSession
+
+- Representa uma sessão de turma: uma ocorrência de atendimento em turma, com vagas.
+  Nasce de uma turma fixa (no primeiro encaixe daquele horário) ou de um agendamento
+  que vira turma (sessão avulsa).
+
+### Atributos
+
+| Nome           | Descrição                                                    |
+| -------------- | ------------------------------------------------------------ |
+| id             | Identificador único                                          |
+| companyId      | Código da empresa                                            |
+| classGroupId   | Turma fixa que a originou (vazio na sessão avulsa)           |
+| serviceId      | Serviço da sessão                                            |
+| professionalId | Profissional da sessão (deriva de pessoa)                    |
+| startAt        | Início                                                       |
+| endAt          | Fim                                                          |
+| capacity       | Quantidade máxima de alunos                                  |
+| overBooking    | Encaixe fora do funcionamento (sessão avulsa)                |
+| cancelledAt    | Data e hora do cancelamento da sessão (vazio enquanto ativa) |
+
+### Relacionamentos
+
+- Uma sessão pertence a uma empresa e pode ter sido originada por uma turma fixa.
+- Uma sessão realiza um serviço e tem um profissional.
+- Uma sessão contém os agendamentos dos alunos, um por aluno.
 
 ---
 

@@ -4,6 +4,14 @@ import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { describe, expect, it } from "vitest";
 import { CreateClassGroupDto } from "./create-class-group.dto";
+import {
+  CreateClassSessionDto,
+  UpdateClassSessionDto,
+} from "./create-class-session.dto";
+import {
+  EnrollClassGroupParticipantDto,
+  EnrollClassSessionParticipantDto,
+} from "./enroll-class-participant.dto";
 import { FindClassGroupsQueryDto } from "./find-class-groups-query.dto";
 import { UpdateClassGroupDto } from "./update-class-group.dto";
 
@@ -120,5 +128,41 @@ describe("FindClassGroupsQueryDto", () => {
     await expect(
       errorsFor({ from: "ontem" }, FindClassGroupsQueryDto),
     ).resolves.toEqual(["from"]);
+  });
+});
+
+describe("DTOs das sessões", () => {
+  it("encaixe na turma fixa exige cliente e início; a observação é opcional", async () => {
+    await expect(
+      errorsFor(
+        { clientId: uuid, startAt: "2026-11-02T11:00:00.000Z", note: "x" },
+        EnrollClassGroupParticipantDto,
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      errorsFor({ clientId: uuid }, EnrollClassGroupParticipantDto),
+    ).resolves.toEqual(["startAt"]);
+    await expect(
+      errorsFor({ clientId: "x" }, EnrollClassSessionParticipantDto),
+    ).resolves.toEqual(["clientId"]);
+  });
+
+  it("encaixe numa sessão não aceita horário (a sessão já define)", async () => {
+    await expect(
+      errorsFor(
+        { clientId: uuid, startAt: "2026-11-02T11:00:00.000Z" },
+        EnrollClassSessionParticipantDto,
+      ),
+    ).resolves.toEqual(["startAt"]);
+  });
+
+  it.each([
+    [CreateClassSessionDto, { appointmentId: uuid, capacity: 2 }, []],
+    [CreateClassSessionDto, { appointmentId: uuid, capacity: 1 }, ["capacity"]],
+    [CreateClassSessionDto, { capacity: 3 }, ["appointmentId"]],
+    [UpdateClassSessionDto, { capacity: 101 }, ["capacity"]],
+    [UpdateClassSessionDto, { capacity: 4 }, []],
+  ] as const)("valida as vagas (%#)", async (dto, payload, expected) => {
+    await expect(errorsFor(payload, dto)).resolves.toEqual(expected);
   });
 });
