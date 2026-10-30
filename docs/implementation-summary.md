@@ -556,3 +556,9 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Horários vazios** (`findEmptySlots`): percorre o calendário da empresa entre o maior de `from` e agora e `to` (`startsOf`, com `zonedToUtc`), descarta o horário que já tem sessão (inclusive cancelada) e o que se sobrepõe a um agendamento não cancelado do profissional. São três consultas no total (turmas, sessões ocupadas e agendamentos dos profissionais), sem uma por horário. A regra repete a que o frontend aplicava na grade, que passa a vir pronta.
 - **Vagas:** a conta foi reunida em `seatsOf`, usada por `findOne` e pela agenda; a sessão cancelada passa a ter `available: 0`. Os alunos trazem `cancelReason`.
 - **Agendamento:** `classSession` inclui `cancelledAt`.
+
+## 2.51 Turmas, etapa 6: encaixe em lote e alunos fixos
+
+- **Encaixe em lote:** `POST /class-sessions/:id/participants` e `POST /class-groups/:id/participants` recebem `clientIds` (1 a 100, sem repetidos; o `clientId` foi removido) e devolvem a sessão (`ClassSessionService.findOne`). Tudo ou nada: `findRefusedClients` confere cada cliente fora da transação (sem parar no primeiro); com a sessão travada, `enrollLocked` junta quem já está nela e os conflitos de agenda (`AppointmentService.findClassSessionConflicts`), confere as vagas da lista inteira e grava com `createManyInClassSession`.
+- **Erros:** 409 com corpo próprio (`ConflictException` com objeto, levando `statusCode` e `error` explícitos): `errors: [{ clientId, message }]` nas recusas e `available`/`requested` na falta de vaga. O `ensureSlotIsFree` passou a usar `findSlotConflict`, que devolve o motivo em vez de lançar.
+- **`GET /class-groups/:id/members`** (ADMIN): `ClassGroupService.findMembers` lê as recorrências da turma direto do Prisma (o `RecurringAppointmentModule` já importa o `ClassGroupModule`) — ativas, sem `classLeftAt` e com `endDate` de hoje em diante (fuso da empresa).

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { parseTimeOfDay } from "../../common/time/time-of-day";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -38,6 +38,7 @@ describe("ClassGroupService", () => {
     },
     classSession: { updateMany: vi.fn() },
     appointment: { groupBy: vi.fn() },
+    recurringAppointment: { findMany: vi.fn() },
   };
   const serviceServiceMock = { findActive: vi.fn() };
   const peopleServiceMock = { findOne: vi.fn() };
@@ -349,6 +350,79 @@ describe("ClassGroupService", () => {
       expect(prismaMock.classGroup.findFirst).toHaveBeenCalledWith(
         containing({ where: { id: "class-1", companyId: COMPANY_ID } }),
       );
+    });
+  });
+
+  describe("findMembers (alunos fixos)", () => {
+    const client = { id: "client-1", name: "Ana", photoUrl: null };
+    const day = {
+      weekDay: "MONDAY",
+      startTime: new Date("1970-01-01T08:00:00.000Z"),
+    };
+
+    beforeEach(() => {
+      prismaMock.classGroup.findFirst.mockResolvedValue(stored);
+      // 30/10/2026 às 23:30 em São Paulo (já 31/10 em UTC): "hoje" é 30/10.
+      vi.setSystemTime(new Date("2026-10-31T02:30:00.000Z"));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("lista as recorrências ativas, sem saída e no período, com a origem", async () => {
+      prismaMock.recurringAppointment.findMany.mockResolvedValue([
+        {
+          id: "recurring-1",
+          client,
+          clientPlan: { id: "plan-1", plan: { name: "Pilates 2x" } },
+          days: [day],
+        },
+        { id: "recurring-2", client, clientPlan: null, days: [day] },
+      ]);
+
+      const members = await service.findMembers("class-1", COMPANY_ID);
+
+      expect(prismaMock.recurringAppointment.findMany).toHaveBeenCalledWith(
+        containing({
+          where: {
+            companyId: COMPANY_ID,
+            classGroupId: "class-1",
+            isActive: true,
+            classLeftAt: null,
+            OR: [
+              { endDate: null },
+              { endDate: { gte: new Date("2026-10-30T00:00:00.000Z") } },
+            ],
+          },
+          orderBy: [{ client: { name: "asc" } }, { id: "asc" }],
+        }),
+      );
+      expect(members).toEqual([
+        {
+          recurringAppointmentId: "recurring-1",
+          client,
+          origin: "PLAN",
+          clientPlan: { id: "plan-1", planName: "Pilates 2x" },
+          days: [{ weekDay: "MONDAY", startTime: "08:00" }],
+        },
+        {
+          recurringAppointmentId: "recurring-2",
+          client,
+          origin: "RECURRENCE",
+          clientPlan: null,
+          days: [{ weekDay: "MONDAY", startTime: "08:00" }],
+        },
+      ]);
+    });
+
+    it("turma de outra empresa responde 404", async () => {
+      prismaMock.classGroup.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findMembers("class-1", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.recurringAppointment.findMany).not.toHaveBeenCalled();
     });
   });
 

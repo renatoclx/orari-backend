@@ -42,6 +42,7 @@ describe("AppointmentService", () => {
     payment: { updateMany: vi.fn(), count: vi.fn() },
     appointment: {
       create: vi.fn(),
+      createMany: vi.fn(),
       createManyAndReturn: vi.fn(),
       updateMany: vi.fn(),
       findMany: vi.fn(),
@@ -1761,11 +1762,10 @@ describe("AppointmentService", () => {
       );
     });
 
-    describe("createInClassSession", () => {
+    describe("encaixe em lote na sessão", () => {
       const data = {
         companyId: COMPANY_ID,
         classSessionId: "session-1",
-        clientId: "client-1",
         professionalId: "professional-1",
         serviceId: "service-1",
         startAt,
@@ -1773,10 +1773,15 @@ describe("AppointmentService", () => {
         overBooking: false,
       };
 
-      it("confere a agenda sem os colegas da sessão e cria ligado a ela", async () => {
-        await appointmentService.createInClassSession(
+      it("confere a agenda de cada cliente sem os colegas da sessão e devolve os motivos", async () => {
+        prismaMock.appointment.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ professionalId: "professional-9" });
+
+        const conflicts = await appointmentService.findClassSessionConflicts(
           prismaMock as never,
           data,
+          ["client-1", "client-2"],
         );
 
         expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
@@ -1785,30 +1790,38 @@ describe("AppointmentService", () => {
           }),
           select: { professionalId: true },
         });
-        expect(prismaMock.appointment.create).toHaveBeenCalledWith({
-          data: { ...data, note: null },
-          include: relations,
-        });
+        expect(conflicts).toEqual([
+          {
+            clientId: "client-2",
+            message: "O cliente já possui um agendamento neste horário",
+          },
+        ]);
       });
 
-      it("recusa quando o cliente já tem compromisso no horário (409)", async () => {
-        prismaMock.appointment.findFirst.mockResolvedValue({
-          professionalId: "professional-9",
-        });
+      it("cria um agendamento por cliente, ligados à sessão", async () => {
+        await appointmentService.createManyInClassSession(
+          prismaMock as never,
+          { ...data, note: "x" },
+          ["client-1", "client-2"],
+        );
 
-        await expect(
-          appointmentService.createInClassSession(prismaMock as never, data),
-        ).rejects.toThrow("O cliente já possui um agendamento neste horário");
-        expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+        expect(prismaMock.appointment.createMany).toHaveBeenCalledWith({
+          data: [
+            { ...data, clientId: "client-1", note: "x" },
+            { ...data, clientId: "client-2", note: "x" },
+          ],
+        });
       });
 
       it("recusa sessão que já começou (400)", async () => {
         await expect(
-          appointmentService.createInClassSession(prismaMock as never, {
-            ...data,
-            startAt: new Date(Date.now() - 60_000),
-          }),
+          appointmentService.createManyInClassSession(
+            prismaMock as never,
+            { ...data, startAt: new Date(Date.now() - 60_000) },
+            ["client-1"],
+          ),
         ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.appointment.createMany).not.toHaveBeenCalled();
       });
     });
 

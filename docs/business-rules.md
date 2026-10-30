@@ -327,7 +327,7 @@
 
 ## Turmas
 
-> O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão).
+> O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
 
 - Uma turma fixa é um horário semanal de atendimento em turma, com vagas: serviço, profissional, um ou mais dias e horários, quantidade de vagas e um nome opcional (não único, até 100 caracteres). Pertence à empresa do usuário; a empresa não é informada no payload.
 - **Só o ADMIN** cadastra, consulta, altera, inativa e reativa turmas. Os demais perfis, inclusive o SUPER_ADMIN, recebem 403. Turma de outra empresa responde 404.
@@ -347,9 +347,12 @@
 - Cada aluno tem o **próprio agendamento**, ligado a uma **sessão** da turma (`classSessionId`): pagamento, falta, plano e comanda continuam sendo de cada aluno, com as regras atuais.
 - A sessão é uma ocorrência com serviço, profissional, início, fim e vagas. Na turma fixa, nasce no primeiro encaixe daquele horário (uma por horário) com as vagas da turma; a sessão avulsa nasce de um agendamento que vira turma.
 - Só o ADMIN encaixa alunos, transforma agendamento em turma, consulta a sessão e altera as vagas dela (os demais recebem 403).
-- **Encaixe na turma fixa** (`POST /class-groups/:id/participants`, com `clientId`, `startAt` e `note` opcional): o início precisa cair num dia e horário da turma, no fuso da empresa (400); a turma precisa estar ativa (409) e a sessão precisa caber numa janela de atendimento (400). Cria um agendamento avulso do aluno.
-- **Encaixe numa sessão existente** (`POST /class-sessions/:id/participants`, com `clientId` e `note` opcional), de turma fixa (que precisa estar ativa) ou avulsa.
-- Em todo encaixe: a sessão ainda não começou (400) e não está cancelada (409); o serviço continua ativo e aceitando turma; o aluno é uma pessoa `CLIENT` da empresa; o mesmo cliente não aparece duas vezes na sessão (409); e há vaga (409 "A sessão está cheia").
+- **Encaixe na turma fixa** (`POST /class-groups/:id/participants`, com `clientIds`, `startAt` e `note` opcional): o início precisa cair num dia e horário da turma, no fuso da empresa (400); a turma precisa estar ativa (409) e a sessão precisa caber numa janela de atendimento (400). Cria um agendamento avulso para cada aluno; a sessão do dia nasce no primeiro encaixe, na mesma transação.
+- **Encaixe numa sessão existente** (`POST /class-sessions/:id/participants`, com `clientIds` e `note` opcional), de turma fixa (que precisa estar ativa) ou avulsa.
+- **Vários alunos de uma vez, tudo ou nada:** `clientIds` tem de 1 a 100 clientes, sem repetidos (400); o antigo `clientId` não é aceito. A `note` vale para todos. O encaixe responde 201 com a **sessão atualizada**, no formato de `GET /class-sessions/:id`.
+- Em todo encaixe: a sessão ainda não começou (400) e não está cancelada (409), e o serviço continua ativo e aceitando turma.
+- **Recusa de alunos:** cada cliente precisa ser uma pessoa ativa da empresa do tipo `CLIENT`, não estar já na sessão e ter a agenda livre no horário. Se algum for recusado, nenhum é encaixado: 409 com `message` ("Nenhum aluno foi encaixado: 2 recusados") e `errors: [{ clientId, message }]`, na ordem do pedido, com o motivo de cada um ("Cliente não encontrado", "A pessoa não é do tipo CLIENT", "O cliente já está nesta sessão", "O cliente já possui um agendamento neste horário").
+- **Vagas:** conferidas para a lista inteira, com a sessão travada, depois das recusas (que precisam ser corrigidas de qualquer jeito e mudam a conta). Sem vaga para todos: 409 com `available` (vagas livres) e `requested` (alunos pedidos), ex.: "A sessão tem 1 vaga livre e foram pedidos 3 alunos". Dois encaixes simultâneos não ultrapassam o limite.
 - **Vagas:** ocupam vaga todos os agendamentos da sessão, menos os cancelados (a falta ocupa). A conferência trava a sessão até o fim da gravação: dois encaixes ao mesmo tempo na última vaga não passam juntos.
 - **Agenda do profissional:** os agendamentos da mesma sessão não conflitam entre si; com qualquer outro compromisso do profissional, o conflito continua. Para o cliente, a regra de conflito não muda.
 - **Agendamento que vira turma** (`POST /class-sessions`, com `appointmentId` e `capacity` de 2 a 100): o agendamento precisa estar em `SCHEDULED` ou `CONFIRMED`, não ter começado, ter serviço ativo que aceita turma e ainda não ser de uma sessão (409). A sessão avulsa copia o horário, o serviço, o profissional e o encaixe (`overBooking`) dele, e os alunos encaixados depois herdam esse encaixe. Se o agendamento original for cancelado, a sessão continua com os demais alunos.
@@ -364,6 +367,12 @@
 - Traz as sessões do período, de turma fixa e avulsas, inclusive as canceladas (com `cancelledAt` e `cancellationNote`), com a turma, o serviço, o profissional, as vagas e os alunos, como na consulta de uma sessão.
 - Traz também os **horários vazios**: os horários futuros das turmas fixas ativas que ainda não têm sessão, com `id: null`, as vagas da turma livres e sem alunos (a sessão só é criada no primeiro encaixe). Um horário vazio fica de fora quando o profissional tem, nele, outro agendamento não cancelado, de turma ou individual (o encaixe seria recusado).
 - Ordem: pelo início e, no mesmo horário, pelo nome do profissional.
+
+### Alunos fixos
+
+- `GET /class-groups/:id/members`, **só o ADMIN** (turma de outra empresa: 404): as recorrências ativas encaixadas na turma, avulsas ou de plano, em que o aluno não saiu da turma e que ainda estão no período (data final a partir de hoje, no fuso da empresa; a recorrência antiga sem data final entra). Sem paginação, em ordem pelo nome do cliente.
+- **Um item por recorrência** (um cliente pode estar duas vezes, ex.: uma recorrência avulsa e um plano em dias diferentes): `recurringAppointmentId`, o cliente (`id`, `name`, `photoUrl`), a origem (`origin`: `RECURRENCE` ou `PLAN`), a contratação (`clientPlan`: `id` e `planName`, ou `null` na avulsa) e os dias da turma em que ele está (`weekDay`, `startTime` em HH:MM).
+- O aluno avulso, encaixado sessão a sessão, não é aluno fixo.
 
 ### Recorrência e plano na turma
 

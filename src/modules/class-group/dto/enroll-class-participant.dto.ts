@@ -1,19 +1,28 @@
 import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
   IsDate,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
 } from "class-validator";
+import { CLASS_GROUP_CAPACITY_MAX } from "./create-class-group.dto";
 
-// Encaixe de um cliente numa sessão existente (fixa ou avulsa).
+// Encaixe de um ou mais clientes numa sessão existente (fixa ou avulsa), tudo ou nada.
 export class EnrollClassSessionParticipantDto {
-  /** Pessoa do tipo CLIENT da empresa. */
-  @IsUUID("all")
-  clientId!: string;
+  /** Pessoas do tipo CLIENT da empresa, sem repetidas (até o máximo de vagas). */
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(CLASS_GROUP_CAPACITY_MAX)
+  @ArrayUnique()
+  @IsUUID("all", { each: true })
+  clientIds!: string[];
 
-  /** Observação do agendamento do aluno. */
+  /** Observação do agendamento de cada aluno encaixado. */
   @IsOptional()
   @IsString()
   @IsNotEmpty()

@@ -119,11 +119,11 @@ export interface RecurrenceAppointmentData {
 // Pick previne re repetir dados manualmente
 type PrismaClientLike = Pick<PrismaService, "appointment">;
 
-// Agendamento de um aluno numa sessão de turma (ver createInClassSession).
+// Agendamentos dos alunos numa sessão de turma (ver createManyInClassSession).
+// O cliente vem à parte, numa lista: o resto é o mesmo para todos.
 export interface ClassSessionAppointmentData {
   companyId: string;
   classSessionId: string;
-  clientId: string;
   professionalId: string;
   serviceId: string;
   startAt: Date;
@@ -855,6 +855,36 @@ export class AppointmentService {
     companyId: string,
     ignoreId?: string, // recebe o id de um agendamento, onde ele ignora o id na consulta
   ) {
+    const conflict = await this.findSlotConflict(
+      db,
+      { clientId, professionalId, startAt, endAt, classSessionId },
+      companyId,
+      ignoreId,
+    );
+    if (conflict) {
+      throw new ConflictException(conflict);
+    }
+  }
+
+  // A mesma conferência do ensureSlotIsFree, devolvendo o motivo (ou null) em vez de lançar.
+  private async findSlotConflict(
+    db: PrismaClientLike,
+    {
+      clientId,
+      professionalId,
+      startAt,
+      endAt,
+      classSessionId,
+    }: {
+      clientId: string;
+      professionalId: string;
+      startAt: Date;
+      endAt: Date;
+      classSessionId?: string | null;
+    },
+    companyId: string,
+    ignoreId?: string,
+  ): Promise<string | null> {
     // O "diferente" do SQL não casa com NULL: o agendamento sem sessão entra à parte.
     const professionalBusy: Prisma.AppointmentWhereInput = classSessionId
       ? {
@@ -877,15 +907,13 @@ export class AppointmentService {
       },
       select: { professionalId: true },
     });
-
-    if (conflict) {
-      const who =
-        conflict.professionalId === professionalId ? "profissional" : "cliente";
-
-      throw new ConflictException(
-        `O ${who} já possui um agendamento neste horário`,
-      );
+    if (!conflict) {
+      return null;
     }
+
+    const who =
+      conflict.professionalId === professionalId ? "profissional" : "cliente";
+    return `O ${who} já possui um agendamento neste horário`;
   }
 
   /**
@@ -935,22 +963,52 @@ export class AppointmentService {
   }
 
   /**
-   * Cria o agendamento de um aluno numa sessão de turma, dentro da transação de
-   * quem chama (o ClassSessionService, que já travou a sessão e conferiu a
-   * vaga). Valem a data futura e a agenda livre do cliente e do profissional,
-   * sem contar os colegas da mesma sessão. O funcionamento é conferido por quem
-   * chama: a sessão avulsa repete o encaixe do agendamento original.
+   * Encaixe de alunos numa sessão de turma: o motivo de cada cliente cuja
+   * agenda não está livre no horário da sessão (os colegas da mesma sessão não
+   * contam para o profissional). Não lança: o encaixe em lote junta todas as
+   * recusas antes de responder. Roda na transação de quem chama, com a sessão
+   * travada.
    */
-  async createInClassSession(
+  async findClassSessionConflicts(
+    db: PrismaClientLike,
+    data: ClassSessionAppointmentData,
+    clientIds: string[],
+  ): Promise<{ clientId: string; message: string }[]> {
+    const conflicts: { clientId: string; message: string }[] = [];
+    for (const clientId of clientIds) {
+      const message = await this.findSlotConflict(
+        db,
+        { ...data, clientId },
+        data.companyId,
+      );
+      if (message) {
+        conflicts.push({ clientId, message });
+      }
+    }
+
+    return conflicts;
+  }
+
+  /**
+   * Cria os agendamentos dos alunos numa sessão de turma, dentro da transação
+   * de quem chama (o ClassSessionService, que já travou a sessão e conferiu as
+   * vagas e, com findClassSessionConflicts, a agenda de cada cliente). O
+   * funcionamento também é conferido por quem chama: a sessão avulsa repete o
+   * encaixe do agendamento original.
+   */
+  async createManyInClassSession(
     db: PrismaClientLike,
     { note, ...data }: ClassSessionAppointmentData,
-  ): Promise<AppointmentWithRelations> {
+    clientIds: string[],
+  ): Promise<void> {
     this.ensureIsNotInThePast(data.startAt);
-    await this.ensureSlotIsFree(db, data, data.companyId);
 
-    return db.appointment.create({
-      data: { ...data, note: note ?? null },
-      include: withRelations,
+    await db.appointment.createMany({
+      data: clientIds.map((clientId) => ({
+        ...data,
+        clientId,
+        note: note ?? null,
+      })),
     });
   }
 

@@ -22,10 +22,7 @@ import {
   zonedToUtc,
 } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
-import {
-  AppointmentService,
-  AppointmentWithRelations,
-} from "../appointment/appointment.service";
+import { AppointmentService } from "../appointment/appointment.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { CompanyService } from "../company/company.service";
 import { PaymentService } from "../payment/payment.service";
@@ -125,6 +122,12 @@ interface LockedSession {
   cancelledAt: Date | null;
 }
 
+// Cliente recusado no encaixe em lote, com o motivo (vai na resposta do 409).
+interface RefusedClient {
+  clientId: string;
+  message: string;
+}
+
 // O que todo encaixe precisa saber da sessão, já travada.
 interface SessionForEnrollment {
   id: string;
@@ -159,7 +162,7 @@ export interface ClassGroupSlot {
  *
  * A vaga é conferida dentro da transação, com a linha da sessão travada: duas
  * inclusões ao mesmo tempo na última vaga não passam juntas. A regra de
- * conflito de agenda fica no AppointmentService (createInClassSession).
+ * conflito de agenda fica no AppointmentService (findClassSessionConflicts).
  */
 @Injectable()
 export class ClassSessionService {
@@ -174,14 +177,15 @@ export class ClassSessionService {
   ) {}
 
   /**
-   * Encaixe avulso numa turma fixa: o horário escolhe a sessão, criada no
-   * primeiro encaixe daquele dia.
+   * Encaixe avulso de um ou mais alunos numa turma fixa: o horário escolhe a
+   * sessão, criada no primeiro encaixe daquele dia (na mesma transação). Tudo
+   * ou nada; devolve a sessão atualizada.
    */
   async enrollInClassGroup(
     classGroupId: string,
     dto: EnrollClassGroupParticipantDto,
     companyId: string,
-  ): Promise<AppointmentWithRelations> {
+  ): Promise<ClassSessionResponse> {
     const classGroup = await this.prisma.classGroup.findFirst({
       where: { id: classGroupId, companyId },
       include: {
@@ -200,7 +204,7 @@ export class ClassSessionService {
       classGroup.serviceId,
       companyId,
     );
-    await this.ensureClient(dto.clientId, companyId);
+    const refused = await this.findRefusedClients(dto.clientIds, companyId);
 
     const timeZone = await this.companyService.getTimeZone(companyId);
     this.ensureMatchesClassGroupDay(dto.startAt, classGroup.days, timeZone);
@@ -213,7 +217,7 @@ export class ClassSessionService {
       endAt,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const sessionId = await this.prisma.$transaction(async (tx) => {
       const locked = await this.lockClassGroupSession(
         tx,
         classGroup,
@@ -221,16 +225,25 @@ export class ClassSessionService {
         endAt,
       );
 
-      return this.enrollLocked(tx, locked, dto, {
-        id: locked.id,
-        companyId,
-        serviceId: classGroup.serviceId,
-        professionalId: classGroup.professionalId,
-        startAt: dto.startAt,
-        endAt,
-        overBooking: false,
-      });
+      await this.enrollLocked(
+        tx,
+        locked,
+        dto,
+        {
+          id: locked.id,
+          companyId,
+          serviceId: classGroup.serviceId,
+          professionalId: classGroup.professionalId,
+          startAt: dto.startAt,
+          endAt,
+          overBooking: false,
+        },
+        refused,
+      );
+      return locked.id;
     });
+
+    return this.findOne(sessionId, companyId);
   }
 
   /**
@@ -332,24 +345,26 @@ export class ClassSessionService {
     return reserved;
   }
 
-  /** Encaixe numa sessão que já existe, de turma fixa ou avulsa. */
+  /** Encaixe de um ou mais alunos numa sessão que já existe, de turma fixa ou avulsa; devolve a sessão. */
   async enroll(
     id: string,
     dto: EnrollClassSessionParticipantDto,
     companyId: string,
-  ): Promise<AppointmentWithRelations> {
+  ): Promise<ClassSessionResponse> {
     const session = await this.findInCompany(id, companyId);
     if (session.classGroupId) {
       await this.ensureClassGroupIsActive(session.classGroupId);
     }
     this.ensureHasNotStarted(session.startAt);
     await this.ensureServiceAcceptsClasses(session.serviceId, companyId);
-    await this.ensureClient(dto.clientId, companyId);
+    const refused = await this.findRefusedClients(dto.clientIds, companyId);
 
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       const locked = await this.lock(tx, id);
-      return this.enrollLocked(tx, locked, dto, session);
+      await this.enrollLocked(tx, locked, dto, session, refused);
     });
+
+    return this.findOne(id, companyId);
   }
 
   /**
@@ -803,25 +818,140 @@ export class ClassSessionService {
     };
   }
 
-  // Com a sessão travada: confere a vaga e se o cliente já está nela, e cria o agendamento.
+  /**
+   * Com a sessão travada, o encaixe em lote, tudo ou nada:
+   * 1. a sessão não pode estar cancelada;
+   * 2. junta as recusas de cada aluno (as que vieram de fora da transação, quem
+   *    já está na sessão e o conflito de agenda): com alguma, nada é gravado e
+   *    o 409 lista cada cliente e o motivo;
+   * 3. só então confere as vagas para a lista inteira (as recusas vêm antes:
+   *    precisam ser corrigidas de qualquer jeito, e mudam a conta);
+   * 4. grava os agendamentos.
+   */
   private async enrollLocked(
     tx: Prisma.TransactionClient,
     locked: LockedSession,
-    dto: EnrollClassSessionParticipantDto,
+    { clientIds, note }: EnrollClassSessionParticipantDto,
     session: SessionForEnrollment,
-  ): Promise<AppointmentWithRelations> {
-    await this.ensureHasSeatFor(tx, locked, dto.clientId);
+    refusedBefore: RefusedClient[],
+  ): Promise<void> {
+    this.ensureNotCancelled(locked);
 
-    return this.appointmentService.createInClassSession(tx, {
+    const data = {
       companyId: session.companyId,
       classSessionId: locked.id,
-      clientId: dto.clientId,
       professionalId: session.professionalId,
       serviceId: session.serviceId,
       startAt: session.startAt,
       endAt: session.endAt,
       overBooking: session.overBooking,
-      note: dto.note,
+      note,
+    };
+    const refused = [...refusedBefore];
+    const isRefused = (clientId: string) =>
+      refused.some((item) => item.clientId === clientId);
+
+    const alreadyIn = await tx.appointment.findMany({
+      where: {
+        classSessionId: locked.id,
+        clientId: { in: clientIds },
+        status: OCCUPYING,
+      },
+      select: { clientId: true },
+    });
+    for (const { clientId } of alreadyIn) {
+      if (!isRefused(clientId)) {
+        refused.push({ clientId, message: "O cliente já está nesta sessão" });
+      }
+    }
+
+    refused.push(
+      ...(await this.appointmentService.findClassSessionConflicts(
+        tx,
+        data,
+        clientIds.filter((clientId) => !isRefused(clientId)),
+      )),
+    );
+    if (refused.length > 0) {
+      throw this.refusedClientsError(refused, clientIds);
+    }
+
+    const occupied = await tx.appointment.count({
+      where: { classSessionId: locked.id, status: OCCUPYING },
+    });
+    const available = Math.max(locked.capacity - occupied, 0);
+    if (clientIds.length > available) {
+      throw this.noSeatsError(available, clientIds.length);
+    }
+
+    await this.appointmentService.createManyInClassSession(tx, data, clientIds);
+  }
+
+  /**
+   * Fora da transação: cada cliente precisa ser uma pessoa ativa da empresa,
+   * do tipo CLIENT. Devolve as recusas (não para no primeiro), que se juntam às
+   * de dentro da transação.
+   */
+  private async findRefusedClients(
+    clientIds: string[],
+    companyId: string,
+  ): Promise<RefusedClient[]> {
+    const checks = await Promise.all(
+      clientIds.map(async (clientId): Promise<RefusedClient | null> => {
+        try {
+          const client = await this.peopleService.findOne(clientId, companyId);
+          return client.type === PeopleType.CLIENT
+            ? null
+            : { clientId, message: "A pessoa não é do tipo CLIENT" };
+        } catch (error) {
+          if (error instanceof NotFoundException) {
+            return { clientId, message: "Cliente não encontrado" };
+          }
+          throw error;
+        }
+      }),
+    );
+
+    return checks.filter((check): check is RefusedClient => check !== null);
+  }
+
+  // 409 do encaixe em lote com recusas: cada cliente e o motivo, na ordem do pedido.
+  private refusedClientsError(
+    refused: RefusedClient[],
+    clientIds: string[],
+  ): ConflictException {
+    const errors = [...refused].sort(
+      (a, b) => clientIds.indexOf(a.clientId) - clientIds.indexOf(b.clientId),
+    );
+    const count =
+      errors.length === 1 ? "1 recusado" : `${errors.length} recusados`;
+
+    // Com um objeto, o Nest devolve o corpo como está: statusCode e error vão explícitos.
+    return new ConflictException({
+      statusCode: 409,
+      error: "Conflict",
+      message: `Nenhum aluno foi encaixado: ${count}`,
+      errors,
+    });
+  }
+
+  // 409 do encaixe em lote sem vagas para a lista inteira.
+  private noSeatsError(
+    available: number,
+    requested: number,
+  ): ConflictException {
+    const free = available === 1 ? "1 vaga livre" : `${available} vagas livres`;
+    const asked =
+      requested === 1
+        ? "foi pedido 1 aluno"
+        : `foram pedidos ${requested} alunos`;
+
+    return new ConflictException({
+      statusCode: 409,
+      error: "Conflict",
+      message: `A sessão tem ${free} e ${asked}`,
+      available,
+      requested,
     });
   }
 
@@ -944,15 +1074,6 @@ export class ClassSessionService {
     }
 
     return service.duration;
-  }
-
-  private async ensureClient(clientId: string, companyId: string) {
-    const client = await this.peopleService.findOne(clientId, companyId);
-    if (client.type !== PeopleType.CLIENT) {
-      throw new BadRequestException(
-        "clientId deve ser uma pessoa do tipo CLIENT",
-      );
-    }
   }
 
   // O início precisa ser um dos horários da turma, no relógio da empresa (minuto exato).

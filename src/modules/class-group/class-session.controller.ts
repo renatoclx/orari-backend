@@ -78,7 +78,7 @@ export class ClassSessionController {
     return this.classSessionService.cancel(id, dto, currentUser.companyId);
   }
 
-  // Encaixa um cliente numa sessão que já existe.
+  // Encaixa um ou mais clientes numa sessão que já existe, tudo ou nada; devolve a sessão.
   @Post(":id/participants")
   enroll(
     @Param("id", ParseUUIDPipe) id: string,

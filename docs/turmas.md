@@ -1,6 +1,6 @@
 # Atendimento em Turma
 
-> **Implementado:** as cinco etapas valem na API. As entidades estão no `domain.md` e as
+> **Implementado:** as seis etapas valem na API. As entidades estão no `domain.md` e as
 > regras vigentes no `business-rules.md` ("Turmas"); este documento guarda o desenho e as
 > decisões.
 
@@ -157,8 +157,13 @@ abrir.
 
 ### Encaixe em turma fixa
 
-- **Avulso:** o ADMIN encaixa um cliente numa sessão da turma, criando um agendamento
-  avulso naquele horário (pagamento como o de qualquer agendamento avulso).
+- **Avulso:** o ADMIN encaixa um ou mais clientes numa sessão da turma, criando um
+  agendamento avulso para cada um naquele horário (pagamento como o de qualquer
+  agendamento avulso).
+- **Em lote, tudo ou nada:** se faltar vaga para a lista inteira, ou se algum cliente for
+  recusado (já está na sessão, agenda ocupada, não é cliente ativo), ninguém é encaixado,
+  e a resposta diz o motivo de cada recusa e, na falta de vaga, as vagas livres e as
+  pedidas.
 - **Recorrência:** na criação da recorrência, em vez de dias livres, informa-se a turma
   e os dias escolhidos **entre os da turma**.
 - **Plano:** na contratação, cada serviço do plano pode ser encaixado numa turma, com os
@@ -235,6 +240,9 @@ abrir.
   o profissional tenha outro compromisso que os sobreponha.
 - A resposta do agendamento informa também se a sessão foi cancelada
   (`classSession.cancelledAt`).
+- Os **alunos fixos** da turma (com recorrência ou plano ativo nela e sem saída) são
+  consultados à parte, com a origem de cada um (recorrência ou plano) e os dias em que
+  estão.
 
 ---
 
@@ -247,6 +255,7 @@ abrir.
 | 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma) — **feita**                                                       |
 | 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano — **feita**                                                       |
 | 5     | Consulta da agenda por sessão, para o frontend — **feita**                                                                                    |
+| 6     | Encaixe de vários alunos de uma vez (tudo ou nada) e alunos fixos da turma — **feita**                                                        |
 
 ## Fora desta versão
 
