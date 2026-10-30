@@ -237,6 +237,68 @@ describe("BusinessHourService", () => {
     });
   });
 
+  describe("isWeeklySlotWithinBusinessHours (horário semanal, sem data)", () => {
+    // Minutos desde a meia-noite, no relógio da empresa.
+    const at = (hhmm: string) => {
+      const [hours, minutes] = hhmm.split(":").map(Number);
+      return hours * 60 + minutes;
+    };
+
+    it("não restringe quando a empresa não cadastrou nenhuma janela", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(0);
+
+      await expect(
+        businessHourService.isWeeklySlotWithinBusinessHours(
+          COMPANY_ID,
+          "SUNDAY",
+          at("03:00"),
+          at("04:00"),
+        ),
+      ).resolves.toBe(true);
+      expect(prismaMock.businessHour.findMany).not.toHaveBeenCalled();
+    });
+
+    it("consulta as janelas do dia da semana informado e aceita o que cabe", async () => {
+      prismaMock.businessHour.count.mockResolvedValue(1);
+      prismaMock.businessHour.findMany.mockResolvedValue([
+        { openAt: time("07:00"), closeAt: time("12:00") },
+      ]);
+
+      await expect(
+        businessHourService.isWeeklySlotWithinBusinessHours(
+          COMPANY_ID,
+          "MONDAY",
+          at("08:00"),
+          at("09:00"),
+        ),
+      ).resolves.toBe(true);
+      expect(prismaMock.businessHour.findMany).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID, deletedAt: null, weekDay: "MONDAY" },
+        select: { openAt: true, closeAt: true },
+      });
+    });
+
+    it.each([
+      ["termina depois do fechamento", "12:00", at("11:30"), at("12:30")],
+      // O fim em minutos passa de 24h: nenhuma janela comporta.
+      ["passa da meia-noite", "23:59", at("23:30"), 24 * 60 + 30],
+    ])("recusa horário que %s", async (_, closeAt, start, end) => {
+      prismaMock.businessHour.count.mockResolvedValue(1);
+      prismaMock.businessHour.findMany.mockResolvedValue([
+        { openAt: time("07:00"), closeAt: time(closeAt) },
+      ]);
+
+      await expect(
+        businessHourService.isWeeklySlotWithinBusinessHours(
+          COMPANY_ID,
+          "MONDAY",
+          start,
+          end,
+        ),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe("ensureWithinBusinessHours", () => {
     // 2026-10-06 é uma terça-feira.
     const terca = (time: string) => new Date(`2026-10-06T${time}:00.000Z`);

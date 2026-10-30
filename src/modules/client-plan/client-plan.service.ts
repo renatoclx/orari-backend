@@ -48,6 +48,8 @@ const withDetails = {
         serviceId: true,
         professionalId: true,
         isActive: true,
+        // Turma em que o serviço do plano está encaixado, ou null.
+        classGroupId: true,
         service: {
           select: { id: true, name: true, color: true, duration: true },
         },

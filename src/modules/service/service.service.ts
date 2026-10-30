@@ -101,7 +101,10 @@ export class ServiceService {
     dto: UpdateServiceDto,
     companyId: string,
   ): Promise<PublicService> {
-    await this.findOne(id, companyId);
+    const current = await this.findOne(id, companyId);
+    if (dto.allowsClasses === false && current.allowsClasses) {
+      await this.ensureHasNoActiveClassGroups(id);
+    }
 
     try {
       return await this.prisma.service.update({
@@ -150,17 +153,34 @@ export class ServiceService {
             appointments: true,
             recurringAppointments: true,
             planItems: true,
+            classGroups: true,
           },
         },
       },
     });
 
     if (
-      related.appointments + related.recurringAppointments + related.planItems >
+      related.appointments +
+        related.recurringAppointments +
+        related.planItems +
+        related.classGroups >
       0
     ) {
       throw new ConflictException(
-        "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+        "O serviço possui agendamentos, recorrências, planos ou turmas vinculados. Inative-o em vez de excluir.",
+      );
+    }
+  }
+
+  // Deixar de aceitar turma com turma ativa deixaria a turma sem serviço válido.
+  private async ensureHasNoActiveClassGroups(id: string): Promise<void> {
+    const activeClassGroups = await this.prisma.classGroup.count({
+      where: { serviceId: id, isActive: true },
+    });
+
+    if (activeClassGroups > 0) {
+      throw new ConflictException(
+        "O serviço possui turmas ativas. Inative as turmas antes de deixar de aceitar turma.",
       );
     }
   }

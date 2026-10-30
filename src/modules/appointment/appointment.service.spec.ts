@@ -15,15 +15,20 @@ import { AppointmentService } from "./appointment.service";
 import { CreateAppointmentDto } from "./dto/create-appointment.dto";
 
 const anyDate: unknown = expect.any(Date);
+const containingWhere = (expected: object): unknown =>
+  expect.objectContaining(expected);
 
-// Cliente, profissional, serviço, origem e situação do pagamento devolvidos
-// junto com cada agendamento.
+// Cliente, profissional, serviço, origem, situação do pagamento e sessão da
+// turma devolvidos junto com cada agendamento.
 const relations = {
   client: { select: { id: true, name: true, photoUrl: true } },
   professional: { select: { id: true, name: true, photoUrl: true } },
   service: { select: { id: true, name: true, color: true, duration: true } },
   recurringAppointment: { select: { id: true, clientPlanId: true } },
   payment: { select: { status: true, deletedAt: true } },
+  classSession: {
+    select: { id: true, classGroupId: true, capacity: true, cancelledAt: true },
+  },
 };
 
 describe("AppointmentService", () => {
@@ -542,6 +547,57 @@ describe("AppointmentService", () => {
         data: { status: "CANCELLED", updatedAt: anyDate },
       });
     });
+
+    it("deve cancelar as aulas futuras da recorrência só nas sessões da turma, com o motivo", async () => {
+      prismaMock.appointment.updateMany.mockResolvedValue({ count: 2 });
+      const from = new Date("2026-10-01T00:00:00.000Z");
+
+      await expect(
+        appointmentService.cancelFutureFromClassGroup(
+          prismaMock as never,
+          "recurring-1",
+          "group-1",
+          from,
+        ),
+      ).resolves.toBe(2);
+      expect(prismaMock.appointment.updateMany).toHaveBeenCalledWith({
+        where: {
+          recurringAppointmentId: "recurring-1",
+          status: { in: ["SCHEDULED", "CONFIRMED"] },
+          startAt: { gte: from },
+          classSession: { classGroupId: "group-1" },
+        },
+        data: {
+          status: "CANCELLED",
+          cancelReason: "CLASS_LEFT",
+          updatedAt: anyDate,
+        },
+      });
+    });
+  });
+
+  describe("cancelamento da sessão de turma", () => {
+    it("deve cancelar os agendamentos que ainda não aconteceram, com o motivo", async () => {
+      prismaMock.appointment.updateMany.mockResolvedValue({ count: 4 });
+
+      await expect(
+        appointmentService.cancelForClassSession(
+          prismaMock as never,
+          "session-1",
+        ),
+      ).resolves.toBe(4);
+      expect(prismaMock.appointment.updateMany).toHaveBeenCalledWith({
+        where: {
+          classSessionId: "session-1",
+          status: { in: ["SCHEDULED", "CONFIRMED"] },
+        },
+        data: {
+          status: "CANCELLED",
+          cancelReason: "CLASS_SESSION_CANCELLED",
+          updatedAt: anyDate,
+        },
+      });
+    });
   });
 
   describe("remanejamento de recorrência", () => {
@@ -566,6 +622,9 @@ describe("AppointmentService", () => {
         data: {
           startAt: newStartAt,
           endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+          professionalId: "professional-1",
+          // Remanejar tira o aluno da sessão de turma, se houver (vira atendimento individual).
+          classSessionId: null,
           updatedAt: anyDate,
         },
       });
@@ -625,12 +684,12 @@ describe("AppointmentService", () => {
         status: "NO_SHOW",
         startAt: new Date(Date.now() - 86_400_000),
       };
-      const replace = (appt: object = noShow, allowNoShow = true) =>
+      const replace = (appt: object = noShow, allowReplacement = true) =>
         appointmentService.rescheduleFromRecurrence(
           prismaMock as never,
           appt as never,
           newStartAt,
-          { allowNoShow },
+          { allowReplacement },
         );
 
       it("deve remanejar a sessão com falta para a nova data e voltá-la a SCHEDULED", async () => {
@@ -641,7 +700,10 @@ describe("AppointmentService", () => {
           data: {
             startAt: newStartAt,
             endAt: new Date(newStartAt.getTime() + 30 * 60_000),
+            professionalId: "professional-1",
+            classSessionId: null,
             status: "SCHEDULED",
+            cancelReason: null,
             updatedAt: anyDate,
           },
         });
@@ -653,7 +715,7 @@ describe("AppointmentService", () => {
             prismaMock as never,
             noShow as never,
             new Date(Date.now() - 60_000),
-            { allowNoShow: true },
+            { allowReplacement: true },
           ),
         ).rejects.toBeInstanceOf(BadRequestException);
 
@@ -671,6 +733,33 @@ describe("AppointmentService", () => {
         expect(prismaMock.appointment.update).not.toHaveBeenCalled();
       });
 
+      it.each(["CLASS_SESSION_CANCELLED", "CLASS_LEFT"])(
+        "deve repor a sessão cancelada pela turma (%s) e limpar o motivo",
+        async (cancelReason) => {
+          await replace({ ...noShow, status: "CANCELLED", cancelReason });
+
+          const { data } = prismaMock.appointment.update.mock.calls[0][0] as {
+            data: Record<string, unknown>;
+          };
+          expect(data).toMatchObject({
+            status: "SCHEDULED",
+            cancelReason: null,
+          });
+        },
+      );
+
+      it("não deve repor a sessão cancelada pela turma sem a autorização do pacote", async () => {
+        await expect(
+          replace(
+            { ...noShow, status: "CANCELLED", cancelReason: "CLASS_LEFT" },
+            false,
+          ),
+        ).rejects.toThrow(
+          "Agendamento com status CANCELLED não pode ser remanejado",
+        );
+      });
+
+      // O CANCELLED aqui é o cancelado pelo cliente (sem motivo): não tem reposição.
       it.each(["COMPLETED", "IN_PROGRESS", "CANCELLED"])(
         "mesmo no pacote, continua recusando a sessão %s",
         async (status) => {
@@ -688,6 +777,42 @@ describe("AppointmentService", () => {
           data: Record<string, unknown>;
         };
         expect(data.status).toBeUndefined();
+      });
+    });
+
+    it("deve levar a aula para a sessão de turma de destino, com o profissional dela", async () => {
+      await appointmentService.rescheduleFromRecurrence(
+        prismaMock as never,
+        fromRecurrence,
+        newStartAt,
+        {
+          classSession: { id: "session-2", professionalId: "professional-2" },
+        },
+      );
+
+      // O conflito do profissional não conta os colegas da sessão de destino.
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              {
+                professionalId: "professional-2",
+                OR: [
+                  { classSessionId: null },
+                  { classSessionId: { not: "session-2" } },
+                ],
+              },
+              { clientId: "client-1" },
+            ],
+          }) as unknown,
+        }),
+      );
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1" },
+        data: expect.objectContaining({
+          professionalId: "professional-2",
+          classSessionId: "session-2",
+        }) as unknown,
       });
     });
 
@@ -1566,6 +1691,199 @@ describe("AppointmentService", () => {
       await expect(
         appointmentService.update("appointment-1", { note: "x" }, COMPANY_ID),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("turma (sessão)", () => {
+    const sessionAppointment = { ...appointment, classSessionId: "session-1" };
+    // Conflito do profissional sem contar os colegas da mesma sessão.
+    const professionalOutsideSession = {
+      professionalId: "professional-1",
+      OR: [{ classSessionId: null }, { classSessionId: { not: "session-1" } }],
+    };
+
+    it("editar a observação não conflita com os colegas da sessão", async () => {
+      prismaMock.appointment.findFirst
+        .mockResolvedValueOnce(sessionAppointment)
+        .mockResolvedValueOnce(null);
+
+      await appointmentService.update(
+        "appointment-1",
+        { note: "Trouxe atestado" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.findFirst).toHaveBeenLastCalledWith({
+        where: containingWhere({
+          id: { not: "appointment-1" },
+          OR: [professionalOutsideSession, { clientId: "client-1" }],
+        }),
+        select: { professionalId: true },
+      });
+      expect(prismaMock.appointment.update).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["startAt", { startAt: new Date(startAt.getTime() + 3_600_000) }],
+      ["serviceId", { serviceId: "service-2" }],
+      ["clientId", { clientId: "client-2" }],
+      ["professionalId", { professionalId: "professional-2" }],
+    ])("não aceita mudar %s (400)", async (_, change) => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(
+        sessionAppointment,
+      );
+
+      await expect(
+        appointmentService.update("appointment-1", change, COMPANY_ID),
+      ).rejects.toThrow("Agendamento de turma não aceita");
+      expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it("cancelar o agendamento do aluno continua permitido (libera a vaga)", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(
+        sessionAppointment,
+      );
+      prismaMock.appointment.update.mockResolvedValue({
+        ...sessionAppointment,
+        status: "CANCELLED",
+      });
+
+      await appointmentService.update(
+        "appointment-1",
+        { status: "CANCELLED" },
+        COMPANY_ID,
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "appointment-1", status: "SCHEDULED" },
+        }),
+      );
+    });
+
+    describe("createInClassSession", () => {
+      const data = {
+        companyId: COMPANY_ID,
+        classSessionId: "session-1",
+        clientId: "client-1",
+        professionalId: "professional-1",
+        serviceId: "service-1",
+        startAt,
+        endAt,
+        overBooking: false,
+      };
+
+      it("confere a agenda sem os colegas da sessão e cria ligado a ela", async () => {
+        await appointmentService.createInClassSession(
+          prismaMock as never,
+          data,
+        );
+
+        expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
+          where: containingWhere({
+            OR: [professionalOutsideSession, { clientId: "client-1" }],
+          }),
+          select: { professionalId: true },
+        });
+        expect(prismaMock.appointment.create).toHaveBeenCalledWith({
+          data: { ...data, note: null },
+          include: relations,
+        });
+      });
+
+      it("recusa quando o cliente já tem compromisso no horário (409)", async () => {
+        prismaMock.appointment.findFirst.mockResolvedValue({
+          professionalId: "professional-9",
+        });
+
+        await expect(
+          appointmentService.createInClassSession(prismaMock as never, data),
+        ).rejects.toThrow("O cliente já possui um agendamento neste horário");
+        expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+      });
+
+      it("recusa sessão que já começou (400)", async () => {
+        await expect(
+          appointmentService.createInClassSession(prismaMock as never, {
+            ...data,
+            startAt: new Date(Date.now() - 60_000),
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    it("attachToClassSession só liga o agendamento à sessão", async () => {
+      await appointmentService.attachToClassSession(
+        prismaMock as never,
+        "appointment-1",
+        "session-1",
+      );
+
+      expect(prismaMock.appointment.update).toHaveBeenCalledWith({
+        where: { id: "appointment-1", classSessionId: null },
+        data: { classSessionId: "session-1", updatedAt: anyDate },
+      });
+    });
+
+    it("attachToClassSession recusa agendamento que outra conversão já ligou (409)", async () => {
+      prismaMock.appointment.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Record not found", {
+          code: "P2025",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(
+        appointmentService.attachToClassSession(
+          prismaMock as never,
+          "appointment-1",
+          "session-1",
+        ),
+      ).rejects.toThrow("O agendamento já pertence a uma turma");
+    });
+  });
+
+  describe("recorrência na turma (createFromRecurrence com sessão)", () => {
+    it("confere a agenda sem os colegas da sessão e grava a sessão em cada agendamento", async () => {
+      prismaMock.appointment.createManyAndReturn.mockResolvedValue([]);
+
+      await appointmentService.createFromRecurrence(
+        prismaMock as never,
+        {
+          companyId: COMPANY_ID,
+          recurringAppointmentId: "recurring-1",
+          clientId: "client-1",
+          professionalId: "professional-1",
+          serviceId: "service-1",
+        },
+        [{ startAt, endAt, classSessionId: "session-1" }],
+        "UTC",
+      );
+
+      expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
+        where: containingWhere({
+          OR: [
+            {
+              professionalId: "professional-1",
+              OR: [
+                { classSessionId: null },
+                { classSessionId: { not: "session-1" } },
+              ],
+            },
+            { clientId: "client-1" },
+          ],
+        }),
+        select: { professionalId: true },
+      });
+      expect(prismaMock.appointment.createManyAndReturn).toHaveBeenCalledWith({
+        data: [
+          containingWhere({
+            recurringAppointmentId: "recurring-1",
+            classSessionId: "session-1",
+          }),
+        ],
+        select: { id: true, startAt: true },
+      });
     });
   });
 });

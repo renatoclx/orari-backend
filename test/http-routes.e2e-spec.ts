@@ -144,6 +144,23 @@ describe("Rotas HTTP", () => {
       // service confere o acesso (ADMIN ou profissional vinculado).
       ["POST /anamnesis-templates", ["ADMIN"]],
       ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
+      // Turmas: só o ADMIN (ver docs/turmas.md).
+      ["POST /class-groups", ["ADMIN"]],
+      ["GET /class-groups", ["ADMIN"]],
+      ["GET /class-groups/:id", ["ADMIN"]],
+      ["PATCH /class-groups/:id", ["ADMIN"]],
+      ["POST /class-groups/:id/participants", ["ADMIN"]],
+      ["POST /class-sessions", ["ADMIN"]],
+      ["GET /class-sessions", ["ADMIN"]],
+      ["GET /class-sessions/:id", ["ADMIN"]],
+      ["PATCH /class-sessions/:id", ["ADMIN"]],
+      ["POST /class-sessions/:id/participants", ["ADMIN"]],
+      ["PATCH /class-sessions/:id/cancel", ["ADMIN"]],
+      ["PATCH /recurring-appointments/:id/leave-class", ["ADMIN"]],
+      [
+        "PATCH /recurring-appointments/:id/appointments/:id/replace-in-class",
+        ["ADMIN"],
+      ],
     ])("%s é restrita a %j", (label, expected) => {
       const route = routes.find((r) => r.label.startsWith(`${label} (`));
 

@@ -905,6 +905,25 @@ describe("PaymentService", () => {
       });
     });
 
+    it("sessão de turma cancelada: cancela os pagamentos PENDING dos agendamentos cancelados nela", async () => {
+      prismaMock.payment.updateMany.mockResolvedValue({ count: 2 });
+
+      await expect(
+        paymentService.cancelPendingForClassSession(
+          prismaMock as never,
+          "session-1",
+        ),
+      ).resolves.toBe(2);
+      expect(prismaMock.payment.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: "PENDING",
+          deletedAt: null,
+          appointment: { classSessionId: "session-1", status: "CANCELLED" },
+        },
+        data: { status: "CANCELLED", updatedAt: anyDate },
+      });
+    });
+
     it("deve cancelar só o pagamento PENDING de um agendamento", async () => {
       prismaMock.payment.updateMany.mockResolvedValue({ count: 1 });
 

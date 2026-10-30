@@ -213,13 +213,47 @@ export class BusinessHourService {
     const timeZone = await this.companyService.getTimeZone(companyId);
     const weekDay =
       WEEK_DAY_BY_INDEX[weekDayIndexOf(toZonedParts(startAt, timeZone))];
+
+    return this.fitsWindowOf(
+      companyId,
+      weekDay,
+      minutesOfZonedDay(startAt, timeZone),
+      minutesOfZonedDay(endAt, timeZone),
+    );
+  }
+
+  /**
+   * Mesma conferência para um horário semanal, sem data (ex.: o horário de uma
+   * turma fixa): `start` e `end` em minutos desde a meia-noite, no relógio da
+   * empresa. Sem nenhuma janela cadastrada, não há restrição.
+   */
+  async isWeeklySlotWithinBusinessHours(
+    companyId: string,
+    weekDay: WeekDay,
+    start: number,
+    end: number,
+  ): Promise<boolean> {
+    const total = await this.prisma.businessHour.count({
+      where: { companyId, deletedAt: null },
+    });
+    if (total === 0) {
+      return true;
+    }
+
+    return this.fitsWindowOf(companyId, weekDay, start, end);
+  }
+
+  // O intervalo cabe inteiro em uma das janelas do dia da semana.
+  private async fitsWindowOf(
+    companyId: string,
+    weekDay: WeekDay,
+    start: number,
+    end: number,
+  ): Promise<boolean> {
     const windows = await this.prisma.businessHour.findMany({
       where: { companyId, deletedAt: null, weekDay },
       select: { openAt: true, closeAt: true },
     });
-
-    const start = minutesOfZonedDay(startAt, timeZone);
-    const end = minutesOfZonedDay(endAt, timeZone);
 
     // O fim precisa cair no mesmo dia: um atendimento que vira o dia não cabe
     // em nenhuma janela.

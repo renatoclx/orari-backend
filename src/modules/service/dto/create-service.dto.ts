@@ -37,6 +37,11 @@ export class CreateServiceDto {
   @IsBoolean()
   isActive?: boolean;
 
+  /** Aceita atendimento em turma (padrão: não aceita). */
+  @IsOptional()
+  @IsBoolean()
+  allowsClasses?: boolean;
+
   @IsOptional()
   @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
     message: "color deve ser uma cor hexadecimal válida (ex.: #3BB2F6 ou #FFF)",

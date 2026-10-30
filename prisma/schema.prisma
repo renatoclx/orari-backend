@@ -152,6 +152,8 @@ model Company {
   plans                 Plan[]
   payments              Payment[]
   clientPlans           ClientPlan[]
+  classGroups           ClassGroup[]
+  classSessions         ClassSession[]
 
   @@map("companies")
 }
@@ -179,14 +181,16 @@ model People {
   addresses Address[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
-  appointmentsAsClient       Appointment[]          @relation("AppointmentClient")
-  appointmentsAsProfessional Appointment[]          @relation("AppointmentProfessional")
-  recurringAsClient          RecurringAppointment[] @relation("RecurringAppointmentClient")
-  recurringAsProfessional    RecurringAppointment[] @relation("RecurringAppointmentProfessional")
-  clientPlans                ClientPlan[]
-  users                      User[]
-  anamnesesAsClient          Anamnesis[]            @relation("AnamnesisClient")
-  anamnesisEntriesAsAuthor   AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
+  appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
+  appointmentsAsProfessional  Appointment[]          @relation("AppointmentProfessional")
+  recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
+  recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
+  clientPlans                 ClientPlan[]
+  users                       User[]
+  anamnesesAsClient           Anamnesis[]            @relation("AnamnesisClient")
+  anamnesisEntriesAsAuthor    AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
+  classGroupsAsProfessional   ClassGroup[]
+  classSessionsAsProfessional ClassSession[]
 
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
@@ -260,6 +264,13 @@ enum AppointmentStatus {
   NO_SHOW
 }
 
+// Por que a clínica cancelou a aula de turma (ver docs/turmas.md). Só esses
+// cancelamentos deixam a sessão de plano ser reposta; o cancelado pelo cliente, não.
+enum AppointmentCancelReason {
+  CLASS_SESSION_CANCELLED
+  CLASS_LEFT
+}
+
 // Modalidade de pagamento de uma contratação de plano.
 enum PlanBillingType {
   INTEGRAL
@@ -294,6 +305,8 @@ model Service {
   duration       Int
   companyId      String
   isActive       Boolean   @default(true)
+  // Aceita atendimento em turma (ver ClassGroup).
+  allowsClasses  Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
   deletedAt      DateTime?
@@ -302,6 +315,8 @@ model Service {
   appointments          Appointment[]
   recurringAppointments RecurringAppointment[]
   planItems             PlanItem[]
+  classGroups           ClassGroup[]
+  classSessions         ClassSession[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -311,7 +326,7 @@ model Service {
 
 // Sem deletedAt por decisão do domínio: o ciclo de vida é controlado pelo status.
 model Appointment {
-  id                     String            @id @default(uuid())
+  id                     String                   @id @default(uuid())
   companyId              String
   clientId               String
   professionalId         String
@@ -320,13 +335,17 @@ model Appointment {
   // Calculado a partir da duração do serviço (ver AppointmentService).
   endAt                  DateTime
   note                   String?
-  status                 AppointmentStatus @default(SCHEDULED)
+  status                 AppointmentStatus        @default(SCHEDULED)
   // Encaixe: agendamento avulso marcado fora do horário de funcionamento. Retrato
   // do momento em que foi marcado; não é recalculado se o horário mudar depois.
-  overBooking            Boolean           @default(false)
+  overBooking            Boolean                  @default(false)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
-  createdAt              DateTime          @default(now())
+  // Preenchido quando o agendamento é de um aluno numa sessão de turma.
+  classSessionId         String?
+  // Preenchido quando a clínica cancelou a aula de turma (sessão cancelada ou saída da turma).
+  cancelReason           AppointmentCancelReason?
+  createdAt              DateTime                 @default(now())
   updatedAt              DateTime?
 
   company              Company               @relation(fields: [companyId], references: [id])
@@ -336,6 +355,7 @@ model Appointment {
   payment              Payment?
   anamnesisEntries     AnamnesisEntry[]
   recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
+  classSession         ClassSession?         @relation(fields: [classSessionId], references: [id])
 
   @@index([companyId, startAt])
   @@index([professionalId, startAt])
@@ -343,6 +363,7 @@ model Appointment {
   @@index([status, endAt])
   @@index([serviceId])
   @@index([recurringAppointmentId])
+  @@index([classSessionId])
   @@map("appointments")
 }
 
@@ -359,6 +380,11 @@ model RecurringAppointment {
   isActive       Boolean   @default(true)
   // Preenchido quando a recorrência é a agenda de um serviço de um plano contratado.
   clientPlanId   String?
+  // Turma fixa em que a recorrência está encaixada (os dias são horários dela).
+  classGroupId   String?
+  // Saída da turma: quando o aluno saiu e o motivo (as aulas futuras da turma foram canceladas).
+  classLeftAt    DateTime?
+  classLeaveNote String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
@@ -367,6 +393,7 @@ model RecurringAppointment {
   client       People         @relation("RecurringAppointmentClient", fields: [clientId], references: [id])
   professional People         @relation("RecurringAppointmentProfessional", fields: [professionalId], references: [id])
   service      Service        @relation(fields: [serviceId], references: [id])
+  classGroup   ClassGroup?    @relation(fields: [classGroupId], references: [id])
   days         RecurringDay[]
   appointments Appointment[]
 
@@ -375,6 +402,7 @@ model RecurringAppointment {
   @@index([clientId])
   @@index([serviceId])
   @@index([clientPlanId])
+  @@index([classGroupId])
   @@map("recurring_appointments")
 }
 
@@ -763,4 +791,90 @@ model AnamnesisAnswer {
 
   @@unique([entryId, questionId])
   @@map("anamnesis_answers")
+}
+
+/**
+ * Turma fixa: um horário de atendimento em turma, com vagas (ver docs/turmas.md).
+ * Serviço, profissional e dias não mudam depois do cadastro; não há exclusão: a
+ * turma é inativada por isActive.
+ */
+model ClassGroup {
+  id             String    @id @default(uuid())
+  companyId      String
+  // Opcional e não único: serve só para identificar a turma.
+  name           String?
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String?
+  serviceId      String
+  professionalId String
+  // Quantidade máxima de alunos por sessão.
+  capacity       Int
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company               Company                @relation(fields: [companyId], references: [id])
+  service               Service                @relation(fields: [serviceId], references: [id])
+  professional          People                 @relation(fields: [professionalId], references: [id])
+  days                  ClassGroupDay[]
+  sessions              ClassSession[]
+  recurringAppointments RecurringAppointment[]
+
+  @@index([companyId, createdAt])
+  @@index([professionalId])
+  @@index([serviceId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("class_groups")
+}
+
+// Dia e horário da turma fixa. O fim é o início mais a duração do serviço, como nos agendamentos.
+model ClassGroupDay {
+  id           String   @id @default(uuid())
+  classGroupId String
+  weekDay      WeekDay
+  startTime    DateTime @db.Time(0)
+  createdAt    DateTime @default(now())
+
+  classGroup ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+
+  @@index([classGroupId])
+  @@map("class_group_days")
+}
+
+/**
+ * Sessão da turma: uma ocorrência de atendimento em turma (ver docs/turmas.md).
+ * Nasce de uma turma fixa, quando o primeiro aluno é encaixado naquele horário,
+ * ou de um agendamento que vira turma (sessão avulsa, sem classGroupId). Cada
+ * aluno tem o próprio agendamento, ligado a ela.
+ */
+model ClassSession {
+  id               String    @id @default(uuid())
+  companyId        String
+  // Vazio na sessão avulsa (agendamento que virou turma).
+  classGroupId     String?
+  serviceId        String
+  professionalId   String
+  startAt          DateTime
+  endAt            DateTime
+  // Quantidade máxima de alunos (não contam os agendamentos cancelados).
+  capacity         Int
+  // Na sessão avulsa, repete o encaixe do agendamento que a originou; na turma fixa, sempre falso.
+  overBooking      Boolean   @default(false)
+  // Cancelamento da sessão inteira, com o motivo opcional (ex.: "Feriado").
+  cancelledAt      DateTime?
+  cancellationNote String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime?
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  classGroup   ClassGroup?   @relation(fields: [classGroupId], references: [id])
+  service      Service       @relation(fields: [serviceId], references: [id])
+  professional People        @relation(fields: [professionalId], references: [id])
+  appointments Appointment[]
+
+  // Na turma fixa, uma sessão por horário (as avulsas não entram).
+  @@unique([classGroupId, startAt], where: raw("\"classGroupId\" IS NOT NULL"))
+  @@index([companyId, startAt])
+  @@index([professionalId, startAt])
+  @@map("class_sessions")
 }

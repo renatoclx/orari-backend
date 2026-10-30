@@ -70,8 +70,8 @@ export class ServiceController {
   @ApiOperation({
     summary: "Exclui o serviço, somente se não tiver relacionamentos",
     description:
-      "Exclusão lógica. Recusada quando há agendamentos, agendamentos recorrentes " +
-      "ou itens de plano com este serviço (inclusive cancelados ou encerrados): " +
+      "Exclusão lógica. Recusada quando há agendamentos, agendamentos recorrentes, " +
+      "itens de plano ou turmas com este serviço (inclusive cancelados ou encerrados): " +
       "nesse caso, inative-o com PATCH e isActive false.",
   })
   @ApiNoContentResponse({ description: "Serviço excluído." })
@@ -80,7 +80,7 @@ export class ServiceController {
   })
   @ApiConflictResponse({
     description:
-      "O serviço possui agendamentos, recorrências ou planos vinculados. Inative-o em vez de excluir.",
+      "O serviço possui agendamentos, recorrências, planos ou turmas vinculados. Inative-o em vez de excluir.",
   })
   remove(
     @Param("id", ParseUUIDPipe) id: string,

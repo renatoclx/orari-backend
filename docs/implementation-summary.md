@@ -515,3 +515,44 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Verificado:** 23 testes novos no `appointment.service.spec.ts` e conferência numa segunda instância do backend, contra o banco local (futuro recusado, pago recusado, concluído com pendente vira falta e o pagamento fica `CANCELLED`, falta não volta nem cancela).
 - **Pagamento na resposta:** `payment: { status, deletedAt } | null` passou a vir em toda resposta de agendamento (`withRelations`), para a tela esconder "Marcar falta" no atendimento já pago (a API continua recusando, 400). Do pagamento só a situação: nada de valor ou método.
 - **Fora do escopo:** o botão "Marcar falta" e a reposição de sessão no frontend (próxima etapa); desfazer a falta; cobrar a falta (multa) por empresa ou serviço.
+
+## 2.46 Turmas, etapa 1: serviço que aceita turma e cadastro de turmas fixas
+
+- **Desenho:** `docs/turmas.md` (um agendamento por aluno; a turma agrupa os agendamentos por sessão). Esta etapa cobre só o cadastro das turmas fixas; sessões e encaixes vêm nas próximas.
+- **Banco** (migration `20261029120000_class_groups`): `services.allowsClasses` (padrão `false`), `class_groups` (nome opcional com `normalizedName` e índice GIN trigram, serviço, profissional, vagas, `isActive`) e `class_group_days` (dia da semana e início; o fim vem da duração do serviço).
+- **Serviço:** aceita `allowsClasses`; desmarcar com turma ativa responde 409; a exclusão passa a contar as turmas como relacionamento.
+- **Módulo `class-group`** (`/class-groups`, só ADMIN): criação, listagem (mais recente primeiro; filtros nome, `isActive`, serviço, profissional, `from`/`to` de cadastro em dias inteiros no fuso da empresa), consulta e edição de nome, vagas e situação. Validações: serviço ativo que aceita turma, profissional `PROFESSIONAL`, vagas de 2 a 100, 1 a 21 horários sem sobreposição no mesmo dia, cada horário dentro do funcionamento e sem sobrepor outra turma ativa do mesmo profissional. A reativação repete essas conferências.
+- **Funcionamento:** `BusinessHourService.isWeeklySlotWithinBusinessHours` confere um horário semanal sem data; `isWithinBusinessHours` passou a usar a mesma conferência por dentro, sem mudar o comportamento.
+
+## 2.47 Turmas, etapa 2: sessões, encaixe avulso e agendamento que vira turma
+
+- **Banco** (migration `20261029140000_class_sessions`): `class_sessions` (turma opcional, serviço, profissional, início e fim, vagas, `overBooking`, `cancelledAt` para a etapa 4; índice único parcial `(classGroupId, startAt)` nas sessões de turma fixa) e `appointments.classSessionId`.
+- **Rotas (só ADMIN):** `POST /class-groups/:id/participants` (encaixe na turma fixa: o horário escolhe a sessão, criada no primeiro encaixe), `POST /class-sessions` (agendamento que vira turma), `GET /class-sessions/:id` (vagas e alunos), `PATCH /class-sessions/:id` (vagas) e `POST /class-sessions/:id/participants` (encaixe numa sessão existente).
+- **Vagas com trava:** `ClassSessionService` trava a linha da sessão (`SELECT ... FOR UPDATE`) antes de contar os alunos; a sessão da turma fixa é criada com `INSERT ... ON CONFLICT DO NOTHING` na mesma transação. Primeiro SQL cru do projeto (convenção registrada no `database.md`). Verificado com duas inclusões simultâneas na última vaga: uma passa, a outra recebe 409.
+- **AppointmentService:** a resposta traz `classSession`; `ensureSlotIsFree` ignora, para o profissional, os colegas da mesma sessão (inclusive no `PATCH` de observação, que também confere a agenda); `createInClassSession` e `attachToClassSession` (este barra duas conversões simultâneas) mantêm as regras de agenda no módulo de agendamentos, sem depender do de turmas; agendamento de turma não muda horário, serviço, cliente nem profissional pela edição comum.
+- **Turma fixa:** mudar as vagas aplica às sessões futuras (travadas) e é recusado se alguma já tiver mais alunos.
+
+## 2.48 Turmas, etapa 3: recorrência e plano encaixados em turma
+
+- **Banco** (migration `20261029160000_recurring_class_group`): `recurring_appointments.classGroupId`.
+- **Entrada:** `classGroupId` opcional em `POST /recurring-appointments` e em cada item de `schedules` de `POST /client-plans`. Serviço e profissional continuam no payload e precisam ser os da turma; os dias precisam ser horários dela (`ClassSessionService.ensureRecurrenceFitsClassGroup`).
+- **Geração:** `createSchedule` passa as ocorrências por `ClassSessionService.reserveForOccurrences` (sessão criada se faltar, travada e com a vaga conferida, na transação da recorrência/contratação); `createFromRecurrence` grava a sessão em cada agendamento e confere a agenda sem os colegas. O `RecurringAppointmentModule` importa o `ClassGroupModule` (sem ciclo: este só depende do `AppointmentModule`).
+- **Remanejamento** (decisão A de `turmas.md`): `rescheduleFromRecurrence` limpa o `classSessionId`; o atendimento vai individual para o novo horário e a vaga fica livre.
+- **Respostas:** recorrência e contratação trazem `classGroupId`.
+
+## 2.49 Turmas, etapa 4: cancelamento da sessão, saída da turma e reposição
+
+- **Banco** (migration `20261029180000_class_cancellations`): enum `AppointmentCancelReason` (`CLASS_SESSION_CANCELLED`, `CLASS_LEFT`) e `appointments.cancelReason`; `class_sessions.cancellationNote`; `recurring_appointments.classLeftAt` e `classLeaveNote`.
+- **Motivo do cancelamento:** só os cancelamentos feitos pela clínica na turma gravam `cancelReason`; é ele que separa a aula que pode ser reposta da cancelada pelo cliente.
+- **`PATCH /class-sessions/:id/cancel`** (ADMIN): `ClassSessionService.cancel` trava a sessão, grava o cancelamento e chama `AppointmentService.cancelForClassSession` e `PaymentService.cancelPendingForClassSession` na mesma transação. O `ClassGroupModule` passa a importar o `PaymentModule` (sem ciclo).
+- **`PATCH /recurring-appointments/:id/leave-class`** (ADMIN): `RecurringAppointmentService.leaveClassGroup` grava a saída com o filtro `classLeftAt: null` (duas saídas simultâneas: 409), chama `AppointmentService.cancelFutureFromClassGroup` (só as aulas nas sessões da turma) e, na avulsa, encerra a recorrência e cancela o restante; depois, `cancelPendingForRecurrence`.
+- **Reposição:** `rescheduleFromRecurrence` troca a opção `allowNoShow` por `allowReplacement` (falta ou `cancelReason` preenchido) e aceita `classSession` (sessão de destino: grava a sessão e o profissional dela, e confere a agenda sem os colegas).
+- **`PATCH /recurring-appointments/:id/appointments/:appointmentId/replace-in-class`** (ADMIN): `ClassSessionService.resolveClassGroupSlot` (turma, serviço, horário e funcionamento, fora da transação) e `reserveSeat` (trava e vaga, dentro); depois o remanejamento e `moveDueDate`, na mesma transação. A conferência de vaga do encaixe foi extraída para `ensureHasSeatFor`, usada pelos dois.
+- **Respostas e Swagger:** o agendamento documenta `classSessionId` e `cancelReason`; a recorrência, `classGroupId`, `classLeftAt` e `classLeaveNote`; a sessão traz `cancellationNote`.
+
+## 2.50 Turmas, etapa 5: agenda por sessão
+
+- **`GET /class-sessions`** (ADMIN; `FindClassSessionsQueryDto` com `from` e `to` obrigatórios e filtros de profissional, serviço e turma): `ClassSessionService.findAll` valida o período (até 31 dias, `CLASS_SESSIONS_RANGE_MAX_DAYS`) e devolve uma lista **sem paginação**, já limitada pelo período.
+- **Horários vazios** (`findEmptySlots`): percorre o calendário da empresa entre o maior de `from` e agora e `to` (`startsOf`, com `zonedToUtc`), descarta o horário que já tem sessão (inclusive cancelada) e o que se sobrepõe a um agendamento não cancelado do profissional. São três consultas no total (turmas, sessões ocupadas e agendamentos dos profissionais), sem uma por horário. A regra repete a que o frontend aplicava na grade, que passa a vir pronta.
+- **Vagas:** a conta foi reunida em `seatsOf`, usada por `findOne` e pela agenda; a sessão cancelada passa a ter `available: 0`. Os alunos trazem `cancelReason`.
+- **Agendamento:** `classSession` inclui `cancelledAt`.

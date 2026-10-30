@@ -615,6 +615,27 @@ export class PaymentService {
     return count;
   }
 
+  /**
+   * Sessão de turma cancelada pela clínica: os pagamentos ainda PENDING dos
+   * agendamentos cancelados nela também são cancelados (o PAID não muda: não há
+   * reembolso). Roda na transação de quem cancela a sessão, depois dos agendamentos.
+   */
+  async cancelPendingForClassSession(
+    db: PrismaClientLike,
+    classSessionId: string,
+  ): Promise<number> {
+    const { count } = await db.payment.updateMany({
+      where: {
+        status: PaymentStatus.PENDING,
+        deletedAt: null,
+        appointment: { classSessionId, status: AppointmentStatus.CANCELLED },
+      },
+      data: { status: PaymentStatus.CANCELLED, updatedAt: new Date() },
+    });
+
+    return count;
+  }
+
   // Cancelar um agendamento da recorrência cancela o pagamento dele, se ainda pendente.
   async cancelPendingForAppointment(
     db: PrismaClientLike,
