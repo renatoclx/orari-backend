@@ -55,6 +55,15 @@ export class ClassGroupController {
     return this.classGroupService.findOne(id, currentUser.companyId);
   }
 
+  // Alunos fixos: recorrências e planos ativos encaixados na turma.
+  @Get(":id/members")
+  findMembers(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.classGroupService.findMembers(id, currentUser.companyId);
+  }
+
   // Altera só nome, vagas e situação; serviço, profissional e dias não mudam.
   @Patch(":id")
   update(
@@ -65,7 +74,8 @@ export class ClassGroupController {
     return this.classGroupService.update(id, dto, currentUser.companyId);
   }
 
-  // Encaixe avulso: o horário escolhe a sessão da turma (criada no primeiro encaixe).
+  // Encaixe avulso de um ou mais alunos, tudo ou nada: o horário escolhe a sessão
+  // da turma (criada no primeiro encaixe). Devolve a sessão atualizada.
   @Post(":id/participants")
   enroll(
     @Param("id", ParseUUIDPipe) id: string,

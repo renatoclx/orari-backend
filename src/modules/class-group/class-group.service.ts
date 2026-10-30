@@ -13,7 +13,7 @@ import {
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { formatTimeOfDay, parseTimeOfDay } from "../../common/time/time-of-day";
-import { zonedToUtc } from "../../common/time/time-zone";
+import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { CompanyService } from "../company/company.service";
@@ -57,6 +57,32 @@ export interface ClassGroupDayResponse {
 export type ClassGroupResponse = Omit<ClassGroupWithDetails, "days"> & {
   days: ClassGroupDayResponse[];
 };
+
+/**
+ * Recorrências (avulsas ou de plano) encaixadas na turma: os alunos fixos.
+ * Leitura direta da tabela da recorrência: o RecurringAppointmentModule já
+ * importa este módulo, e o caminho inverso criaria um ciclo.
+ */
+const memberSelect = {
+  id: true,
+  client: { select: { id: true, name: true, photoUrl: true } },
+  clientPlan: { select: { id: true, plan: { select: { name: true } } } },
+  days: {
+    select: { weekDay: true, startTime: true },
+    orderBy: [{ weekDay: "asc" }, { startTime: "asc" }],
+  },
+} satisfies Prisma.RecurringAppointmentSelect;
+
+// Aluno fixo da turma: um item por recorrência (um cliente pode ter duas na mesma turma).
+export interface ClassGroupMember {
+  recurringAppointmentId: string;
+  client: { id: string; name: string; photoUrl: string | null };
+  // De onde vem a vaga fixa: recorrência avulsa ou agenda de um plano contratado.
+  origin: "RECURRENCE" | "PLAN";
+  clientPlan: { id: string; planName: string } | null;
+  // Os horários da turma em que o aluno está.
+  days: { weekDay: WeekDay; startTime: string }[];
+}
 
 // Horário de um dia da turma em minutos desde a meia-noite (o fim pode passar de 24h).
 interface WeeklySlot {
@@ -162,6 +188,53 @@ export class ClassGroupService {
 
   async findOne(id: string, companyId: string): Promise<ClassGroupResponse> {
     return this.toResponse(await this.findInCompany(id, companyId));
+  }
+
+  /**
+   * Alunos fixos: recorrências ativas encaixadas na turma, sem saída, e ainda
+   * no período (data final a partir de hoje, no fuso da empresa; a recorrência
+   * de plano vencido continua ativa, porque nada a encerra). Sem paginação:
+   * a lista é limitada pelas vagas da turma. Ordem pelo nome do cliente.
+   */
+  async findMembers(
+    id: string,
+    companyId: string,
+  ): Promise<ClassGroupMember[]> {
+    await this.findInCompany(id, companyId);
+
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const { year, month, day } = toZonedParts(new Date(), timeZone);
+    // endDate é data pura (coluna date): compara com o dia de hoje, à meia-noite UTC.
+    const today = new Date(Date.UTC(year, month - 1, day));
+
+    const recurrences = await this.prisma.recurringAppointment.findMany({
+      where: {
+        companyId,
+        classGroupId: id,
+        isActive: true,
+        classLeftAt: null,
+        // Recorrências antigas sem data final continuam valendo.
+        OR: [{ endDate: null }, { endDate: { gte: today } }],
+      },
+      select: memberSelect,
+      orderBy: [{ client: { name: "asc" } }, { id: "asc" }],
+    });
+
+    return recurrences.map((recurrence) => ({
+      recurringAppointmentId: recurrence.id,
+      client: recurrence.client,
+      origin: recurrence.clientPlan ? "PLAN" : "RECURRENCE",
+      clientPlan: recurrence.clientPlan
+        ? {
+            id: recurrence.clientPlan.id,
+            planName: recurrence.clientPlan.plan.name,
+          }
+        : null,
+      days: recurrence.days.map((day) => ({
+        weekDay: day.weekDay,
+        startTime: formatTimeOfDay(day.startTime),
+      })),
+    }));
   }
 
   async update(

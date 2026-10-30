@@ -18,6 +18,7 @@ import { FindClassSessionsQueryDto } from "./find-class-sessions-query.dto";
 import { UpdateClassGroupDto } from "./update-class-group.dto";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
+const other = "22222222-2222-4222-8222-222222222222";
 const base = {
   serviceId: uuid,
   professionalId: uuid,
@@ -134,25 +135,45 @@ describe("FindClassGroupsQueryDto", () => {
 });
 
 describe("DTOs das sessões", () => {
-  it("encaixe na turma fixa exige cliente e início; a observação é opcional", async () => {
+  it("encaixe na turma fixa exige a lista de clientes e o início; a observação é opcional", async () => {
     await expect(
       errorsFor(
-        { clientId: uuid, startAt: "2026-11-02T11:00:00.000Z", note: "x" },
+        {
+          clientIds: [uuid, other],
+          startAt: "2026-11-02T11:00:00.000Z",
+          note: "x",
+        },
         EnrollClassGroupParticipantDto,
       ),
     ).resolves.toEqual([]);
     await expect(
-      errorsFor({ clientId: uuid }, EnrollClassGroupParticipantDto),
+      errorsFor({ clientIds: [uuid] }, EnrollClassGroupParticipantDto),
     ).resolves.toEqual(["startAt"]);
-    await expect(
-      errorsFor({ clientId: "x" }, EnrollClassSessionParticipantDto),
-    ).resolves.toEqual(["clientId"]);
+  });
+
+  it.each([
+    ["lista vazia", { clientIds: [] }],
+    ["cliente repetido", { clientIds: [uuid, uuid] }],
+    ["item que não é UUID", { clientIds: [uuid, "x"] }],
+    [
+      "mais de 100 clientes",
+      {
+        clientIds: Array.from(
+          { length: 101 },
+          (_, i) => `11111111-1111-4111-8111-${String(i).padStart(12, "0")}`,
+        ),
+      },
+    ],
+    ["o clientId antigo", { clientId: uuid }],
+  ])("encaixe recusa %s", async (_, payload) => {
+    const errors = await errorsFor(payload, EnrollClassSessionParticipantDto);
+    expect(errors).toContain("clientId" in payload ? "clientId" : "clientIds");
   });
 
   it("encaixe numa sessão não aceita horário (a sessão já define)", async () => {
     await expect(
       errorsFor(
-        { clientId: uuid, startAt: "2026-11-02T11:00:00.000Z" },
+        { clientIds: [uuid], startAt: "2026-11-02T11:00:00.000Z" },
         EnrollClassSessionParticipantDto,
       ),
     ).resolves.toEqual(["startAt"]);

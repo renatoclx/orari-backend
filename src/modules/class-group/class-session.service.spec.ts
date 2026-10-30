@@ -36,7 +36,7 @@ describe("ClassSessionService", () => {
   const txMock = {
     $executeRaw: vi.fn(),
     $queryRaw: vi.fn(),
-    appointment: { count: vi.fn(), findFirst: vi.fn() },
+    appointment: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     classSession: { create: vi.fn(), update: vi.fn() },
   };
   const prismaMock = {
@@ -51,7 +51,8 @@ describe("ClassSessionService", () => {
   };
   const appointmentServiceMock = {
     findOne: vi.fn(),
-    createInClassSession: vi.fn(),
+    findClassSessionConflicts: vi.fn(),
+    createManyInClassSession: vi.fn(),
     attachToClassSession: vi.fn(),
     cancelForClassSession: vi.fn(),
   };
@@ -98,14 +99,17 @@ describe("ClassSessionService", () => {
     prismaMock.classGroup.findUniqueOrThrow.mockResolvedValue({
       isActive: true,
     });
-    prismaMock.classSession.findFirst.mockResolvedValue(session);
+    // Com os alunos: o encaixe devolve a sessão atualizada (findOne).
+    prismaMock.classSession.findFirst.mockResolvedValue({
+      ...session,
+      appointments: [],
+    });
     txMock.$queryRaw.mockResolvedValue([locked]);
     txMock.appointment.count.mockResolvedValue(1);
     txMock.appointment.findFirst.mockResolvedValue(null);
+    txMock.appointment.findMany.mockResolvedValue([]);
     txMock.classSession.create.mockResolvedValue({ id: "session-2" });
-    appointmentServiceMock.createInClassSession.mockResolvedValue({
-      id: "appointment-9",
-    });
+    appointmentServiceMock.findClassSessionConflicts.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -123,11 +127,29 @@ describe("ClassSessionService", () => {
     service = module.get<ClassSessionService>(ClassSessionService);
   });
 
-  describe("enrollInClassGroup (encaixe avulso na turma fixa)", () => {
-    const dto = { clientId: "client-1", startAt, note: "primeira aula" };
+  // O corpo do 409 do encaixe em lote (o Nest devolve o objeto como está).
+  const responseOf = async (promise: Promise<unknown>) => {
+    const error = await promise.then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(ConflictException);
+    return (error as ConflictException).getResponse();
+  };
 
-    it("cria a sessão do horário se faltar, trava e encaixa o aluno", async () => {
-      await service.enrollInClassGroup("group-1", dto, COMPANY_ID);
+  describe("enrollInClassGroup (encaixe avulso na turma fixa)", () => {
+    const dto = {
+      clientIds: ["client-1", "client-2"],
+      startAt,
+      note: "primeira aula",
+    };
+
+    it("cria a sessão do horário se faltar, trava, encaixa todos e devolve a sessão", async () => {
+      const result = await service.enrollInClassGroup(
+        "group-1",
+        dto,
+        COMPANY_ID,
+      );
 
       // O INSERT ... ON CONFLICT DO NOTHING leva a turma, o horário e as vagas dela.
       const insertValues = txMock.$executeRaw.mock.calls[0].slice(1);
@@ -141,20 +163,23 @@ describe("ClassSessionService", () => {
       expect(
         businessHourServiceMock.ensureWithinBusinessHours,
       ).toHaveBeenCalledWith(COMPANY_ID, startAt, endAt);
-      expect(appointmentServiceMock.createInClassSession).toHaveBeenCalledWith(
-        txMock,
-        {
-          companyId: COMPANY_ID,
-          classSessionId: "session-1",
-          clientId: "client-1",
-          professionalId: "professional-1",
-          serviceId: "service-1",
-          startAt,
-          endAt,
-          overBooking: false,
-          note: "primeira aula",
-        },
-      );
+      const data = {
+        companyId: COMPANY_ID,
+        classSessionId: "session-1",
+        professionalId: "professional-1",
+        serviceId: "service-1",
+        startAt,
+        endAt,
+        overBooking: false,
+        note: "primeira aula",
+      };
+      expect(
+        appointmentServiceMock.findClassSessionConflicts,
+      ).toHaveBeenCalledWith(txMock, data, ["client-1", "client-2"]);
+      expect(
+        appointmentServiceMock.createManyInClassSession,
+      ).toHaveBeenCalledWith(txMock, data, ["client-1", "client-2"]);
+      expect(result).toMatchObject({ id: "session-1", occupied: 0 });
     });
 
     it("recusa horário que não é da turma (400)", async () => {
@@ -190,48 +215,107 @@ describe("ClassSessionService", () => {
           { ...dto, startAt: new Date(Date.now() - 60_000) },
           COMPANY_ID,
         ),
-      ).rejects.toThrow("A sessão já começou");
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it("recusa quem não é cliente (400)", async () => {
-      peopleServiceMock.findOne.mockResolvedValue({ type: "PROFESSIONAL" });
+    it("cliente recusado: nenhum agendamento é gravado (409 com o motivo)", async () => {
+      peopleServiceMock.findOne.mockImplementation((id: string) =>
+        id === "client-2"
+          ? Promise.reject(new NotFoundException())
+          : { type: "CLIENT" },
+      );
 
-      await expect(
+      const body = await responseOf(
         service.enrollInClassGroup("group-1", dto, COMPANY_ID),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      );
+
+      expect(body).toMatchObject({
+        statusCode: 409,
+        message: "Nenhum aluno foi encaixado: 1 recusado",
+        errors: [{ clientId: "client-2", message: "Cliente não encontrado" }],
+      });
+      expect(
+        appointmentServiceMock.createManyInClassSession,
+      ).not.toHaveBeenCalled();
     });
   });
 
-  describe("enroll (sessão que já existe)", () => {
-    it("conta a vaga com a sessão travada, sem os cancelados", async () => {
-      await service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID);
+  describe("enroll (sessão que já existe, em lote)", () => {
+    const enroll = (clientIds: string[] = ["client-1"]) =>
+      service.enroll("session-1", { clientIds }, COMPANY_ID);
+
+    it("confere as vagas da lista inteira com a sessão travada e grava todos", async () => {
+      txMock.appointment.count.mockResolvedValue(1);
+
+      await enroll(["client-1", "client-2"]);
 
       expect(txMock.appointment.count).toHaveBeenCalledWith({
-        where: {
-          classSessionId: "session-1",
-          status: { not: "CANCELLED" },
-        },
+        where: { classSessionId: "session-1", status: { not: "CANCELLED" } },
       });
-      expect(appointmentServiceMock.createInClassSession).toHaveBeenCalled();
+      expect(
+        appointmentServiceMock.createManyInClassSession,
+      ).toHaveBeenCalledWith(txMock, expect.anything(), [
+        "client-1",
+        "client-2",
+      ]);
     });
 
-    it("recusa a sessão cheia (409)", async () => {
-      txMock.appointment.count.mockResolvedValue(3);
+    it("sem vagas para todos: informa as livres e as pedidas (409)", async () => {
+      txMock.appointment.count.mockResolvedValue(2);
 
-      await expect(
-        service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID),
-      ).rejects.toThrow("A sessão está cheia (3 vagas)");
+      const body = await responseOf(enroll(["client-1", "client-2"]));
+
+      expect(body).toEqual({
+        statusCode: 409,
+        error: "Conflict",
+        message: "A sessão tem 1 vaga livre e foram pedidos 2 alunos",
+        available: 1,
+        requested: 2,
+      });
       expect(
-        appointmentServiceMock.createInClassSession,
+        appointmentServiceMock.createManyInClassSession,
       ).not.toHaveBeenCalled();
     });
 
-    it("recusa o cliente que já está na sessão (409)", async () => {
-      txMock.appointment.findFirst.mockResolvedValue({ id: "appointment-1" });
+    it("junta as recusas de cada aluno, na ordem do pedido, antes de olhar as vagas", async () => {
+      // Sessão cheia: as recusas aparecem mesmo assim (vêm antes da conta de vagas).
+      txMock.appointment.count.mockResolvedValue(3);
+      peopleServiceMock.findOne.mockImplementation((id: string) =>
+        id === "client-3" ? { type: "PROFESSIONAL" } : { type: "CLIENT" },
+      );
+      txMock.appointment.findMany.mockResolvedValue([{ clientId: "client-1" }]);
+      appointmentServiceMock.findClassSessionConflicts.mockResolvedValue([
+        {
+          clientId: "client-2",
+          message: "O cliente já possui um agendamento neste horário",
+        },
+      ]);
 
-      await expect(
-        service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID),
-      ).rejects.toThrow("O cliente já está nesta sessão");
+      const body = await responseOf(
+        enroll(["client-1", "client-2", "client-3", "client-4"]),
+      );
+
+      expect(body).toMatchObject({
+        message: "Nenhum aluno foi encaixado: 3 recusados",
+        errors: [
+          { clientId: "client-1", message: "O cliente já está nesta sessão" },
+          {
+            clientId: "client-2",
+            message: "O cliente já possui um agendamento neste horário",
+          },
+          { clientId: "client-3", message: "A pessoa não é do tipo CLIENT" },
+        ],
+      });
+      // Quem já foi recusado não passa de novo pela agenda.
+      expect(
+        appointmentServiceMock.findClassSessionConflicts,
+      ).toHaveBeenCalledWith(txMock, expect.anything(), [
+        "client-2",
+        "client-4",
+      ]);
+      expect(
+        appointmentServiceMock.createManyInClassSession,
+      ).not.toHaveBeenCalled();
     });
 
     it("recusa a sessão cancelada (409)", async () => {
@@ -239,9 +323,7 @@ describe("ClassSessionService", () => {
         { ...locked, cancelledAt: new Date() },
       ]);
 
-      await expect(
-        service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID),
-      ).rejects.toThrow("A sessão da turma foi cancelada");
+      await expect(enroll()).rejects.toThrow("A sessão da turma foi cancelada");
     });
 
     it("recusa sessão de turma fixa inativa (409)", async () => {
@@ -249,33 +331,31 @@ describe("ClassSessionService", () => {
         isActive: false,
       });
 
-      await expect(
-        service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID),
-      ).rejects.toThrow("A turma está inativa");
+      await expect(enroll()).rejects.toThrow("A turma está inativa");
     });
 
-    it("na sessão avulsa, o aluno herda o encaixe do agendamento original", async () => {
+    it("na sessão avulsa, os alunos herdam o encaixe do agendamento original", async () => {
       prismaMock.classSession.findFirst.mockResolvedValue({
         ...session,
         classGroupId: null,
         overBooking: true,
+        appointments: [],
       });
 
-      await service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID);
+      await enroll();
 
       expect(prismaMock.classGroup.findUniqueOrThrow).not.toHaveBeenCalled();
-      expect(appointmentServiceMock.createInClassSession).toHaveBeenCalledWith(
-        txMock,
-        containing({ overBooking: true }),
-      );
+      expect(
+        appointmentServiceMock.createManyInClassSession,
+      ).toHaveBeenCalledWith(txMock, containing({ overBooking: true }), [
+        "client-1",
+      ]);
     });
 
     it("sessão de outra empresa responde 404", async () => {
       prismaMock.classSession.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.enroll("session-1", { clientId: "client-1" }, COMPANY_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(enroll()).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
