@@ -54,6 +54,17 @@ describe("AnamnesisCryptoService", () => {
     );
   });
 
+  it("recusa valor com a tag de autenticação truncada", () => {
+    // Texto vazio: o valor é só IV (12 bytes) + tag (16). Mantendo 4 bytes da tag,
+    // sem o tamanho fixo o GCM conferiria apenas esses 4 e aceitaria o valor.
+    const bytes = Buffer.from(service.encrypt("").slice(3), "base64");
+    const truncated = bytes.subarray(0, 16);
+
+    expect(() => service.decrypt(`v1:${truncated.toString("base64")}`)).toThrow(
+      "Não foi possível decifrar",
+    );
+  });
+
   it("recusa formato desconhecido", () => {
     expect(() => service.decrypt("texto puro")).toThrow("Formato");
     expect(() => service.decrypt("v9:abc")).toThrow("Formato");

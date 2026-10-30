@@ -51,16 +51,19 @@ export class AnamnesisCryptoService {
     const tag = bytes.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
     const encrypted = bytes.subarray(IV_BYTES + TAG_BYTES);
 
-    const decipher = createDecipheriv(ALGORITHM, this.key, iv);
-    decipher.setAuthTag(tag);
-
     try {
+      // Tamanho da tag fixo: sem ele, o Node aceitaria uma tag truncada (mais fácil de forjar).
+      const decipher = createDecipheriv(ALGORITHM, this.key, iv, {
+        authTagLength: TAG_BYTES,
+      });
+      decipher.setAuthTag(tag);
+
       return Buffer.concat([
         decipher.update(encrypted),
         decipher.final(),
       ]).toString("utf8");
     } catch {
-      // Chave errada ou valor alterado; sem detalhes do motivo na mensagem.
+      // Chave errada, valor alterado ou truncado; sem detalhes do motivo na mensagem.
       throw new Error("Não foi possível decifrar o dado da anamnese");
     }
   }
