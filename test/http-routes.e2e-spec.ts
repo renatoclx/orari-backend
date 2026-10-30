@@ -151,6 +151,7 @@ describe("Rotas HTTP", () => {
       ["PATCH /class-groups/:id", ["ADMIN"]],
       ["POST /class-groups/:id/participants", ["ADMIN"]],
       ["POST /class-sessions", ["ADMIN"]],
+      ["GET /class-sessions", ["ADMIN"]],
       ["GET /class-sessions/:id", ["ADMIN"]],
       ["PATCH /class-sessions/:id", ["ADMIN"]],
       ["POST /class-sessions/:id/participants", ["ADMIN"]],

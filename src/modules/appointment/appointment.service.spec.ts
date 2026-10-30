@@ -26,7 +26,9 @@ const relations = {
   service: { select: { id: true, name: true, color: true, duration: true } },
   recurringAppointment: { select: { id: true, clientPlanId: true } },
   payment: { select: { status: true, deletedAt: true } },
-  classSession: { select: { id: true, classGroupId: true, capacity: true } },
+  classSession: {
+    select: { id: true, classGroupId: true, capacity: true, cancelledAt: true },
+  },
 };
 
 describe("AppointmentService", () => {

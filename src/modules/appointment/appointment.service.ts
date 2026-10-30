@@ -39,7 +39,10 @@ const withRelations = {
   // recebido. O `deletedAt` deixa ignorar o excluído, como a regra da falta faz.
   payment: { select: { status: true, deletedAt: true } },
   // Sessão da turma a que o agendamento pertence (ver docs/turmas.md), ou null.
-  classSession: { select: { id: true, classGroupId: true, capacity: true } },
+  // O cancelledAt diz se a sessão inteira foi cancelada.
+  classSession: {
+    select: { id: true, classGroupId: true, capacity: true, cancelledAt: true },
+  },
 } satisfies Prisma.AppointmentInclude;
 
 export type AppointmentWithRelations = Prisma.AppointmentGetPayload<{

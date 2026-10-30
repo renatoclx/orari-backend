@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { parseTimeOfDay } from "../../common/time/time-of-day";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -41,8 +41,13 @@ describe("ClassSessionService", () => {
   };
   const prismaMock = {
     $transaction: vi.fn((fn: (tx: typeof txMock) => unknown) => fn(txMock)),
-    classGroup: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },
-    classSession: { findFirst: vi.fn() },
+    classGroup: {
+      findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findMany: vi.fn(),
+    },
+    classSession: { findFirst: vi.fn(), findMany: vi.fn() },
+    appointment: { findMany: vi.fn() },
   };
   const appointmentServiceMock = {
     findOne: vi.fn(),
@@ -413,6 +418,217 @@ describe("ClassSessionService", () => {
       await expect(
         service.update("session-1", { capacity: 4 }, COMPANY_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("findAll (agenda por sessão)", () => {
+    // Domingo, 01/11/2026 às 09:00 em São Paulo; a semana vai de segunda 02/11 a domingo 08/11.
+    const from = new Date("2026-11-02T03:00:00.000Z");
+    const to = new Date("2026-11-09T03:00:00.000Z");
+    const monday = new Date("2026-11-02T11:00:00.000Z");
+    const wednesday = new Date("2026-11-04T11:00:00.000Z");
+    const pilates = {
+      id: "service-1",
+      name: "Pilates",
+      color: null,
+      duration: 50,
+    };
+    const professional = {
+      id: "professional-1",
+      name: "Paula",
+      photoUrl: null,
+    };
+    const fixedGroup = {
+      ...classGroup,
+      name: "Pilates SegQua",
+      days: [
+        { weekDay: "MONDAY", startTime: parseTimeOfDay("08:00") },
+        { weekDay: "WEDNESDAY", startTime: parseTimeOfDay("08:00") },
+      ],
+      service: pilates,
+      professional,
+    };
+    const existing = {
+      ...session,
+      startAt: monday,
+      endAt: new Date(monday.getTime() + 50 * 60_000),
+      cancellationNote: null,
+      classGroup: { id: "group-1", name: "Pilates SegQua" },
+      service: pilates,
+      professional,
+      appointments: [
+        { id: "a", status: "SCHEDULED", cancelReason: null },
+        { id: "b", status: "CANCELLED", cancelReason: null },
+      ],
+    };
+    const findAll = (query: object = {}) =>
+      service.findAll({ from, to, ...query }, COMPANY_ID);
+
+    beforeEach(() => {
+      vi.setSystemTime(new Date("2026-11-01T12:00:00.000Z"));
+      prismaMock.classSession.findMany.mockImplementation(
+        (args: { select?: object }) =>
+          // Sem select: a listagem das sessões; com select: os horários já ocupados.
+          args.select
+            ? [{ classGroupId: "group-1", startAt: monday }]
+            : [existing],
+      );
+      prismaMock.classGroup.findMany.mockResolvedValue([fixedGroup]);
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("traz a sessão que existe, com as vagas, e o horário vazio da turma", async () => {
+      const items = await findAll();
+
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({
+        id: "session-1",
+        startAt: monday,
+        occupied: 1,
+        available: 2,
+      });
+      expect(items[1]).toMatchObject({
+        id: null,
+        classGroup: { id: "group-1", name: "Pilates SegQua" },
+        startAt: wednesday,
+        endAt: new Date(wednesday.getTime() + 50 * 60_000),
+        occupied: 0,
+        available: 3,
+        appointments: [],
+      });
+    });
+
+    it("aplica os filtros às sessões e às turmas", async () => {
+      const filters = {
+        professionalId: "professional-1",
+        serviceId: "service-1",
+        classGroupId: "group-1",
+      };
+
+      await findAll(filters);
+
+      expect(prismaMock.classSession.findMany).toHaveBeenCalledWith(
+        containing({
+          where: {
+            companyId: COMPANY_ID,
+            startAt: { gte: from, lt: to },
+            ...filters,
+          },
+        }),
+      );
+      expect(prismaMock.classGroup.findMany).toHaveBeenCalledWith(
+        containing({
+          where: {
+            companyId: COMPANY_ID,
+            isActive: true,
+            id: "group-1",
+            serviceId: "service-1",
+            professionalId: "professional-1",
+          },
+        }),
+      );
+    });
+
+    it("sessão cancelada não tem vaga livre", async () => {
+      prismaMock.classSession.findMany.mockImplementation(
+        (args: { select?: object }) =>
+          args.select
+            ? [{ classGroupId: "group-1", startAt: monday }]
+            : [
+                {
+                  ...existing,
+                  cancelledAt: new Date(),
+                  cancellationNote: "Feriado",
+                },
+              ],
+      );
+
+      const [cancelled] = await findAll();
+
+      expect(cancelled).toMatchObject({
+        cancellationNote: "Feriado",
+        available: 0,
+      });
+    });
+
+    it("esconde o horário vazio quando o profissional tem outro compromisso nele", async () => {
+      prismaMock.appointment.findMany.mockResolvedValue([
+        {
+          professionalId: "professional-1",
+          startAt: new Date(wednesday.getTime() + 30 * 60_000),
+          endAt: new Date(wednesday.getTime() + 90 * 60_000),
+        },
+      ]);
+
+      const items = await findAll();
+
+      expect(items.map((item) => item.id)).toEqual(["session-1"]);
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith(
+        containing({
+          where: containing({
+            professionalId: { in: ["professional-1"] },
+            status: { not: "CANCELLED" },
+          }),
+        }),
+      );
+    });
+
+    it("não mostra horário vazio no passado", async () => {
+      // Terça: a segunda já passou e a quarta continua.
+      vi.setSystemTime(new Date("2026-11-03T12:00:00.000Z"));
+      prismaMock.classSession.findMany.mockResolvedValue([]);
+
+      const items = await findAll();
+
+      expect(items.map((item) => item.startAt)).toEqual([wednesday]);
+    });
+
+    it("ordena pelo início e, no mesmo horário, pelo nome do profissional", async () => {
+      prismaMock.classSession.findMany.mockImplementation(
+        (args: { select?: object }) =>
+          args.select
+            ? []
+            : [
+                {
+                  ...existing,
+                  id: "session-2",
+                  startAt: wednesday,
+                  professional: { ...professional, id: "p-2", name: "Ana" },
+                },
+              ],
+      );
+      prismaMock.classGroup.findMany.mockResolvedValue([
+        { ...fixedGroup, days: [fixedGroup.days[1]] },
+      ]);
+
+      const items = await findAll();
+
+      expect(items.map((item) => item.professional.name)).toEqual([
+        "Ana",
+        "Paula",
+      ]);
+    });
+
+    it.each([
+      ["fim antes do início", { to: from }, "to deve ser posterior a from"],
+      [
+        "período maior que 31 dias",
+        { to: new Date(from.getTime() + 32 * 86_400_000) },
+        "no máximo 31 dias",
+      ],
+    ])("recusa %s (400)", async (_, query, message) => {
+      await expect(findAll(query)).rejects.toThrow(message);
+      expect(prismaMock.classSession.findMany).not.toHaveBeenCalled();
+    });
+
+    it("aceita exatamente 31 dias", async () => {
+      await expect(
+        findAll({ to: new Date(from.getTime() + 31 * 86_400_000) }),
+      ).resolves.toBeDefined();
     });
   });
 

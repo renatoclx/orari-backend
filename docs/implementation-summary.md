@@ -549,3 +549,10 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Reposição:** `rescheduleFromRecurrence` troca a opção `allowNoShow` por `allowReplacement` (falta ou `cancelReason` preenchido) e aceita `classSession` (sessão de destino: grava a sessão e o profissional dela, e confere a agenda sem os colegas).
 - **`PATCH /recurring-appointments/:id/appointments/:appointmentId/replace-in-class`** (ADMIN): `ClassSessionService.resolveClassGroupSlot` (turma, serviço, horário e funcionamento, fora da transação) e `reserveSeat` (trava e vaga, dentro); depois o remanejamento e `moveDueDate`, na mesma transação. A conferência de vaga do encaixe foi extraída para `ensureHasSeatFor`, usada pelos dois.
 - **Respostas e Swagger:** o agendamento documenta `classSessionId` e `cancelReason`; a recorrência, `classGroupId`, `classLeftAt` e `classLeaveNote`; a sessão traz `cancellationNote`.
+
+## 2.50 Turmas, etapa 5: agenda por sessão
+
+- **`GET /class-sessions`** (ADMIN; `FindClassSessionsQueryDto` com `from` e `to` obrigatórios e filtros de profissional, serviço e turma): `ClassSessionService.findAll` valida o período (até 31 dias, `CLASS_SESSIONS_RANGE_MAX_DAYS`) e devolve uma lista **sem paginação**, já limitada pelo período.
+- **Horários vazios** (`findEmptySlots`): percorre o calendário da empresa entre o maior de `from` e agora e `to` (`startsOf`, com `zonedToUtc`), descarta o horário que já tem sessão (inclusive cancelada) e o que se sobrepõe a um agendamento não cancelado do profissional. São três consultas no total (turmas, sessões ocupadas e agendamentos dos profissionais), sem uma por horário. A regra repete a que o frontend aplicava na grade, que passa a vir pronta.
+- **Vagas:** a conta foi reunida em `seatsOf`, usada por `findOne` e pela agenda; a sessão cancelada passa a ter `available: 0`. Os alunos trazem `cancelReason`.
+- **Agendamento:** `classSession` inclui `cancelledAt`.

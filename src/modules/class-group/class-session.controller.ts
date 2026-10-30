@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
@@ -19,6 +20,7 @@ import {
   UpdateClassSessionDto,
 } from "./dto/create-class-session.dto";
 import { EnrollClassSessionParticipantDto } from "./dto/enroll-class-participant.dto";
+import { FindClassSessionsQueryDto } from "./dto/find-class-sessions-query.dto";
 
 // Sessões de turma: só o ADMIN encaixa alunos e cancela a sessão (ver
 // docs/turmas.md). O aluno avulso sai cancelando o próprio agendamento
@@ -37,6 +39,15 @@ export class ClassSessionController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.classSessionService.create(dto, currentUser.companyId);
+  }
+
+  // Agenda por sessão (até 31 dias): sessões e horários vazios das turmas fixas.
+  @Get()
+  findAll(
+    @Query() query: FindClassSessionsQueryDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.classSessionService.findAll(query, currentUser.companyId);
   }
 
   @Get(":id")

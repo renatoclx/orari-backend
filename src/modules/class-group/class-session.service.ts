@@ -19,6 +19,7 @@ import {
   minutesOfZonedDay,
   toZonedParts,
   weekDayIndexOf,
+  zonedToUtc,
 } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -44,6 +45,12 @@ import {
   EnrollClassGroupParticipantDto,
   EnrollClassSessionParticipantDto,
 } from "./dto/enroll-class-participant.dto";
+import {
+  CLASS_SESSIONS_RANGE_MAX_DAYS,
+  FindClassSessionsQueryDto,
+} from "./dto/find-class-sessions-query.dto";
+
+const DAY_MS = 86_400_000;
 
 // Ocupam vaga todos os agendamentos da sessão, menos os cancelados (a falta ocupa).
 const OCCUPYING = { not: AppointmentStatus.CANCELLED } as const;
@@ -54,16 +61,25 @@ const CONVERTIBLE_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.CONFIRMED,
 ];
 
+const serviceSummary = {
+  select: { id: true, name: true, color: true, duration: true },
+} as const;
+const professionalSummary = {
+  select: { id: true, name: true, photoUrl: true },
+} as const;
+
 // A sessão como a tela a mostra: vagas e alunos.
 const withParticipants = {
   include: {
     classGroup: { select: { id: true, name: true } },
-    service: { select: { id: true, name: true, color: true, duration: true } },
-    professional: { select: { id: true, name: true, photoUrl: true } },
+    service: serviceSummary,
+    professional: professionalSummary,
     appointments: {
       select: {
         id: true,
         status: true,
+        // Preenchido quando a clínica cancelou a aula (sessão cancelada ou saída da turma).
+        cancelReason: true,
         client: { select: { id: true, name: true, photoUrl: true } },
       },
       orderBy: { client: { name: "asc" } },
@@ -80,6 +96,27 @@ export type ClassSessionResponse = SessionWithParticipants & {
   occupied: number;
   available: number;
 };
+
+/**
+ * Item da agenda por sessão (GET /class-sessions). O horário de turma fixa que
+ * ainda não tem sessão vem com `id: null`, sem alunos: a sessão só é criada no
+ * primeiro encaixe, mas a agenda já mostra o horário.
+ */
+export interface ClassSessionAgendaItem {
+  id: string | null;
+  classGroup: { id: string; name: string | null } | null;
+  service: SessionWithParticipants["service"];
+  professional: SessionWithParticipants["professional"];
+  startAt: Date;
+  endAt: Date;
+  capacity: number;
+  occupied: number;
+  available: number;
+  overBooking: boolean;
+  cancelledAt: Date | null;
+  cancellationNote: string | null;
+  appointments: SessionWithParticipants["appointments"];
+}
 
 // A linha da sessão como a trava (SELECT ... FOR UPDATE) a devolve.
 interface LockedSession {
@@ -372,15 +409,43 @@ export class ClassSessionService {
       throw new NotFoundException("Sessão da turma não encontrada");
     }
 
-    const occupied = session.appointments.filter(
-      (appointment) => appointment.status !== AppointmentStatus.CANCELLED,
-    ).length;
+    return { ...session, ...this.seatsOf(session) };
+  }
 
-    return {
-      ...session,
-      occupied,
-      available: Math.max(session.capacity - occupied, 0),
-    };
+  /**
+   * Agenda por sessão, no período (até 31 dias, sem paginação): as sessões que
+   * existem, inclusive as canceladas, e os horários futuros das turmas fixas
+   * ativas que ainda não têm sessão. O horário vazio fica de fora quando o
+   * profissional tem outro compromisso que o sobrepõe (o encaixe ali seria
+   * recusado). Ordem: início e, no mesmo horário, nome do profissional.
+   */
+  async findAll(
+    query: FindClassSessionsQueryDto,
+    companyId: string,
+  ): Promise<ClassSessionAgendaItem[]> {
+    const { from, to, professionalId, serviceId, classGroupId } = query;
+    this.ensureRangeIsValid(from, to);
+
+    const sessions = await this.prisma.classSession.findMany({
+      where: {
+        companyId,
+        startAt: { gte: from, lt: to },
+        professionalId,
+        serviceId,
+        classGroupId,
+      },
+      ...withParticipants,
+    });
+    const empty = await this.findEmptySlots(query, companyId);
+
+    return [
+      ...sessions.map((session) => this.toAgendaItem(session)),
+      ...empty,
+    ].sort(
+      (a, b) =>
+        a.startAt.getTime() - b.startAt.getTime() ||
+        a.professional.name.localeCompare(b.professional.name, "pt-BR"),
+    );
   }
 
   /** Vagas de uma sessão: só antes do início e nunca abaixo dos alunos que ela já tem. */
@@ -523,6 +588,219 @@ export class ClassSessionService {
     await this.ensureHasSeatFor(tx, locked, clientId);
 
     return { id: locked.id, professionalId: classGroup.professionalId };
+  }
+
+  // Período da agenda: o fim depois do início, e no máximo 31 dias.
+  private ensureRangeIsValid(from: Date, to: Date): void {
+    if (to <= from) {
+      throw new BadRequestException("to deve ser posterior a from");
+    }
+    if (
+      to.getTime() - from.getTime() >
+      CLASS_SESSIONS_RANGE_MAX_DAYS * DAY_MS
+    ) {
+      throw new BadRequestException(
+        `O período deve ter no máximo ${CLASS_SESSIONS_RANGE_MAX_DAYS} dias`,
+      );
+    }
+  }
+
+  /**
+   * Horários futuros das turmas fixas ativas, no período, que ainda não têm
+   * sessão e em que o profissional está livre (sem agendamento não cancelado
+   * que os sobreponha, de turma ou individual).
+   */
+  private async findEmptySlots(
+    {
+      from,
+      to,
+      professionalId,
+      serviceId,
+      classGroupId,
+    }: FindClassSessionsQueryDto,
+    companyId: string,
+  ): Promise<ClassSessionAgendaItem[]> {
+    // Horário vazio só no futuro: não se encaixa aluno numa aula que já começou.
+    const now = new Date();
+    const start = from > now ? from : now;
+    if (start >= to) {
+      return [];
+    }
+
+    const groups = await this.prisma.classGroup.findMany({
+      where: {
+        companyId,
+        isActive: true,
+        id: classGroupId,
+        serviceId,
+        professionalId,
+      },
+      include: {
+        days: { select: { weekDay: true, startTime: true } },
+        service: serviceSummary,
+        professional: professionalSummary,
+      },
+    });
+    if (groups.length === 0) {
+      return [];
+    }
+
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const slots = groups.flatMap((group) =>
+      this.startsOf(group.days, start, to, timeZone).map((startAt) => ({
+        group,
+        startAt,
+        endAt: new Date(startAt.getTime() + group.service.duration * 60_000),
+      })),
+    );
+    if (slots.length === 0) {
+      return [];
+    }
+
+    const lastEnd = new Date(
+      Math.max(...slots.map((slot) => slot.endAt.getTime())),
+    );
+    const [taken, busy] = await Promise.all([
+      // Qualquer sessão do horário, inclusive a cancelada, já aparece pela própria sessão.
+      this.prisma.classSession.findMany({
+        where: {
+          classGroupId: { in: groups.map((group) => group.id) },
+          startAt: { gte: start, lt: to },
+        },
+        select: { classGroupId: true, startAt: true },
+      }),
+      this.prisma.appointment.findMany({
+        where: {
+          companyId,
+          professionalId: {
+            in: [...new Set(groups.map((group) => group.professionalId))],
+          },
+          status: OCCUPYING,
+          startAt: { lt: lastEnd },
+          endAt: { gt: start },
+        },
+        select: { professionalId: true, startAt: true, endAt: true },
+      }),
+    ]);
+
+    return slots
+      .filter(
+        ({ group, startAt, endAt }) =>
+          !taken.some(
+            (session) =>
+              session.classGroupId === group.id &&
+              session.startAt.getTime() === startAt.getTime(),
+          ) &&
+          !busy.some(
+            (appointment) =>
+              appointment.professionalId === group.professionalId &&
+              appointment.startAt < endAt &&
+              appointment.endAt > startAt,
+          ),
+      )
+      .map(({ group, startAt, endAt }) => ({
+        id: null,
+        classGroup: { id: group.id, name: group.name },
+        service: group.service,
+        professional: group.professional,
+        startAt,
+        endAt,
+        capacity: group.capacity,
+        occupied: 0,
+        available: group.capacity,
+        overBooking: false,
+        cancelledAt: null,
+        cancellationNote: null,
+        appointments: [],
+      }));
+  }
+
+  /**
+   * Inícios dos horários da turma entre `start` (incluído) e `to` (excluído),
+   * percorrendo o calendário da empresa: "segunda às 08:00" é segunda no
+   * relógio dela, convertida para UTC no fim.
+   */
+  private startsOf(
+    days: { weekDay: WeekDay; startTime: Date }[],
+    start: Date,
+    to: Date,
+    timeZone: string,
+  ): Date[] {
+    const first = toZonedParts(start, timeZone);
+    const last = toZonedParts(to, timeZone);
+    const starts: Date[] = [];
+
+    // Date.UTC só como calculadora de calendário (vira o mês, o ano bissexto etc.).
+    for (
+      let cursor = Date.UTC(first.year, first.month - 1, first.day);
+      cursor <= Date.UTC(last.year, last.month - 1, last.day);
+      cursor += DAY_MS
+    ) {
+      const date = new Date(cursor);
+      const calendarDay = {
+        year: date.getUTCFullYear(),
+        month: date.getUTCMonth() + 1,
+        day: date.getUTCDate(),
+      };
+      const weekDay = WEEK_DAY_BY_INDEX[date.getUTCDay()];
+
+      for (const day of days.filter((item) => item.weekDay === weekDay)) {
+        const [hours, minutes] = formatTimeOfDay(day.startTime)
+          .split(":")
+          .map(Number);
+        const startAt = zonedToUtc(
+          { ...calendarDay, hours, minutes },
+          timeZone,
+        );
+        if (startAt >= start && startAt < to) {
+          starts.push(startAt);
+        }
+      }
+    }
+
+    return starts;
+  }
+
+  // Sessão que existe → item da agenda.
+  private toAgendaItem(
+    session: SessionWithParticipants,
+  ): ClassSessionAgendaItem {
+    return {
+      id: session.id,
+      classGroup: session.classGroup,
+      service: session.service,
+      professional: session.professional,
+      startAt: session.startAt,
+      endAt: session.endAt,
+      capacity: session.capacity,
+      ...this.seatsOf(session),
+      overBooking: session.overBooking,
+      cancelledAt: session.cancelledAt,
+      cancellationNote: session.cancellationNote,
+      appointments: session.appointments,
+    };
+  }
+
+  /**
+   * Vagas ocupadas (agendamentos não cancelados; a falta ocupa) e livres. A
+   * sessão cancelada não tem vaga livre: não recebe mais alunos.
+   */
+  private seatsOf({
+    capacity,
+    cancelledAt,
+    appointments,
+  }: Pick<
+    SessionWithParticipants,
+    "capacity" | "cancelledAt" | "appointments"
+  >) {
+    const occupied = appointments.filter(
+      (appointment) => appointment.status !== AppointmentStatus.CANCELLED,
+    ).length;
+
+    return {
+      occupied,
+      available: cancelledAt ? 0 : Math.max(capacity - occupied, 0),
+    };
   }
 
   // Com a sessão travada: confere a vaga e se o cliente já está nela, e cria o agendamento.

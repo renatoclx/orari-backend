@@ -14,6 +14,7 @@ import {
   EnrollClassSessionParticipantDto,
 } from "./enroll-class-participant.dto";
 import { FindClassGroupsQueryDto } from "./find-class-groups-query.dto";
+import { FindClassSessionsQueryDto } from "./find-class-sessions-query.dto";
 import { UpdateClassGroupDto } from "./update-class-group.dto";
 
 const uuid = "11111111-1111-4111-8111-111111111111";
@@ -175,5 +176,35 @@ describe("DTOs das sessões", () => {
     await expect(
       errorsFor({ note: "" }, CancelClassSessionDto),
     ).resolves.toEqual(["note"]);
+  });
+});
+
+describe("FindClassSessionsQueryDto", () => {
+  it("exige o período e converte as datas da query string", async () => {
+    const query = plainToInstance(FindClassSessionsQueryDto, {
+      from: "2026-11-02T03:00:00.000Z",
+      to: "2026-11-09T03:00:00.000Z",
+      classGroupId: uuid,
+    });
+
+    await expect(validate(query)).resolves.toEqual([]);
+    expect(query.from).toEqual(new Date("2026-11-02T03:00:00.000Z"));
+    await expect(errorsFor({}, FindClassSessionsQueryDto)).resolves.toEqual([
+      "from",
+      "to",
+    ]);
+  });
+
+  it("recusa filtro que não é UUID", async () => {
+    await expect(
+      errorsFor(
+        {
+          from: "2026-11-02T03:00:00.000Z",
+          to: "2026-11-09T03:00:00.000Z",
+          professionalId: "x",
+        },
+        FindClassSessionsQueryDto,
+      ),
+    ).resolves.toEqual(["professionalId"]);
   });
 });

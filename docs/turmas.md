@@ -1,8 +1,8 @@
 # Atendimento em Turma
 
-> **Em desenho:** estas regras descrevem o que será implementado. Ainda não valem na API.
-> Ao fim de cada etapa, as entidades vão para o `domain.md` e as regras para o
-> `business-rules.md`, como foi feito com a anamnese.
+> **Implementado:** as cinco etapas valem na API. As entidades estão no `domain.md` e as
+> regras vigentes no `business-rules.md` ("Turmas"); este documento guarda o desenho e as
+> decisões.
 
 - Certos serviços podem ser realizados em turma: vários clientes, no mesmo horário, com
   o mesmo serviço e o mesmo profissional (ex.: Pilates às 08:00 com 3 alunos).
@@ -229,8 +229,12 @@ abrir.
 
 - A resposta do agendamento informa a sessão (`classSession`: `id`, `classGroupId`,
   `capacity`) ou `null`.
-- A agenda pode ser consultada por sessão: horário, serviço, profissional, vagas
-  ocupadas e livres e os alunos.
+- A agenda pode ser consultada por sessão (só o ADMIN, até 31 dias): horário, serviço,
+  profissional, vagas ocupadas e livres, cancelamento e os alunos. Os horários futuros
+  das turmas fixas ativas que ainda não têm sessão também aparecem, vazios, a menos que
+  o profissional tenha outro compromisso que os sobreponha.
+- A resposta do agendamento informa também se a sessão foi cancelada
+  (`classSession.cancelledAt`).
 
 ---
 
@@ -242,7 +246,7 @@ abrir.
 | 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento — **feita** |
 | 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma) — **feita**                                                       |
 | 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano — **feita**                                                       |
-| 5     | Consulta da agenda por sessão, para o frontend                                                                                                |
+| 5     | Consulta da agenda por sessão, para o frontend — **feita**                                                                                    |
 
 ## Fora desta versão
 
