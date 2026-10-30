@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from "@nestjs/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
+import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
 import { CompanyService } from "../company/company.service";
@@ -44,6 +45,7 @@ describe("RecurringAppointmentService", () => {
     cancelFromRecurrence: vi.fn(),
     createFromRecurrence: vi.fn(),
     cancelFutureFromRecurrence: vi.fn(),
+    cancelFutureFromClassGroup: vi.fn(),
   };
   const paymentServiceMock = {
     createPendingForAppointments: vi.fn(),
@@ -55,6 +57,8 @@ describe("RecurringAppointmentService", () => {
   const classSessionServiceMock = {
     ensureRecurrenceFitsClassGroup: vi.fn(),
     reserveForOccurrences: vi.fn(),
+    resolveClassGroupSlot: vi.fn(),
+    reserveSeat: vi.fn(),
   };
   // Os testes de geração usam UTC para facilitar a leitura das datas.
   const companyServiceMock = { getTimeZone: vi.fn().mockResolvedValue("UTC") };
@@ -684,7 +688,7 @@ describe("RecurringAppointmentService", () => {
       expect(
         appointmentServiceMock.rescheduleFromRecurrence,
       ).toHaveBeenCalledWith(prismaMock, generated, startAt, {
-        allowNoShow: false,
+        allowReplacement: false,
       });
       expect(paymentServiceMock.moveDueDate).toHaveBeenCalledWith(
         prismaMock,
@@ -694,7 +698,7 @@ describe("RecurringAppointmentService", () => {
       );
     });
 
-    it("sessão de pacote: autoriza a reposição após falta (NO_SHOW)", async () => {
+    it("sessão de pacote: autoriza a reposição (falta e aula cancelada pela turma)", async () => {
       prismaMock.recurringAppointment.findFirst.mockResolvedValue({
         ...stored,
         clientPlanId: "client-plan-1",
@@ -706,7 +710,7 @@ describe("RecurringAppointmentService", () => {
       expect(
         appointmentServiceMock.rescheduleFromRecurrence,
       ).toHaveBeenCalledWith(prismaMock, generated, startAt, {
-        allowNoShow: true,
+        allowReplacement: true,
       });
     });
 
@@ -805,6 +809,192 @@ describe("RecurringAppointmentService", () => {
       await expect(
         reschedule("2026-10-08T10:00:00.000Z"),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("reposição numa turma fixa", () => {
+    const generated = {
+      id: "appointment-1",
+      recurringAppointmentId: "recurring-1",
+      clientId: "client-1",
+      serviceId: "service-1",
+      status: "CANCELLED",
+      cancelReason: "CLASS_SESSION_CANCELLED",
+    };
+    const slot = { classGroup: { id: "group-2" }, startAt: new Date() };
+    const classSession = { id: "session-2", professionalId: "professional-2" };
+    const replace = (startAt = "2026-10-08T10:00:00.000Z") =>
+      recurringService.replaceInClassGroup(
+        "recurring-1",
+        "appointment-1",
+        { classGroupId: "group-2", startAt: new Date(startAt) },
+        COMPANY_ID,
+      );
+
+    beforeEach(() => {
+      appointmentServiceMock.findOne.mockResolvedValue(generated);
+      classSessionServiceMock.resolveClassGroupSlot.mockResolvedValue(slot);
+      classSessionServiceMock.reserveSeat.mockResolvedValue(classSession);
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...stored,
+        clientPlanId: "client-plan-1",
+      });
+    });
+
+    it("confere a turma pelo serviço da aula, reserva a vaga e leva a aula para a sessão", async () => {
+      const startAt = new Date("2026-10-08T10:00:00.000Z");
+
+      await replace();
+
+      expect(
+        classSessionServiceMock.resolveClassGroupSlot,
+      ).toHaveBeenCalledWith(
+        "group-2",
+        { serviceId: "service-1", startAt },
+        COMPANY_ID,
+        "UTC",
+      );
+      expect(classSessionServiceMock.reserveSeat).toHaveBeenCalledWith(
+        prismaMock,
+        slot,
+        "client-1",
+      );
+      expect(
+        appointmentServiceMock.rescheduleFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, generated, startAt, {
+        allowReplacement: true,
+        classSession,
+      });
+      expect(paymentServiceMock.moveDueDate).toHaveBeenCalledWith(
+        prismaMock,
+        "appointment-1",
+        startAt,
+        "UTC",
+      );
+    });
+
+    it("recorrência avulsa: sem reposição, só o remanejamento de aula futura", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue(stored);
+
+      await replace();
+
+      expect(
+        appointmentServiceMock.rescheduleFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, generated, anyDate, {
+        allowReplacement: false,
+        classSession,
+      });
+    });
+
+    it("recusa data fora do período antes de conferir a turma", async () => {
+      await expect(replace("2026-12-01T10:00:00.000Z")).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(
+        classSessionServiceMock.resolveClassGroupSlot,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("sem vaga na sessão, não move a aula nem o pagamento", async () => {
+      classSessionServiceMock.reserveSeat.mockRejectedValueOnce(
+        new ConflictException("A sessão está cheia (3 vagas)"),
+      );
+
+      await expect(replace()).rejects.toBeInstanceOf(ConflictException);
+      expect(
+        appointmentServiceMock.rescheduleFromRecurrence,
+      ).not.toHaveBeenCalled();
+      expect(paymentServiceMock.moveDueDate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("saída da turma", () => {
+    const inClass = { ...stored, classGroupId: "group-1", classLeftAt: null };
+    const leave = (note?: string) =>
+      recurringService.leaveClassGroup("recurring-1", { note }, COMPANY_ID);
+
+    beforeEach(() => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue(inClass);
+      prismaMock.recurringAppointment.update.mockResolvedValue(inClass);
+    });
+
+    it("recorrência avulsa: grava a saída, encerra a recorrência e cancela aulas e pagamentos", async () => {
+      await leave("Mudou de horário");
+
+      expect(prismaMock.recurringAppointment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "recurring-1", classLeftAt: null },
+          data: {
+            classLeftAt: anyDate,
+            classLeaveNote: "Mudou de horário",
+            isActive: false,
+            updatedAt: anyDate,
+          },
+        }),
+      );
+      expect(
+        appointmentServiceMock.cancelFutureFromClassGroup,
+      ).toHaveBeenCalledWith(prismaMock, "recurring-1", "group-1", anyDate);
+      expect(
+        appointmentServiceMock.cancelFutureFromRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, "recurring-1", anyDate);
+      expect(
+        paymentServiceMock.cancelPendingForRecurrence,
+      ).toHaveBeenCalledWith(prismaMock, "recurring-1", anyDate);
+    });
+
+    it("recorrência de plano: continua ativa e só as aulas da turma são canceladas", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...inClass,
+        clientPlanId: "client-plan-1",
+      });
+
+      await leave();
+
+      const { data } = prismaMock.recurringAppointment.update.mock
+        .calls[0][0] as { data: Record<string, unknown> };
+      expect(data.isActive).toBeUndefined();
+      expect(data.classLeaveNote).toBeNull();
+      expect(
+        appointmentServiceMock.cancelFutureFromClassGroup,
+      ).toHaveBeenCalled();
+      expect(
+        appointmentServiceMock.cancelFutureFromRecurrence,
+      ).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["cancelada", { isActive: false }, BadRequestException],
+      ["fora de turma", { classGroupId: null }, BadRequestException],
+      ["que já saiu", { classLeftAt: new Date() }, ConflictException],
+    ])("recusa a recorrência %s", async (_, override, error) => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue({
+        ...inClass,
+        ...override,
+      });
+
+      await expect(leave()).rejects.toBeInstanceOf(error);
+      expect(prismaMock.recurringAppointment.update).not.toHaveBeenCalled();
+    });
+
+    it("duas saídas ao mesmo tempo: a segunda responde 409", async () => {
+      prismaMock.recurringAppointment.update.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Record not found", {
+          code: "P2025",
+          clientVersion: "test",
+        }),
+      );
+
+      await expect(leave()).rejects.toThrow("O aluno já saiu da turma");
+      expect(
+        appointmentServiceMock.cancelFutureFromClassGroup,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("recorrência de outra empresa responde 404", async () => {
+      prismaMock.recurringAppointment.findFirst.mockResolvedValue(null);
+
+      await expect(leave()).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

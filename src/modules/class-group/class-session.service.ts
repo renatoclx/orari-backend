@@ -27,6 +27,7 @@ import {
 } from "../appointment/appointment.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { CompanyService } from "../company/company.service";
+import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
 import {
@@ -34,6 +35,7 @@ import {
   minutesOf,
   WEEK_DAY_LABEL,
 } from "./class-group-schedule";
+import { CancelClassSessionDto } from "./dto/cancel-class-session.dto";
 import {
   CreateClassSessionDto,
   UpdateClassSessionDto,
@@ -97,6 +99,22 @@ interface SessionForEnrollment {
   overBooking: boolean;
 }
 
+// A turma fixa como a sessão de um horário dela é criada.
+interface ClassGroupForSession {
+  id: string;
+  companyId: string;
+  serviceId: string;
+  professionalId: string;
+  capacity: number;
+}
+
+// Horário de uma turma fixa já validado, pronto para reservar a vaga (ver resolveClassGroupSlot).
+export interface ClassGroupSlot {
+  classGroup: ClassGroupForSession;
+  startAt: Date;
+  endAt: Date;
+}
+
 /**
  * Sessões de turma (ver docs/turmas.md): cada aluno tem o próprio agendamento,
  * ligado à sessão. Só o ADMIN encaixa alunos e cria sessões (restrito nos
@@ -115,6 +133,7 @@ export class ClassSessionService {
     private readonly peopleService: PeopleService,
     private readonly businessHourService: BusinessHourService,
     private readonly companyService: CompanyService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   /**
@@ -395,6 +414,117 @@ export class ClassSessionService {
     return this.findOne(id, companyId);
   }
 
+  /**
+   * Cancela a sessão inteira, antes de ela começar: os agendamentos dos alunos
+   * que ainda não aconteceram são cancelados (com o motivo, que permite repor
+   * as sessões de plano) e os pagamentos pendentes deles também, na mesma
+   * transação. O pagamento já recebido não muda. A sessão cancelada não recebe
+   * mais alunos.
+   */
+  async cancel(
+    id: string,
+    { note }: CancelClassSessionDto,
+    companyId: string,
+  ): Promise<ClassSessionResponse> {
+    const session = await this.findInCompany(id, companyId);
+    this.ensureHasNotStarted(
+      session.startAt,
+      "A sessão já começou: não pode ser cancelada",
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      // A trava faz o cancelamento esperar um encaixe em andamento (e vice-versa).
+      const locked = await this.lock(tx, id);
+      if (locked.cancelledAt) {
+        throw new ConflictException("A sessão da turma já foi cancelada");
+      }
+
+      const now = new Date();
+      await tx.classSession.update({
+        where: { id },
+        data: {
+          cancelledAt: now,
+          cancellationNote: note ?? null,
+          updatedAt: now,
+        },
+      });
+      // Agendamentos antes dos pagamentos: o cancelamento dos pagamentos
+      // procura os agendamentos que acabaram de ser cancelados.
+      await this.appointmentService.cancelForClassSession(tx, id);
+      await this.paymentService.cancelPendingForClassSession(tx, id);
+    });
+
+    return this.findOne(id, companyId);
+  }
+
+  /**
+   * Antes da reposição (ou do remanejamento) de uma aula numa turma fixa: a
+   * turma é da empresa, está ativa e é do mesmo serviço da aula, o serviço
+   * continua aceitando turma, e o início é um horário dela, no futuro e dentro
+   * do funcionamento. O profissional pode ser outro: a aula passa a ser com o
+   * da turma. A vaga é conferida depois, na transação (reserveSeat).
+   */
+  async resolveClassGroupSlot(
+    classGroupId: string,
+    { serviceId, startAt }: { serviceId: string; startAt: Date },
+    companyId: string,
+    timeZone: string,
+  ): Promise<ClassGroupSlot> {
+    const classGroup = await this.prisma.classGroup.findFirst({
+      where: { id: classGroupId, companyId },
+      include: { days: { select: { weekDay: true, startTime: true } } },
+    });
+    if (!classGroup) {
+      throw new NotFoundException("Turma não encontrada");
+    }
+    if (!classGroup.isActive) {
+      throw new ConflictException("A turma está inativa");
+    }
+    if (classGroup.serviceId !== serviceId) {
+      throw new BadRequestException(
+        "A turma precisa ser do mesmo serviço da aula",
+      );
+    }
+
+    this.ensureHasNotStarted(startAt);
+    const duration = await this.ensureServiceAcceptsClasses(
+      serviceId,
+      companyId,
+    );
+    this.ensureMatchesClassGroupDay(startAt, classGroup.days, timeZone);
+
+    const endAt = new Date(startAt.getTime() + duration * 60_000);
+    await this.businessHourService.ensureWithinBusinessHours(
+      companyId,
+      startAt,
+      endAt,
+    );
+
+    return { classGroup, startAt, endAt };
+  }
+
+  /**
+   * Reserva a vaga de um cliente na sessão do horário da turma, dentro da
+   * transação de quem chama: cria a sessão se faltar, trava, e confere se não
+   * foi cancelada, se tem vaga e se o cliente já não está nela. A trava segura a
+   * vaga até o fim da transação. Devolve a sessão, para o agendamento ir para ela.
+   */
+  async reserveSeat(
+    tx: Prisma.TransactionClient,
+    { classGroup, startAt, endAt }: ClassGroupSlot,
+    clientId: string,
+  ): Promise<{ id: string; professionalId: string }> {
+    const locked = await this.lockClassGroupSession(
+      tx,
+      classGroup,
+      startAt,
+      endAt,
+    );
+    await this.ensureHasSeatFor(tx, locked, clientId);
+
+    return { id: locked.id, professionalId: classGroup.professionalId };
+  }
+
   // Com a sessão travada: confere a vaga e se o cliente já está nela, e cria o agendamento.
   private async enrollLocked(
     tx: Prisma.TransactionClient,
@@ -402,28 +532,7 @@ export class ClassSessionService {
     dto: EnrollClassSessionParticipantDto,
     session: SessionForEnrollment,
   ): Promise<AppointmentWithRelations> {
-    this.ensureNotCancelled(locked);
-
-    const occupied = await tx.appointment.count({
-      where: { classSessionId: locked.id, status: OCCUPYING },
-    });
-    if (occupied >= locked.capacity) {
-      throw new ConflictException(
-        `A sessão está cheia (${locked.capacity} vagas)`,
-      );
-    }
-
-    const alreadyIn = await tx.appointment.findFirst({
-      where: {
-        classSessionId: locked.id,
-        clientId: dto.clientId,
-        status: OCCUPYING,
-      },
-      select: { id: true },
-    });
-    if (alreadyIn) {
-      throw new ConflictException("O cliente já está nesta sessão");
-    }
+    await this.ensureHasSeatFor(tx, locked, dto.clientId);
 
     return this.appointmentService.createInClassSession(tx, {
       companyId: session.companyId,
@@ -438,6 +547,32 @@ export class ClassSessionService {
     });
   }
 
+  // Sessão travada: não cancelada, com vaga e sem o cliente entre os alunos.
+  private async ensureHasSeatFor(
+    tx: Prisma.TransactionClient,
+    locked: LockedSession,
+    clientId: string,
+  ): Promise<void> {
+    this.ensureNotCancelled(locked);
+
+    const occupied = await tx.appointment.count({
+      where: { classSessionId: locked.id, status: OCCUPYING },
+    });
+    if (occupied >= locked.capacity) {
+      throw new ConflictException(
+        `A sessão está cheia (${locked.capacity} vagas)`,
+      );
+    }
+
+    const alreadyIn = await tx.appointment.findFirst({
+      where: { classSessionId: locked.id, clientId, status: OCCUPYING },
+      select: { id: true },
+    });
+    if (alreadyIn) {
+      throw new ConflictException("O cliente já está nesta sessão");
+    }
+  }
+
   /**
    * Sessão de um horário da turma fixa, travada até o fim da transação. Cria a
    * sessão se ainda não existir, sem erro quando outra requisição a criou ao
@@ -447,13 +582,7 @@ export class ClassSessionService {
    */
   private async lockClassGroupSession(
     tx: Prisma.TransactionClient,
-    classGroup: {
-      id: string;
-      companyId: string;
-      serviceId: string;
-      professionalId: string;
-      capacity: number;
-    },
+    classGroup: ClassGroupForSession,
     startAt: Date,
     endAt: Date,
   ): Promise<LockedSession> {
@@ -514,12 +643,13 @@ export class ClassSessionService {
     }
   }
 
-  // Aluno só é encaixado antes de a aula começar.
-  private ensureHasNotStarted(startAt: Date): void {
+  // Aluno só é encaixado (e a sessão só é cancelada) antes de a aula começar.
+  private ensureHasNotStarted(
+    startAt: Date,
+    message = "A sessão já começou: não recebe novos alunos",
+  ): void {
     if (startAt <= new Date()) {
-      throw new BadRequestException(
-        "A sessão já começou: não recebe novos alunos",
-      );
+      throw new BadRequestException(message);
     }
   }
 

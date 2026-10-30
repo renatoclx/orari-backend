@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Appointment, Prisma } from "../../../generated/prisma/client";
 import {
+  AppointmentCancelReason,
   AppointmentStatus,
   PaymentStatus,
   PeopleType,
@@ -82,6 +83,20 @@ export interface AppointmentOccurrence {
   endAt: Date;
   // Sessão da turma, quando a recorrência está encaixada numa (já reservada por quem chama).
   classSessionId?: string;
+}
+
+// Sessão de turma de destino de um remanejamento, já travada e com a vaga conferida.
+export interface TargetClassSession {
+  id: string;
+  professionalId: string;
+}
+
+// Opções do remanejamento pela recorrência (ver rescheduleFromRecurrence).
+export interface RescheduleOptions {
+  // Sessão de plano: aceita a reposição da falta e da aula cancelada pela turma.
+  allowReplacement?: boolean;
+  // Remanejamento para uma sessão de turma, com o profissional dela.
+  classSession?: TargetClassSession;
 }
 
 // Dados que a recorrência repete em todos os agendamentos que gera.
@@ -409,27 +424,33 @@ export class AppointmentService {
    * transação de quem chama. É o mesmo registro: o pagamento continua ligado a
    * ele. Valem as regras de qualquer remarcação: data futura, janela de
    * atendimento e agenda livre para cliente e profissional.
+   *
+   * Com `classSession`, o agendamento vai para essa sessão de turma (já
+   * travada, com a vaga conferida por quem chama) e passa a ser com o
+   * profissional dela. Sem ela, vira atendimento individual.
    */
   async rescheduleFromRecurrence(
     db: PrismaClientLike,
     appointment: Appointment,
     startAt: Date,
-    { allowNoShow = false }: { allowNoShow?: boolean } = {},
+    { allowReplacement = false, classSession }: RescheduleOptions = {},
   ): Promise<Appointment> {
     /*
-     * Reposição de pacote: quando o cliente não compareceu (NO_SHOW), a sessão
-     * já passou e pode ganhar uma nova data, e volta a SCHEDULED. Só quem chama
-     * autoriza (sessões de pacote); nos demais casos o remanejamento é só antes
-     * de iniciar.
+     * Reposição de pacote: a sessão em que o cliente não compareceu (NO_SHOW),
+     * ou que a clínica cancelou pela turma (sessão cancelada ou saída da
+     * turma), ganha uma nova data e volta a SCHEDULED. Só quem chama autoriza
+     * (sessões de pacote); nos demais casos o remanejamento é só antes de
+     * iniciar. A aula que o próprio cliente cancelou não é reposta.
      */
-    const isReplacement =
-      allowNoShow && appointment.status === AppointmentStatus.NO_SHOW;
+    const isReplacement = allowReplacement && this.isReplaceable(appointment);
     if (!isReplacement) {
       this.ensureIsUpcoming(appointment, "remanejado");
     }
     this.ensureIsNotInThePast(startAt);
 
-    const { companyId, clientId, professionalId } = appointment;
+    const { companyId, clientId } = appointment;
+    const professionalId =
+      classSession?.professionalId ?? appointment.professionalId;
     const endAt = await this.resolveEndAt(
       appointment.serviceId,
       startAt,
@@ -440,9 +461,16 @@ export class AppointmentService {
       startAt,
       endAt,
     );
+    // Na sessão de destino, os colegas dela não conflitam com o profissional.
     await this.ensureSlotIsFree(
       db,
-      { clientId, professionalId, startAt, endAt },
+      {
+        clientId,
+        professionalId,
+        startAt,
+        endAt,
+        classSessionId: classSession?.id,
+      },
       companyId,
       appointment.id,
     );
@@ -452,14 +480,75 @@ export class AppointmentService {
       data: {
         startAt,
         endAt,
-        // Sessão de turma remanejada sai da turma: vira atendimento individual
-        // no novo horário e libera a vaga (ver docs/turmas.md).
-        classSessionId: null,
+        professionalId,
+        // Sem sessão de destino, a aula de turma remanejada sai da turma: vira
+        // atendimento individual no novo horário e libera a vaga (ver docs/turmas.md).
+        classSessionId: classSession?.id ?? null,
         // Sem status no data, o Prisma mantém o atual (o remanejamento comum não o muda).
         status: isReplacement ? AppointmentStatus.SCHEDULED : undefined,
+        cancelReason: isReplacement ? null : undefined,
         updatedAt: new Date(),
       },
     });
+  }
+
+  /**
+   * Cancela os agendamentos de uma sessão de turma cancelada pela clínica,
+   * dentro da transação de quem chama (o ClassSessionService, com a sessão
+   * travada). Só os que ainda não aconteceram; o motivo permite a reposição das
+   * sessões de plano. Devolve quantos foram cancelados.
+   */
+  async cancelForClassSession(
+    db: PrismaClientLike,
+    classSessionId: string,
+  ): Promise<number> {
+    const { count } = await db.appointment.updateMany({
+      where: { classSessionId, status: { in: UPCOMING_STATUSES } },
+      data: {
+        status: AppointmentStatus.CANCELLED,
+        cancelReason: AppointmentCancelReason.CLASS_SESSION_CANCELLED,
+        updatedAt: new Date(),
+      },
+    });
+
+    return count;
+  }
+
+  /**
+   * Saída da turma: cancela as aulas futuras da recorrência nas sessões da
+   * turma, dentro da transação de quem chama. As aulas remanejadas para um
+   * horário individual ou para outra turma continuam. O motivo permite a
+   * reposição das sessões de plano.
+   */
+  async cancelFutureFromClassGroup(
+    db: PrismaClientLike,
+    recurringAppointmentId: string,
+    classGroupId: string,
+    from: Date,
+  ): Promise<number> {
+    const { count } = await db.appointment.updateMany({
+      where: {
+        recurringAppointmentId,
+        status: { in: UPCOMING_STATUSES },
+        startAt: { gte: from },
+        classSession: { classGroupId },
+      },
+      data: {
+        status: AppointmentStatus.CANCELLED,
+        cancelReason: AppointmentCancelReason.CLASS_LEFT,
+        updatedAt: new Date(),
+      },
+    });
+
+    return count;
+  }
+
+  // Sessão de plano que pode ser reposta: a falta e a aula cancelada pela clínica (turma).
+  private isReplaceable({ status, cancelReason }: Appointment): boolean {
+    return (
+      status === AppointmentStatus.NO_SHOW ||
+      (status === AppointmentStatus.CANCELLED && Boolean(cancelReason))
+    );
   }
 
   /**

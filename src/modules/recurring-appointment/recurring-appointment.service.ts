@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -13,6 +14,7 @@ import {
   WEEK_DAY_BY_INDEX,
 } from "../../common/time/time-of-day";
 import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
+import { isRecordNotFound } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import {
@@ -28,7 +30,11 @@ import { ServiceService } from "../service/service.service";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
 import { FindRecurringAppointmentsQueryDto } from "./dto/find-recurring-appointments-query.dto";
 import { RecurringDayDto } from "./dto/recurring-day.dto";
-import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
+import { LeaveClassGroupDto } from "./dto/leave-class-group.dto";
+import {
+  ReplaceInClassGroupDto,
+  RescheduleAppointmentDto,
+} from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 
 // Os dias são devolvidos com horários em "HH:MM", como entraram.
@@ -46,6 +52,9 @@ export interface RecurringAppointmentResponse {
   clientPlanId: string | null;
   // Turma fixa em que a recorrência está encaixada.
   classGroupId: string | null;
+  // Saída da turma: quando o aluno saiu e o motivo.
+  classLeftAt: Date | null;
+  classLeaveNote: string | null;
   createdAt: Date;
   updatedAt: Date | null;
   days: RecurringDayDto[];
@@ -400,8 +409,8 @@ export class RecurringAppointmentService {
           tx,
           appointment,
           startAt,
-          // Só o pacote tem reposição de sessão em que o cliente não compareceu.
-          { allowNoShow: Boolean(recurring.clientPlanId) },
+          // Só o pacote tem reposição (falta e aula cancelada pela turma).
+          { allowReplacement: Boolean(recurring.clientPlanId) },
         );
       await this.paymentService.moveDueDate(
         tx,
@@ -412,6 +421,131 @@ export class RecurringAppointmentService {
 
       return rescheduled;
     });
+  }
+
+  /**
+   * Reposição (ou remanejamento) numa sessão de turma fixa, da mesma turma ou de
+   * outra do mesmo serviço, dentro do período da recorrência. Aceita as mesmas
+   * aulas do remanejamento comum (ver rescheduleAppointment); a aula passa a ser
+   * com o profissional da turma de destino, e a recorrência mantém o dela. Vaga,
+   * agendamento e vencimento do pagamento mudam juntos, na mesma transação.
+   */
+  async replaceInClassGroup(
+    id: string,
+    appointmentId: string,
+    { classGroupId, startAt }: ReplaceInClassGroupDto,
+    companyId: string,
+  ): Promise<Appointment> {
+    const { recurring, appointment } = await this.findActiveOccurrence(
+      id,
+      appointmentId,
+      companyId,
+    );
+
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    this.ensureWithinPeriod(startAt, recurring, timeZone);
+    const slot = await this.classSessionService.resolveClassGroupSlot(
+      classGroupId,
+      { serviceId: appointment.serviceId, startAt },
+      companyId,
+      timeZone,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      // A vaga fica travada até o fim da transação.
+      const classSession = await this.classSessionService.reserveSeat(
+        tx,
+        slot,
+        appointment.clientId,
+      );
+      const replaced = await this.appointmentService.rescheduleFromRecurrence(
+        tx,
+        appointment,
+        startAt,
+        { allowReplacement: Boolean(recurring.clientPlanId), classSession },
+      );
+      await this.paymentService.moveDueDate(
+        tx,
+        appointmentId,
+        startAt,
+        timeZone,
+      );
+
+      return replaced;
+    });
+  }
+
+  /**
+   * Saída da turma: grava a data e o motivo e cancela as aulas futuras da
+   * recorrência na turma (com o motivo, que permite repor as sessões de plano),
+   * e os pagamentos pendentes delas, na mesma transação.
+   *
+   * A recorrência avulsa é encerrada, porque todos os dias dela são horários da
+   * turma; para entrar em outra, cria-se uma recorrência nova. A de plano
+   * continua ativa (só o cancelamento da contratação a encerra), e as aulas
+   * canceladas ficam para reposição.
+   */
+  async leaveClassGroup(
+    id: string,
+    { note }: LeaveClassGroupDto,
+    companyId: string,
+  ): Promise<RecurringAppointmentResponse> {
+    const current = await this.findOne(id, companyId);
+    if (!current.isActive) {
+      throw new BadRequestException(
+        "Recorrência cancelada não sai da turma: as aulas já foram canceladas",
+      );
+    }
+    if (!current.classGroupId) {
+      throw new BadRequestException(
+        "A recorrência não está encaixada numa turma",
+      );
+    }
+    if (current.classLeftAt) {
+      throw new ConflictException("O aluno já saiu da turma");
+    }
+    const { classGroupId } = current;
+    const endsRecurrence = !current.clientPlanId;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      let recurring: RecurringAppointmentWithDetails;
+      try {
+        // O filtro pela saída vazia barra duas saídas simultâneas (409).
+        recurring = await tx.recurringAppointment.update({
+          where: { id, classLeftAt: null },
+          data: {
+            classLeftAt: now,
+            classLeaveNote: note ?? null,
+            isActive: endsRecurrence ? false : undefined,
+            updatedAt: now,
+          },
+          ...withDetails,
+        });
+      } catch (error) {
+        throw isRecordNotFound(error)
+          ? new ConflictException("O aluno já saiu da turma")
+          : error;
+      }
+
+      // Agendamentos antes dos pagamentos: o cancelamento dos pagamentos
+      // procura os agendamentos que acabaram de ser cancelados.
+      await this.appointmentService.cancelFutureFromClassGroup(
+        tx,
+        id,
+        classGroupId,
+        now,
+      );
+      if (endsRecurrence) {
+        // As aulas remanejadas para fora da turma também acabam com a recorrência.
+        await this.appointmentService.cancelFutureFromRecurrence(tx, id, now);
+      }
+      await this.paymentService.cancelPendingForRecurrence(tx, id, now);
+
+      return recurring;
+    });
+
+    return this.toResponse(updated);
   }
 
   /**

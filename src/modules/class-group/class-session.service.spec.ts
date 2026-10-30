@@ -11,6 +11,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
 import { CompanyService } from "../company/company.service";
+import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
 import { ClassSessionService } from "./class-session.service";
@@ -47,7 +48,9 @@ describe("ClassSessionService", () => {
     findOne: vi.fn(),
     createInClassSession: vi.fn(),
     attachToClassSession: vi.fn(),
+    cancelForClassSession: vi.fn(),
   };
+  const paymentServiceMock = { cancelPendingForClassSession: vi.fn() };
   const serviceServiceMock = { findActive: vi.fn() };
   const peopleServiceMock = { findOne: vi.fn() };
   const businessHourServiceMock = { ensureWithinBusinessHours: vi.fn() };
@@ -108,6 +111,7 @@ describe("ClassSessionService", () => {
         { provide: PeopleService, useValue: peopleServiceMock },
         { provide: BusinessHourService, useValue: businessHourServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
+        { provide: PaymentService, useValue: paymentServiceMock },
       ],
     }).compile();
 
@@ -409,6 +413,158 @@ describe("ClassSessionService", () => {
       await expect(
         service.update("session-1", { capacity: 4 }, COMPANY_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("cancel (sessão inteira)", () => {
+    beforeEach(() => {
+      prismaMock.classSession.findFirst.mockResolvedValue({
+        ...session,
+        appointments: [],
+      });
+    });
+
+    it("com a sessão travada, grava o cancelamento e cancela agendamentos e pagamentos pendentes", async () => {
+      await service.cancel("session-1", { note: "Feriado" }, COMPANY_ID);
+
+      const lockSql = (
+        txMock.$queryRaw.mock.calls[0][0] as TemplateStringsArray
+      ).join("?");
+      expect(lockSql).toContain("FOR UPDATE");
+      expect(txMock.classSession.update).toHaveBeenCalledWith({
+        where: { id: "session-1" },
+        data: {
+          cancelledAt: expect.any(Date) as unknown,
+          cancellationNote: "Feriado",
+          updatedAt: expect.any(Date) as unknown,
+        },
+      });
+      expect(appointmentServiceMock.cancelForClassSession).toHaveBeenCalledWith(
+        txMock,
+        "session-1",
+      );
+      expect(
+        paymentServiceMock.cancelPendingForClassSession,
+      ).toHaveBeenCalledWith(txMock, "session-1");
+    });
+
+    it("sem motivo, grava a observação vazia", async () => {
+      await service.cancel("session-1", {}, COMPANY_ID);
+
+      expect(txMock.classSession.update).toHaveBeenCalledWith(
+        containing({ data: containing({ cancellationNote: null }) }),
+      );
+    });
+
+    it("recusa a sessão que já começou (400)", async () => {
+      prismaMock.classSession.findFirst.mockResolvedValue({
+        ...session,
+        startAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(service.cancel("session-1", {}, COMPANY_ID)).rejects.toThrow(
+        "A sessão já começou: não pode ser cancelada",
+      );
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("recusa a sessão já cancelada (409)", async () => {
+      txMock.$queryRaw.mockResolvedValueOnce([
+        { ...locked, cancelledAt: new Date() },
+      ]);
+
+      await expect(
+        service.cancel("session-1", {}, COMPANY_ID),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(
+        appointmentServiceMock.cancelForClassSession,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("sessão de outra empresa responde 404", async () => {
+      prismaMock.classSession.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.cancel("session-1", {}, COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("reposição numa turma fixa", () => {
+    const resolve = (overrides: { serviceId?: string; startAt?: Date } = {}) =>
+      service.resolveClassGroupSlot(
+        "group-1",
+        { serviceId: "service-1", startAt, ...overrides },
+        COMPANY_ID,
+        "America/Sao_Paulo",
+      );
+
+    it("valida a turma e o horário e devolve a vaga a reservar", async () => {
+      const slot = await resolve();
+
+      expect(slot).toEqual({ classGroup, startAt, endAt });
+      expect(
+        businessHourServiceMock.ensureWithinBusinessHours,
+      ).toHaveBeenCalledWith(COMPANY_ID, startAt, endAt);
+    });
+
+    it("recusa turma de outro serviço (400)", async () => {
+      await expect(resolve({ serviceId: "service-2" })).rejects.toThrow(
+        "A turma precisa ser do mesmo serviço da aula",
+      );
+    });
+
+    it("recusa horário que não é da turma (400)", async () => {
+      await expect(
+        resolve({ startAt: new Date(startAt.getTime() + 3_600_000) }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("recusa turma inativa (409) e de outra empresa (404)", async () => {
+      prismaMock.classGroup.findFirst.mockResolvedValueOnce({
+        ...classGroup,
+        isActive: false,
+      });
+      await expect(resolve()).rejects.toBeInstanceOf(ConflictException);
+
+      prismaMock.classGroup.findFirst.mockResolvedValueOnce(null);
+      await expect(resolve()).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("reserva a vaga com a sessão travada e devolve o profissional da turma", async () => {
+      await expect(
+        service.reserveSeat(
+          txMock as never,
+          { classGroup, startAt, endAt },
+          "client-1",
+        ),
+      ).resolves.toEqual({ id: "session-1", professionalId: "professional-1" });
+      expect(txMock.$executeRaw).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["cheia", () => txMock.appointment.count.mockResolvedValueOnce(3)],
+      [
+        "com o cliente já nela",
+        () => txMock.appointment.findFirst.mockResolvedValueOnce({ id: "x" }),
+      ],
+      [
+        "cancelada",
+        () =>
+          txMock.$queryRaw.mockResolvedValueOnce([
+            { ...locked, cancelledAt: new Date() },
+          ]),
+      ],
+    ])("recusa a sessão %s (409)", async (_, arrange) => {
+      arrange();
+
+      await expect(
+        service.reserveSeat(
+          txMock as never,
+          { classGroup, startAt, endAt },
+          "client-1",
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

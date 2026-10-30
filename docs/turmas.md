@@ -76,17 +76,18 @@ abrir.
 
 - Representa uma ocorrência de atendimento em turma: um dia e horário com vagas.
 
-| Nome           | Descrição                                                  |
-| -------------- | ---------------------------------------------------------- |
-| id             | Identificador único                                        |
-| companyId      | Código da empresa                                          |
-| classGroupId   | Turma fixa que a originou (vazio na sessão avulsa)         |
-| serviceId      | Serviço da sessão                                          |
-| professionalId | Profissional da sessão                                     |
-| startAt        | Início                                                     |
-| endAt          | Fim                                                        |
-| capacity       | Quantidade máxima de alunos                                |
-| cancelledAt    | Data e hora do cancelamento (vazio enquanto não cancelada) |
+| Nome             | Descrição                                                  |
+| ---------------- | ---------------------------------------------------------- |
+| id               | Identificador único                                        |
+| companyId        | Código da empresa                                          |
+| classGroupId     | Turma fixa que a originou (vazio na sessão avulsa)         |
+| serviceId        | Serviço da sessão                                          |
+| professionalId   | Profissional da sessão                                     |
+| startAt          | Início                                                     |
+| endAt            | Fim                                                        |
+| capacity         | Quantidade máxima de alunos                                |
+| cancelledAt      | Data e hora do cancelamento (vazio enquanto não cancelada) |
+| cancellationNote | Motivo do cancelamento (opcional)                          |
 
 - Uma sessão pertence a uma empresa e pode ter sido originada por uma turma fixa.
 - Uma sessão contém os agendamentos dos alunos.
@@ -94,9 +95,10 @@ abrir.
 
 ### Appointments (alteração)
 
-| Nome           | Descrição                                 |
-| -------------- | ----------------------------------------- |
-| classSessionId | Sessão da turma a que pertence (opcional) |
+| Nome           | Descrição                                               |
+| -------------- | ------------------------------------------------------- |
+| classSessionId | Sessão da turma a que pertence (opcional)               |
+| cancelReason   | Motivo do cancelamento pela clínica na turma (opcional) |
 
 ### RecurringAppointment (alteração)
 
@@ -167,8 +169,8 @@ abrir.
 - Na recorrência e no plano, serviço e profissional continuam sendo informados e precisam
   ser os da turma.
 - Remanejar uma sessão de turma (inclusive a reposição de falta de pacote) tira o aluno da
-  sessão: vira atendimento individual no novo horário e libera a vaga. A reposição numa
-  sessão de outra turma entra na etapa 4.
+  sessão: vira atendimento individual no novo horário e libera a vaga. Para ir a uma
+  sessão de turma (da mesma ou de outra), usa-se a reposição em turma (ver "Reposição").
 
 ### Atendimento que vira turma
 
@@ -193,6 +195,8 @@ abrir.
 - A sessão de plano cancelada por esse motivo **pode ser reposta**, como na falta:
   remanejada para outra data dentro do período da contratação, inclusive em uma sessão de
   outra turma com vaga.
+- O cancelamento guarda uma observação opcional do motivo (ex.: "Feriado"). A sessão
+  cancelada não recebe novos alunos, e cancelar de novo é recusado.
 
 ### Saída da turma
 
@@ -203,7 +207,23 @@ abrir.
 - As sessões de plano canceladas pela saída **podem ser repostas**, inclusive em outra
   turma com vaga.
 - Depois da saída, o aluno pode ser encaixado em outra turma, sem restrição.
+- A recorrência avulsa é **encerrada** na saída (todos os dias dela são horários da
+  turma); para entrar em outra turma, cria-se uma recorrência nova. A recorrência de
+  plano continua ativa: só o cancelamento da contratação a encerra.
+- As aulas já remanejadas para um horário individual ou para outra turma não são
+  canceladas pela saída (na recorrência de plano).
 - O aluno avulso não "sai" da turma: cancela-se o agendamento dele.
+
+### Reposição
+
+- Repõem-se, só em sessão de **plano** e dentro do período da contratação, a falta e as
+  aulas canceladas pela clínica na turma (sessão cancelada ou saída da turma). A aula
+  cancelada pelo próprio cliente não é reposta.
+- A reposição pode ir para um horário individual (remanejamento comum) ou para uma sessão
+  de turma fixa com vaga, da mesma ou de outra turma do **mesmo serviço**. Na outra
+  turma, a aula passa a ser com o profissional dela; a recorrência mantém o seu.
+- A reposição em turma vale também para remanejar uma aula futura (em qualquer
+  recorrência) para uma sessão de turma.
 
 ### Consulta
 
@@ -221,7 +241,7 @@ abrir.
 | 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules.md`, "Turmas")                           |
 | 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento — **feita** |
 | 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma) — **feita**                                                       |
-| 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano                                                                   |
+| 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano — **feita**                                                       |
 | 5     | Consulta da agenda por sessão, para o frontend                                                                                                |
 
 ## Fora desta versão

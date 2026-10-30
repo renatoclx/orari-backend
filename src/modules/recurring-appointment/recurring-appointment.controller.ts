@@ -15,7 +15,9 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
+import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointment.dto";
@@ -24,7 +26,11 @@ import {
   RecurringAppointmentPageDto,
   RecurringAppointmentResponseDto,
 } from "./dto/recurring-appointment-response.dto";
-import { RescheduleAppointmentDto } from "./dto/reschedule-appointment.dto";
+import { LeaveClassGroupDto } from "./dto/leave-class-group.dto";
+import {
+  ReplaceInClassGroupDto,
+  RescheduleAppointmentDto,
+} from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 import { RecurringAppointmentService } from "./recurring-appointment.service";
 
@@ -104,9 +110,26 @@ export class RecurringAppointmentController {
     );
   }
 
+  // Saída da turma (só o ADMIN, como as turmas): cancela as aulas futuras na
+  // turma; a recorrência avulsa é encerrada, a de plano continua.
+  @Patch(":id/leave-class")
+  @Roles(UserType.ADMIN)
+  @ApiOkResponse({ type: RecurringAppointmentResponseDto })
+  leaveClassGroup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: LeaveClassGroupDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.recurringAppointmentService.leaveClassGroup(
+      id,
+      dto,
+      currentUser.companyId,
+    );
+  }
+
   // Remanejamento: remarca um agendamento da recorrência dentro do período dela.
   // Antes de iniciar (SCHEDULED ou CONFIRMED); em sessão de pacote, também após
-  // falta (NO_SHOW), que volta a SCHEDULED.
+  // falta (NO_SHOW) ou cancelamento pela turma, e volta a SCHEDULED.
   @Patch(":id/appointments/:appointmentId/reschedule")
   rescheduleAppointment(
     @Param("id", ParseUUIDPipe) id: string,
@@ -115,6 +138,24 @@ export class RecurringAppointmentController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.recurringAppointmentService.rescheduleAppointment(
+      id,
+      appointmentId,
+      dto,
+      currentUser.companyId,
+    );
+  }
+
+  // Reposição numa sessão de turma fixa (só o ADMIN): mesmas aulas do
+  // remanejamento, com vaga na turma de destino.
+  @Patch(":id/appointments/:appointmentId/replace-in-class")
+  @Roles(UserType.ADMIN)
+  replaceInClassGroup(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("appointmentId", ParseUUIDPipe) appointmentId: string,
+    @Body() dto: ReplaceInClassGroupDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.recurringAppointmentService.replaceInClassGroup(
       id,
       appointmentId,
       dto,

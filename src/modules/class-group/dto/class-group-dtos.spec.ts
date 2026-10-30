@@ -3,6 +3,7 @@ import "reflect-metadata";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import { describe, expect, it } from "vitest";
+import { CancelClassSessionDto } from "./cancel-class-session.dto";
 import { CreateClassGroupDto } from "./create-class-group.dto";
 import {
   CreateClassSessionDto,
@@ -164,5 +165,15 @@ describe("DTOs das sessões", () => {
     [UpdateClassSessionDto, { capacity: 4 }, []],
   ] as const)("valida as vagas (%#)", async (dto, payload, expected) => {
     await expect(errorsFor(payload, dto)).resolves.toEqual(expected);
+  });
+
+  it("cancelamento da sessão: motivo opcional, mas não vazio", async () => {
+    await expect(errorsFor({}, CancelClassSessionDto)).resolves.toEqual([]);
+    await expect(
+      errorsFor({ note: "Feriado" }, CancelClassSessionDto),
+    ).resolves.toEqual([]);
+    await expect(
+      errorsFor({ note: "" }, CancelClassSessionDto),
+    ).resolves.toEqual(["note"]);
   });
 });

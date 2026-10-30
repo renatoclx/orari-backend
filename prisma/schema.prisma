@@ -264,6 +264,13 @@ enum AppointmentStatus {
   NO_SHOW
 }
 
+// Por que a clínica cancelou a aula de turma (ver docs/turmas.md). Só esses
+// cancelamentos deixam a sessão de plano ser reposta; o cancelado pelo cliente, não.
+enum AppointmentCancelReason {
+  CLASS_SESSION_CANCELLED
+  CLASS_LEFT
+}
+
 // Modalidade de pagamento de uma contratação de plano.
 enum PlanBillingType {
   INTEGRAL
@@ -319,7 +326,7 @@ model Service {
 
 // Sem deletedAt por decisão do domínio: o ciclo de vida é controlado pelo status.
 model Appointment {
-  id                     String            @id @default(uuid())
+  id                     String                   @id @default(uuid())
   companyId              String
   clientId               String
   professionalId         String
@@ -328,15 +335,17 @@ model Appointment {
   // Calculado a partir da duração do serviço (ver AppointmentService).
   endAt                  DateTime
   note                   String?
-  status                 AppointmentStatus @default(SCHEDULED)
+  status                 AppointmentStatus        @default(SCHEDULED)
   // Encaixe: agendamento avulso marcado fora do horário de funcionamento. Retrato
   // do momento em que foi marcado; não é recalculado se o horário mudar depois.
-  overBooking            Boolean           @default(false)
+  overBooking            Boolean                  @default(false)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
   // Preenchido quando o agendamento é de um aluno numa sessão de turma.
   classSessionId         String?
-  createdAt              DateTime          @default(now())
+  // Preenchido quando a clínica cancelou a aula de turma (sessão cancelada ou saída da turma).
+  cancelReason           AppointmentCancelReason?
+  createdAt              DateTime                 @default(now())
   updatedAt              DateTime?
 
   company              Company               @relation(fields: [companyId], references: [id])
@@ -373,6 +382,9 @@ model RecurringAppointment {
   clientPlanId   String?
   // Turma fixa em que a recorrência está encaixada (os dias são horários dela).
   classGroupId   String?
+  // Saída da turma: quando o aluno saiu e o motivo (as aulas futuras da turma foram canceladas).
+  classLeftAt    DateTime?
+  classLeaveNote String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
@@ -836,22 +848,23 @@ model ClassGroupDay {
  * aluno tem o próprio agendamento, ligado a ela.
  */
 model ClassSession {
-  id             String    @id @default(uuid())
-  companyId      String
+  id               String    @id @default(uuid())
+  companyId        String
   // Vazio na sessão avulsa (agendamento que virou turma).
-  classGroupId   String?
-  serviceId      String
-  professionalId String
-  startAt        DateTime
-  endAt          DateTime
+  classGroupId     String?
+  serviceId        String
+  professionalId   String
+  startAt          DateTime
+  endAt            DateTime
   // Quantidade máxima de alunos (não contam os agendamentos cancelados).
-  capacity       Int
+  capacity         Int
   // Na sessão avulsa, repete o encaixe do agendamento que a originou; na turma fixa, sempre falso.
-  overBooking    Boolean   @default(false)
-  // Cancelamento da sessão inteira (etapa 4 de docs/turmas.md).
-  cancelledAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime?
+  overBooking      Boolean   @default(false)
+  // Cancelamento da sessão inteira, com o motivo opcional (ex.: "Feriado").
+  cancelledAt      DateTime?
+  cancellationNote String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime?
 
   company      Company       @relation(fields: [companyId], references: [id])
   classGroup   ClassGroup?   @relation(fields: [classGroupId], references: [id])

@@ -20,6 +20,12 @@ export class RecurringAppointmentResponseDto {
   isActive!: boolean;
   /** Preenchido quando a recorrência é a agenda de um serviço de um pacote. */
   clientPlanId!: string | null;
+  /** Turma fixa em que a recorrência está encaixada. */
+  classGroupId!: string | null;
+  /** Saída da turma: quando o aluno saiu (nulo enquanto está nela). */
+  classLeftAt!: Date | null;
+  /** Motivo da saída da turma. */
+  classLeaveNote!: string | null;
   createdAt!: Date;
   updatedAt!: Date | null;
   days!: RecurringDayDto[];

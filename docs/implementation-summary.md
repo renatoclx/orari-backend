@@ -539,3 +539,13 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Geração:** `createSchedule` passa as ocorrências por `ClassSessionService.reserveForOccurrences` (sessão criada se faltar, travada e com a vaga conferida, na transação da recorrência/contratação); `createFromRecurrence` grava a sessão em cada agendamento e confere a agenda sem os colegas. O `RecurringAppointmentModule` importa o `ClassGroupModule` (sem ciclo: este só depende do `AppointmentModule`).
 - **Remanejamento** (decisão A de `turmas.md`): `rescheduleFromRecurrence` limpa o `classSessionId`; o atendimento vai individual para o novo horário e a vaga fica livre.
 - **Respostas:** recorrência e contratação trazem `classGroupId`.
+
+## 2.49 Turmas, etapa 4: cancelamento da sessão, saída da turma e reposição
+
+- **Banco** (migration `20261029180000_class_cancellations`): enum `AppointmentCancelReason` (`CLASS_SESSION_CANCELLED`, `CLASS_LEFT`) e `appointments.cancelReason`; `class_sessions.cancellationNote`; `recurring_appointments.classLeftAt` e `classLeaveNote`.
+- **Motivo do cancelamento:** só os cancelamentos feitos pela clínica na turma gravam `cancelReason`; é ele que separa a aula que pode ser reposta da cancelada pelo cliente.
+- **`PATCH /class-sessions/:id/cancel`** (ADMIN): `ClassSessionService.cancel` trava a sessão, grava o cancelamento e chama `AppointmentService.cancelForClassSession` e `PaymentService.cancelPendingForClassSession` na mesma transação. O `ClassGroupModule` passa a importar o `PaymentModule` (sem ciclo).
+- **`PATCH /recurring-appointments/:id/leave-class`** (ADMIN): `RecurringAppointmentService.leaveClassGroup` grava a saída com o filtro `classLeftAt: null` (duas saídas simultâneas: 409), chama `AppointmentService.cancelFutureFromClassGroup` (só as aulas nas sessões da turma) e, na avulsa, encerra a recorrência e cancela o restante; depois, `cancelPendingForRecurrence`.
+- **Reposição:** `rescheduleFromRecurrence` troca a opção `allowNoShow` por `allowReplacement` (falta ou `cancelReason` preenchido) e aceita `classSession` (sessão de destino: grava a sessão e o profissional dela, e confere a agenda sem os colegas).
+- **`PATCH /recurring-appointments/:id/appointments/:appointmentId/replace-in-class`** (ADMIN): `ClassSessionService.resolveClassGroupSlot` (turma, serviço, horário e funcionamento, fora da transação) e `reserveSeat` (trava e vaga, dentro); depois o remanejamento e `moveDueDate`, na mesma transação. A conferência de vaga do encaixe foi extraída para `ensureHasSeatFor`, usada pelos dois.
+- **Respostas e Swagger:** o agendamento documenta `classSessionId` e `cancelReason`; a recorrência, `classGroupId`, `classLeftAt` e `classLeaveNote`; a sessão traz `cancellationNote`.

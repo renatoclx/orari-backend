@@ -1,5 +1,8 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { AppointmentStatus } from "../../../../generated/prisma/enums";
+import {
+  AppointmentCancelReason,
+  AppointmentStatus,
+} from "../../../../generated/prisma/enums";
 
 /**
  * Formatos de resposta, só para documentar a API (Swagger). O service devolve
@@ -42,6 +45,15 @@ export class AppointmentResponseDto {
   overBooking!: boolean;
   /** Preenchido quando o agendamento veio de uma recorrência. */
   recurringAppointmentId!: string | null;
+  /** Preenchido quando o agendamento é de um aluno numa sessão de turma. */
+  classSessionId!: string | null;
+  /** Cancelamento pela clínica na turma (sessão cancelada ou saída); permite repor a sessão de plano. */
+  @ApiProperty({
+    enum: AppointmentCancelReason,
+    enumName: "AppointmentCancelReason",
+    nullable: true,
+  })
+  cancelReason!: AppointmentCancelReason | null;
   createdAt!: Date;
   updatedAt!: Date | null;
   /** Mesmo que a pessoa tenha sido excluída depois, o nome continua aqui. */

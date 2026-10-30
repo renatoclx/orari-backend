@@ -13,14 +13,16 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClassSessionService } from "./class-session.service";
+import { CancelClassSessionDto } from "./dto/cancel-class-session.dto";
 import {
   CreateClassSessionDto,
   UpdateClassSessionDto,
 } from "./dto/create-class-session.dto";
 import { EnrollClassSessionParticipantDto } from "./dto/enroll-class-participant.dto";
 
-// Sessões de turma: só o ADMIN encaixa alunos (ver docs/turmas.md). O aluno sai
-// cancelando o próprio agendamento (PATCH /appointments/:id), como hoje.
+// Sessões de turma: só o ADMIN encaixa alunos e cancela a sessão (ver
+// docs/turmas.md). O aluno avulso sai cancelando o próprio agendamento
+// (PATCH /appointments/:id), como hoje.
 @ApiTags("Turmas")
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
@@ -52,6 +54,17 @@ export class ClassSessionController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.classSessionService.update(id, dto, currentUser.companyId);
+  }
+
+  // Cancela a sessão inteira (antes do início): os agendamentos dos alunos e os
+  // pagamentos pendentes deles são cancelados.
+  @Patch(":id/cancel")
+  cancel(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: CancelClassSessionDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.classSessionService.cancel(id, dto, currentUser.companyId);
   }
 
   // Encaixa um cliente numa sessão que já existe.

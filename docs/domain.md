@@ -301,6 +301,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | overBooking            | Encaixe: marcado fora do horário de funcionamento |
 | recurringAppointmentId | Agendamento recorrente que o originou (opcional)  |
 | classSessionId         | Sessão da turma a que pertence (opcional)         |
+| cancelReason           | Motivo do cancelamento pela turma (opcional)      |
 
 ### Relacionamentos
 
@@ -330,6 +331,8 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | endDate        | Data final do agendamento recorrente (obrigatória)         |
 | clientPlanId   | Contratação de plano que originou a recorrência (opcional) |
 | classGroupId   | Turma fixa em que a recorrência está encaixada (opcional)  |
+| classLeftAt    | Data e hora da saída da turma (opcional)                   |
+| classLeaveNote | Motivo da saída da turma (opcional)                        |
 | note           | Observação (opcional)                                      |
 | isActive       | Ativa ou inativa o agendamento recorrente                  |
 
@@ -603,18 +606,19 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 ### Atributos
 
-| Nome           | Descrição                                                    |
-| -------------- | ------------------------------------------------------------ |
-| id             | Identificador único                                          |
-| companyId      | Código da empresa                                            |
-| classGroupId   | Turma fixa que a originou (vazio na sessão avulsa)           |
-| serviceId      | Serviço da sessão                                            |
-| professionalId | Profissional da sessão (deriva de pessoa)                    |
-| startAt        | Início                                                       |
-| endAt          | Fim                                                          |
-| capacity       | Quantidade máxima de alunos                                  |
-| overBooking    | Encaixe fora do funcionamento (sessão avulsa)                |
-| cancelledAt    | Data e hora do cancelamento da sessão (vazio enquanto ativa) |
+| Nome             | Descrição                                                    |
+| ---------------- | ------------------------------------------------------------ |
+| id               | Identificador único                                          |
+| companyId        | Código da empresa                                            |
+| classGroupId     | Turma fixa que a originou (vazio na sessão avulsa)           |
+| serviceId        | Serviço da sessão                                            |
+| professionalId   | Profissional da sessão (deriva de pessoa)                    |
+| startAt          | Início                                                       |
+| endAt            | Fim                                                          |
+| capacity         | Quantidade máxima de alunos                                  |
+| overBooking      | Encaixe fora do funcionamento (sessão avulsa)                |
+| cancelledAt      | Data e hora do cancelamento da sessão (vazio enquanto ativa) |
+| cancellationNote | Motivo do cancelamento da sessão (opcional)                  |
 
 ### Relacionamentos
 

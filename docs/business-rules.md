@@ -327,7 +327,7 @@
 
 ## Turmas
 
-> **Em desenho:** o desenho completo está em `turmas.md`. Valem na API, por enquanto, só as regras abaixo (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma).
+> **Em desenho:** o desenho completo está em `turmas.md`. Valem na API, por enquanto, só as regras abaixo (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição).
 
 - Uma turma fixa é um horário semanal de atendimento em turma, com vagas: serviço, profissional, um ou mais dias e horários, quantidade de vagas e um nome opcional (não único, até 100 caracteres). Pertence à empresa do usuário; a empresa não é informada no payload.
 - **Só o ADMIN** cadastra, consulta, altera, inativa e reativa turmas. Os demais perfis, inclusive o SUPER_ADMIN, recebem 403. Turma de outra empresa responde 404.
@@ -364,7 +364,16 @@
 - Cada agendamento gerado nasce na sessão do seu horário (criada se ainda não existir), com a vaga conferida com a sessão travada, como no encaixe avulso. Continua tudo ou nada: sem vaga ou com a sessão cancelada em alguma data, nada é gravado e o erro informa a data ("Sem vaga na turma em 02/11/2026 às 08:00").
 - Pagamentos não mudam: a recorrência avulsa gera um pagamento por agendamento; o plano é cobrado pela contratação.
 - A turma da recorrência não muda depois da criação (a edição só aceita observação e cancelamento). Encerrar a recorrência ou cancelar o plano cancela os agendamentos futuros, o que libera as vagas.
-- Remanejar uma sessão de turma tira o aluno da sessão (atendimento individual no novo horário, vaga livre). A reposição numa sessão de outra turma fica para a etapa 4.
+- Remanejar uma sessão de turma tira o aluno da sessão (atendimento individual no novo horário, vaga livre). Para levar a aula a uma sessão de turma, usa-se a reposição em turma (abaixo).
+
+### Cancelamento da sessão, saída da turma e reposição
+
+- **Cancelamento da sessão** (`PATCH /class-sessions/:id/cancel`, com `note` opcional, só ADMIN): só antes do início (400) e uma única vez (409). Grava a data e o motivo (`cancelledAt`, `cancellationNote`) e cancela, na mesma transação, os agendamentos dos alunos ainda em `SCHEDULED` ou `CONFIRMED`, com o motivo `CLASS_SESSION_CANCELLED` (`cancelReason`), e os pagamentos `PENDING` deles; o `PAID` não muda. A sessão cancelada não recebe novos encaixes (409).
+- **Saída da turma** (`PATCH /recurring-appointments/:id/leave-class`, com `note` opcional, só ADMIN): a recorrência precisa estar ativa (400), estar encaixada numa turma (400) e o aluno ainda não ter saído (409). Grava a data e o motivo (`classLeftAt`, `classLeaveNote`) e cancela as aulas futuras da recorrência nas sessões da turma, com o motivo `CLASS_LEFT`, e os pagamentos `PENDING` delas.
+  - Recorrência **avulsa**: é encerrada (`isActive: false`), e as demais aulas futuras dela também são canceladas. Para entrar em outra turma, cria-se uma recorrência nova.
+  - Recorrência de **plano**: continua ativa (só o cancelamento da contratação a encerra). As aulas remanejadas para fora da turma continuam, e as canceladas pela saída ficam para reposição.
+- **Reposição de sessão de plano:** além da falta, a aula cancelada pela clínica na turma (com `cancelReason`) pode ser remanejada para outra data dentro do período da contratação e volta a `SCHEDULED`, sem o motivo. A aula cancelada pelo cliente (sem motivo) não é reposta (400), nem a de recorrência avulsa.
+- **Reposição em turma** (`PATCH /recurring-appointments/:id/appointments/:appointmentId/replace-in-class`, com `classGroupId` e `startAt`, só ADMIN): aceita as mesmas aulas do remanejamento (futuras e, no plano, as que podem ser repostas). A turma precisa ser da empresa (404), estar ativa (409) e ser do **mesmo serviço** da aula (400); o `startAt` precisa ser um horário dela (400), no futuro, dentro do período e do funcionamento. A vaga é conferida com a sessão travada: sessão cancelada, cheia ou com o cliente já nela respondem 409. A aula entra na sessão com o **profissional da turma** (a recorrência mantém o dela), e o vencimento do pagamento pendente acompanha a nova data.
 
 ## Anamnese
 
