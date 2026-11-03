@@ -186,11 +186,17 @@ export class AppointmentService {
     );
     const overBooking = await this.resolveOverBooking(
       companyId,
+      dto.professionalId,
       dto.startAt,
       endAt,
       dto.overBooking,
     );
-    await this.ensureSlotIsFree(this.prisma, { ...dto, endAt }, companyId);
+    // Autorizado (encaixe), o avulso pode dividir o horário com uma turma.
+    await this.ensureSlotIsFree(
+      this.prisma,
+      { ...dto, endAt, overClassSession: dto.overBooking === true },
+      companyId,
+    );
 
     return this.prisma.appointment.create({
       // O valor gravado é o calculado, e não o que veio no payload.
@@ -343,9 +349,11 @@ export class AppointmentService {
       if (dto.serviceId || dto.startAt) {
         overBooking = await this.resolveOverBooking(
           companyId,
+          professionalId,
           startAt,
           endAt,
           dto.overBooking,
+          id,
         );
       }
 
@@ -358,6 +366,11 @@ export class AppointmentService {
           startAt,
           endAt,
           classSessionId: appointment.classSessionId,
+          // Remarcado, vale a autorização do pedido; senão, a do encaixe gravado.
+          overClassSession:
+            dto.serviceId || dto.startAt
+              ? dto.overBooking === true
+              : appointment.overBooking,
         },
         companyId,
         id,
@@ -750,18 +763,23 @@ export class AppointmentService {
 
   /**
    * Encaixe: um agendamento avulso pode ficar fora do horário de funcionamento
-   * (inclusive em dia fechado) se o pedido autorizar com overBooking. Sem a
-   * autorização, o horário fora é recusado, para um erro de digitação não virar
-   * encaixe sem ninguém perceber. Devolve o valor real a gravar: false quando o
-   * horário está dentro, mesmo que a autorização tenha vindo.
+   * (inclusive em dia fechado) ou dividir o horário com uma turma do
+   * profissional, se o pedido autorizar com overBooking. Sem a autorização, o
+   * horário fora é recusado, para um erro de digitação não virar encaixe sem
+   * ninguém perceber (e o horário da turma continua conflitando). Devolve o
+   * valor real a gravar: true quando o horário está fora do funcionamento ou
+   * cai sobre uma sessão de turma do profissional; false quando está dentro e
+   * livre, mesmo que a autorização tenha vindo.
    *
    * Recorrência e plano não passam por aqui: continuam exigindo a janela.
    */
   private async resolveOverBooking(
     companyId: string,
+    professionalId: string,
     startAt: Date,
     endAt: Date,
     authorized: boolean | undefined,
+    ignoreId?: string,
   ): Promise<boolean> {
     const within = await this.businessHourService.isWithinBusinessHours(
       companyId,
@@ -769,7 +787,15 @@ export class AppointmentService {
       endAt,
     );
     if (within) {
-      return false;
+      return authorized === true
+        ? this.overlapsClassSession(
+            companyId,
+            professionalId,
+            startAt,
+            endAt,
+            ignoreId,
+          )
+        : false;
     }
 
     if (!authorized) {
@@ -779,6 +805,28 @@ export class AppointmentService {
     }
 
     return true;
+  }
+
+  // O profissional tem, nesse intervalo, alunos de uma sessão de turma (não cancelados).
+  private async overlapsClassSession(
+    companyId: string,
+    professionalId: string,
+    startAt: Date,
+    endAt: Date,
+    ignoreId?: string,
+  ): Promise<boolean> {
+    const count = await this.prisma.appointment.count({
+      where: {
+        companyId,
+        professionalId,
+        status: BLOCKING_STATUSES,
+        classSessionId: { not: null },
+        id: ignoreId ? { not: ignoreId } : undefined,
+        startAt: { lt: endAt },
+        endAt: { gt: startAt },
+      },
+    });
+    return count > 0;
   }
 
   // Agendar exige horário futuro; a recorrência também nunca gera ocorrências passadas.
@@ -845,19 +893,28 @@ export class AppointmentService {
       startAt,
       endAt,
       classSessionId,
+      overClassSession,
     }: {
       clientId: string;
       professionalId: string;
       startAt: Date;
       endAt: Date;
       classSessionId?: string | null;
+      overClassSession?: boolean;
     },
     companyId: string,
     ignoreId?: string, // recebe o id de um agendamento, onde ele ignora o id na consulta
   ) {
     const conflict = await this.findSlotConflict(
       db,
-      { clientId, professionalId, startAt, endAt, classSessionId },
+      {
+        clientId,
+        professionalId,
+        startAt,
+        endAt,
+        classSessionId,
+        overClassSession,
+      },
       companyId,
       ignoreId,
     );
@@ -875,26 +932,36 @@ export class AppointmentService {
       startAt,
       endAt,
       classSessionId,
+      overClassSession,
     }: {
       clientId: string;
       professionalId: string;
       startAt: Date;
       endAt: Date;
       classSessionId?: string | null;
+      overClassSession?: boolean;
     },
     companyId: string,
     ignoreId?: string,
   ): Promise<string | null> {
     // O "diferente" do SQL não casa com NULL: o agendamento sem sessão entra à parte.
-    const professionalBusy: Prisma.AppointmentWhereInput = classSessionId
-      ? {
-          professionalId,
-          OR: [
-            { classSessionId: null },
-            { classSessionId: { not: classSessionId } },
-          ],
-        }
-      : { professionalId };
+    let professionalBusy: Prisma.AppointmentWhereInput = { professionalId };
+    if (classSessionId) {
+      // Aluno de turma: os colegas da sessão não contam, nem o avulso do
+      // profissional que é encaixe (dividindo o horário com a turma).
+      professionalBusy = {
+        professionalId,
+        OR: [
+          { classSessionId: null },
+          { classSessionId: { not: classSessionId } },
+        ],
+        NOT: { classSessionId: null, overBooking: true },
+      };
+    } else if (overClassSession) {
+      // Avulso autorizado (encaixe): as sessões de turma não contam; os outros
+      // avulsos, sim.
+      professionalBusy = { professionalId, classSessionId: null };
+    }
 
     const conflict = await db.appointment.findFirst({
       where: {

@@ -152,6 +152,10 @@ abrir.
 - Os agendamentos da mesma sessão não conflitam entre si para o profissional; com
   qualquer outro compromisso dele, o conflito continua valendo. Para o cliente, a regra
   de conflito não muda.
+- Um atendimento avulso pode ser **encaixado** no horário da turma (`overBooking: true`):
+  divide o horário com ela, não ocupa vaga e vale para qualquer serviço. Ele não bloqueia
+  novos alunos na sessão, e a sessão não bloqueia o encaixe; com outro avulso, o conflito
+  continua.
 - Cada aluno tem seu agendamento, com o serviço, o profissional e o horário da sessão, e
   segue as regras atuais de status, falta, pagamento, plano e recorrência.
 

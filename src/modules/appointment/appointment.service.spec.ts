@@ -251,6 +251,94 @@ describe("AppointmentService", () => {
       expect(createdData().overBooking).toBe(false);
     });
 
+    describe("encaixe sobre uma turma do profissional", () => {
+      it("autorizado e sobre uma sessão de turma: grava como encaixe e não conta a turma no conflito", async () => {
+        prismaMock.appointment.count.mockResolvedValueOnce(1);
+
+        await appointmentService.create(
+          { ...dto, overBooking: true },
+          COMPANY_ID,
+        );
+
+        expect(prismaMock.appointment.count).toHaveBeenCalledWith({
+          where: {
+            companyId: COMPANY_ID,
+            professionalId: "professional-1",
+            status: { not: "CANCELLED" },
+            classSessionId: { not: null },
+            id: undefined,
+            startAt: { lt: endAt },
+            endAt: { gt: startAt },
+          },
+        });
+        expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              OR: [
+                { professionalId: "professional-1", classSessionId: null },
+                { clientId: "client-1" },
+              ],
+            }) as unknown,
+          }),
+        );
+        expect(createdData().overBooking).toBe(true);
+      });
+
+      it("autorizado e sobre outro avulso: continua recusando", async () => {
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+        });
+
+        await expect(
+          appointmentService.create({ ...dto, overBooking: true }, COMPANY_ID),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+      });
+
+      it("sem a autorização: a turma continua conflitando e nem consulta as sessões", async () => {
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+        });
+
+        await expect(
+          appointmentService.create(dto, COMPANY_ID),
+        ).rejects.toBeInstanceOf(ConflictException);
+        expect(prismaMock.appointment.count).not.toHaveBeenCalled();
+        expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              OR: [
+                { professionalId: "professional-1" },
+                { clientId: "client-1" },
+              ],
+            }) as unknown,
+          }),
+        );
+      });
+
+      it("PATCH: remarcar para cima de uma turma, com a autorização, vira encaixe", async () => {
+        prismaMock.appointment.findFirst
+          .mockResolvedValueOnce(appointment)
+          .mockResolvedValueOnce(null);
+        prismaMock.appointment.count.mockResolvedValueOnce(1);
+        const novoInicio = new Date(startAt.getTime() + 3_600_000);
+
+        await appointmentService.update(
+          "appointment-1",
+          { startAt: novoInicio, overBooking: true },
+          COMPANY_ID,
+        );
+
+        // O próprio agendamento não conta como turma na conferência.
+        expect(prismaMock.appointment.count).toHaveBeenCalledWith({
+          where: expect.objectContaining({
+            id: { not: "appointment-1" },
+          }) as unknown,
+        });
+        expect(updatedData().overBooking).toBe(true);
+      });
+    });
+
     it("deve manter a checagem de conflito no encaixe: sem sobreposição", async () => {
       businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
       prismaMock.appointment.findFirst.mockResolvedValueOnce({
@@ -802,6 +890,7 @@ describe("AppointmentService", () => {
                   { classSessionId: null },
                   { classSessionId: { not: "session-2" } },
                 ],
+                NOT: { classSessionId: null, overBooking: true },
               },
               { clientId: "client-1" },
             ],
@@ -1701,6 +1790,7 @@ describe("AppointmentService", () => {
     const professionalOutsideSession = {
       professionalId: "professional-1",
       OR: [{ classSessionId: null }, { classSessionId: { not: "session-1" } }],
+      NOT: { classSessionId: null, overBooking: true },
     };
 
     it("editar a observação não conflita com os colegas da sessão", async () => {
@@ -1882,6 +1972,7 @@ describe("AppointmentService", () => {
                 { classSessionId: null },
                 { classSessionId: { not: "session-1" } },
               ],
+              NOT: { classSessionId: null, overBooking: true },
             },
             { clientId: "client-1" },
           ],
