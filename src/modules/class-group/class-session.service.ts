@@ -693,6 +693,8 @@ export class ClassSessionService {
           status: OCCUPYING,
           startAt: { lt: lastEnd },
           endAt: { gt: start },
+          // O avulso em encaixe divide o horário com a turma: não o esconde.
+          NOT: { classSessionId: null, overBooking: true },
         },
         select: { professionalId: true, startAt: true, endAt: true },
       }),

@@ -657,6 +657,18 @@ describe("ClassSessionService", () => {
       );
     });
 
+    it("não conta o avulso em encaixe como compromisso: ele divide o horário com a turma", async () => {
+      await findAll();
+
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith(
+        containing({
+          where: containing({
+            NOT: { classSessionId: null, overBooking: true },
+          }),
+        }),
+      );
+    });
+
     it("não mostra horário vazio no passado", async () => {
       // Terça: a segunda já passou e a quarta continua.
       vi.setSystemTime(new Date("2026-11-03T12:00:00.000Z"));
