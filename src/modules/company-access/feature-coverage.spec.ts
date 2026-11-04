@@ -23,6 +23,7 @@ import { PaymentController } from "../payment/payment.controller";
 import { PaymentMethodController } from "../payment-method/payment-method.controller";
 import { PeopleController } from "../people/people.controller";
 import { PlanController } from "../plan/plan.controller";
+import { PortalAppointmentController } from "../portal/portal-appointment.controller";
 import { PortalAuthController } from "../portal/portal-auth.controller";
 import { PortalCatalogController } from "../portal/portal-catalog.controller";
 import { PortalSettingsController } from "../portal/portal-settings.controller";
@@ -41,6 +42,8 @@ const EXEMPT: Record<string, string> = {
   CompanyAccessController: "só o SUPER_ADMIN (@Roles)",
   PortalAuthController:
     "portal do cliente: fora do login da clínica, com autenticação própria (PortalAuthGuard)",
+  PortalAppointmentController:
+    "agendamentos do cliente no portal (PortalAuthGuard, token do portal)",
   PortalCatalogController:
     "vitrine pública do portal (só abre com o portal ligado e no plano)",
   CityController: "dado de referência (cidades)",
@@ -79,6 +82,7 @@ const CONTROLLERS: Controller[] = [
   PaymentMethodController,
   PeopleController,
   PortalAuthController,
+  PortalAppointmentController,
   PortalCatalogController,
   PortalSettingsController,
   PlanController,

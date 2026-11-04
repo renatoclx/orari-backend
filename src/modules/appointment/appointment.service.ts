@@ -7,6 +7,7 @@ import {
 import { Appointment, Prisma } from "../../../generated/prisma/client";
 import {
   AppointmentCancelReason,
+  AppointmentSource,
   AppointmentStatus,
   PaymentStatus,
   PeopleType,
@@ -172,9 +173,16 @@ export class AppointmentService {
   // contra a agenda (janela de atendimento, depois conflito de horário) — a
   // mais cara é a última, para não gastar uma consulta de conflito num
   // agendamento que já ia falhar por outro motivo.
+  /**
+   * `source`: onde o agendamento foi feito (a tela da clínica ou o portal do
+   * cliente). A conferência de horário livre e a gravação acontecem com o
+   * profissional travado: duas marcações simultâneas no mesmo horário não
+   * passam juntas (a segunda espera e é recusada pelo conflito).
+   */
   async create(
     dto: CreateAppointmentDto,
     companyId: string,
+    source: AppointmentSource = AppointmentSource.CLINIC,
   ): Promise<AppointmentWithRelations> {
     this.ensureIsNotInThePast(dto.startAt);
     await this.ensureParticipants(dto.clientId, dto.professionalId, companyId);
@@ -191,17 +199,21 @@ export class AppointmentService {
       endAt,
       dto.overBooking,
     );
-    // Autorizado (encaixe), o avulso pode dividir o horário com uma turma.
-    await this.ensureSlotIsFree(
-      this.prisma,
-      { ...dto, endAt, overClassSession: dto.overBooking === true },
-      companyId,
-    );
+    return this.prisma.$transaction(async (tx) => {
+      // Trava por profissional até o fim da transação (advisory lock do Postgres).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`appointment:${dto.professionalId}`}))`;
+      // Autorizado (encaixe), o avulso pode dividir o horário com uma turma.
+      await this.ensureSlotIsFree(
+        tx,
+        { ...dto, endAt, overClassSession: dto.overBooking === true },
+        companyId,
+      );
 
-    return this.prisma.appointment.create({
-      // O valor gravado é o calculado, e não o que veio no payload.
-      data: { ...dto, endAt, companyId, overBooking },
-      include: withRelations,
+      return tx.appointment.create({
+        // O valor gravado é o calculado, e não o que veio no payload.
+        data: { ...dto, endAt, companyId, overBooking, source },
+        include: withRelations,
+      });
     });
   }
 

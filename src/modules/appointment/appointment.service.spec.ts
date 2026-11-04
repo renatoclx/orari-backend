@@ -39,6 +39,8 @@ describe("AppointmentService", () => {
       (arg: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
         typeof arg === "function" ? arg(prismaMock) : Promise.all(arg),
     ),
+    // Trava por profissional na criação (pg_advisory_xact_lock).
+    $executeRaw: vi.fn(),
     payment: { updateMany: vi.fn(), count: vi.fn() },
     appointment: {
       create: vi.fn(),
@@ -106,6 +108,37 @@ describe("AppointmentService", () => {
   });
 
   describe("create", () => {
+    it("trava o profissional antes de conferir o horário e gravar, na mesma transação", async () => {
+      const order: string[] = [];
+      prismaMock.$executeRaw.mockImplementationOnce(() => {
+        order.push("trava");
+        return Promise.resolve(0);
+      });
+      prismaMock.appointment.findFirst.mockImplementationOnce(() => {
+        order.push("conflito");
+        return Promise.resolve(null);
+      });
+      prismaMock.appointment.create.mockImplementationOnce(() => {
+        order.push("grava");
+        return Promise.resolve({});
+      });
+
+      await appointmentService.create(dto, COMPANY_ID);
+
+      expect(order).toEqual(["trava", "conflito", "grava"]);
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+    });
+
+    it("pelo portal, grava a origem PORTAL", async () => {
+      await appointmentService.create(dto, COMPANY_ID, "PORTAL");
+
+      expect(prismaMock.appointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ source: "PORTAL" }) as object,
+        }),
+      );
+    });
+
     it("deve calcular o fim somando a duração do serviço ao início", async () => {
       await appointmentService.create(dto, COMPANY_ID);
 
@@ -114,7 +147,13 @@ describe("AppointmentService", () => {
         COMPANY_ID,
       );
       expect(prismaMock.appointment.create).toHaveBeenCalledWith({
-        data: { ...dto, endAt, companyId: COMPANY_ID, overBooking: false },
+        data: {
+          ...dto,
+          endAt,
+          companyId: COMPANY_ID,
+          overBooking: false,
+          source: "CLINIC",
+        },
         include: relations,
       });
     });
