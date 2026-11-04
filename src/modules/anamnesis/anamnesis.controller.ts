@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { AnamnesisPdfService } from "./anamnesis-pdf.service";
 import { AnamnesisService } from "./anamnesis.service";
@@ -27,6 +28,7 @@ import { FindAnamnesisPdfQueryDto } from "./dto/find-anamnesis-pdf-query.dto";
 // do vínculo, e não do tipo do usuário.
 @ApiTags("Anamnese")
 @ApiBearerAuth()
+@Feature("anamnesis")
 @Controller("anamnesis")
 export class AnamnesisController {
   constructor(

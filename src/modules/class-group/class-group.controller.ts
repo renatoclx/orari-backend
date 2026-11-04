@@ -11,6 +11,10 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClassGroupService } from "./class-group.service";
@@ -24,6 +28,7 @@ import { UpdateClassGroupDto } from "./dto/update-class-group.dto";
 @ApiTags("Turmas")
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
+@Feature("class-groups")
 @Controller("class-groups")
 export class ClassGroupController {
   constructor(
@@ -76,6 +81,8 @@ export class ClassGroupController {
 
   // Encaixe avulso de um ou mais alunos, tudo ou nada: o horário escolhe a sessão
   // da turma (criada no primeiro encaixe). Devolve a sessão atualizada.
+  // Encaixar alunos altera a turma; não é "criar" uma turma.
+  @FeatureAction("edit")
   @Post(":id/participants")
   enroll(
     @Param("id", ParseUUIDPipe) id: string,

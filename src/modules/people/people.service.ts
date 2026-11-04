@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { People, Prisma } from "../../../generated/prisma/client";
-import { ContactType } from "../../../generated/prisma/enums";
+import { ContactType, PeopleType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
@@ -13,6 +13,7 @@ import { detectImageExtension } from "../../common/storage/image-type";
 import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CityService } from "../city/city.service";
+import { PlanLimitService } from "../company-access/plan-limit.service";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { FindPeopleQueryDto } from "./dto/find-people-query.dto";
 import { PeopleAddressDto } from "./dto/people-address.dto";
@@ -75,7 +76,29 @@ export class PeopleService {
     private readonly prisma: PrismaService,
     private readonly storage: LocalFileStorage,
     private readonly cityService: CityService,
+    private readonly planLimitService: PlanLimitService,
   ) {}
+
+  /**
+   * Grava a pessoa. Quando ela passa a contar como profissional ativo (criação,
+   * reativação ou troca de tipo), o limite do plano é conferido na mesma
+   * transação da gravação.
+   */
+  private async writeCountingProfessional<T>(
+    countsAsProfessional: boolean,
+    companyId: string,
+    write: (client: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    if (!countsAsProfessional) return write(this.prisma);
+    return this.prisma.$transaction(async (tx) => {
+      await this.planLimitService.assertWithinLimit(
+        "professionals",
+        companyId,
+        tx,
+      );
+      return write(tx);
+    });
+  }
 
   /**
    * Cadastro da pessoa, com telefone principal, contatos e endereços opcionais.
@@ -91,16 +114,21 @@ export class PeopleService {
     await this.ensureCitiesExist(addresses);
 
     try {
-      return await this.prisma.people.create({
-        data: {
-          ...person,
-          normalizedName: normalizeForSearch(dto.name),
-          companyId,
-          contacts: this.toContactsWrite(phone, contacts),
-          addresses: this.toAddressesWrite(addresses),
-        },
-        omit: omitSearchColumn,
-      });
+      return await this.writeCountingProfessional(
+        person.type === PeopleType.PROFESSIONAL,
+        companyId,
+        (client) =>
+          client.people.create({
+            data: {
+              ...person,
+              normalizedName: normalizeForSearch(dto.name),
+              companyId,
+              contacts: this.toContactsWrite(phone, contacts),
+              addresses: this.toAddressesWrite(addresses),
+            },
+            omit: omitSearchColumn,
+          }),
+      );
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }
@@ -196,21 +224,30 @@ export class PeopleService {
     dto: UpdatePeopleDto,
     companyId: string,
   ): Promise<PublicPeople> {
-    await this.findOne(id, companyId);
+    const current = await this.findOne(id, companyId);
+    // Virar profissional (ex.: de cliente) ocupa uma vaga do limite.
+    const becomesProfessional =
+      dto.type === PeopleType.PROFESSIONAL &&
+      current.type !== PeopleType.PROFESSIONAL;
 
     try {
-      return await this.prisma.people.update({
-        where: { id },
-        data: {
-          ...dto,
-          // Mantém a coluna de busca em sincronia sempre que o nome muda.
-          ...(dto.name !== undefined && {
-            normalizedName: normalizeForSearch(dto.name),
+      return await this.writeCountingProfessional(
+        becomesProfessional,
+        companyId,
+        (client) =>
+          client.people.update({
+            where: { id },
+            data: {
+              ...dto,
+              // Mantém a coluna de busca em sincronia sempre que o nome muda.
+              ...(dto.name !== undefined && {
+                normalizedName: normalizeForSearch(dto.name),
+              }),
+              updatedAt: new Date(),
+            },
+            omit: omitSearchColumn,
           }),
-          updatedAt: new Date(),
-        },
-        omit: omitSearchColumn,
-      });
+      );
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }
@@ -225,7 +262,7 @@ export class PeopleService {
   async restore(id: string, companyId: string): Promise<PublicPeople> {
     const people = await this.prisma.people.findFirst({
       where: { id, companyId },
-      select: { deletedAt: true },
+      select: { deletedAt: true, type: true },
     });
 
     if (!people) {
@@ -236,11 +273,17 @@ export class PeopleService {
     }
 
     try {
-      return await this.prisma.people.update({
-        where: { id },
-        data: { deletedAt: null, updatedAt: new Date() },
-        omit: omitSearchColumn,
-      });
+      // Reativar um profissional volta a ocupar uma vaga do limite.
+      return await this.writeCountingProfessional(
+        people.type === PeopleType.PROFESSIONAL,
+        companyId,
+        (client) =>
+          client.people.update({
+            where: { id },
+            data: { deletedAt: null, updatedAt: new Date() },
+            omit: omitSearchColumn,
+          }),
+      );
     } catch (error) {
       throw isUniqueConstraintViolation(error)
         ? new ConflictException(

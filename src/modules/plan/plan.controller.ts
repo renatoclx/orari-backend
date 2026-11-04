@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePlanDto } from "./dto/create-plan.dto";
 import { FindPlansQueryDto } from "./dto/find-plans-query.dto";
@@ -19,6 +20,7 @@ import { PlanService } from "./plan.service";
 // Sem DELETE: o plano é desativado por isActive (ver business-rules.md).
 @ApiTags("Planos")
 @ApiBearerAuth()
+@Feature("plans")
 @Controller("plans")
 export class PlanController {
   constructor(private readonly planService: PlanService) {}

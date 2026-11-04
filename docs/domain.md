@@ -73,6 +73,47 @@
 - Uma empresa pode ter vários usuários, pessoas, serviços, métodos de pagamento,
   horários de funcionamento, agendamentos, agendamentos recorrentes, planos e
   contratações de planos.
+- Uma empresa tem uma linha de acesso por funcionalidade liberada (`CompanyFeatureAccess`) e um registro de limites (`CompanyLimit`).
+
+---
+
+## CompanyFeatureAccess
+
+- O que os administradores da empresa podem fazer em uma funcionalidade (ver `business-rules.md`, "Acessos e limites da empresa"). Sem linha, a funcionalidade fica sem acesso.
+
+### Atributos
+
+| Nome      | Descrição                                                        |
+| --------- | ---------------------------------------------------------------- |
+| id        | Identificador único                                              |
+| companyId | Empresa                                                          |
+| feature   | Chave da funcionalidade (catálogo no código)                     |
+| canView   | Pode visualizar                                                  |
+| canEdit   | Pode editar                                                      |
+| canCreate | Pode criar                                                       |
+| canRemove | Pode excluir ou inativar                                         |
+
+### Relacionamentos
+
+- Pertence a uma empresa. É única por empresa e funcionalidade.
+
+---
+
+## CompanyLimit
+
+- Limites da empresa, definidos pelo SUPER_ADMIN.
+
+### Atributos
+
+| Nome             | Descrição                                                  |
+| ---------------- | ---------------------------------------------------------- |
+| companyId        | Empresa (também é o identificador: um registro por empresa) |
+| maxProfessionals | Profissionais ativos permitidos, contando o administrador   |
+| maxAdmins        | Administradores (usuários com acesso) permitidos           |
+
+### Relacionamentos
+
+- Pertence a uma empresa.
 
 ---
 

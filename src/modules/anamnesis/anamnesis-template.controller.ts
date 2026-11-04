@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { AnamnesisTemplateService } from "./anamnesis-template.service";
@@ -22,6 +23,7 @@ import { UpdateAnamnesisTemplateDto } from "./dto/update-anamnesis-template.dto"
 // Sem DELETE: o modelo é inativado por isActive (ver business-rules.md).
 @ApiTags("Anamnese - Modelos")
 @ApiBearerAuth()
+@Feature("anamnesis-templates")
 @Controller("anamnesis-templates")
 export class AnamnesisTemplateController {
   constructor(private readonly templateService: AnamnesisTemplateService) {}

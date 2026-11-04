@@ -16,6 +16,10 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClientPlanService } from "./client-plan.service";
 import {
@@ -28,6 +32,7 @@ import { FindClientPlansQueryDto } from "./dto/find-client-plans-query.dto";
 // Sem DELETE: a contratação é cancelada, e o histórico fica.
 @ApiTags("Contratações de plano")
 @ApiBearerAuth()
+@Feature("contracts")
 @Controller("client-plans")
 export class ClientPlanController {
   constructor(private readonly clientPlanService: ClientPlanService) {}
@@ -67,6 +72,7 @@ export class ClientPlanController {
   }
 
   // Cancela sem multa: encerra as agendas e, no mensal, as parcelas a vencer.
+  @FeatureAction("remove")
   @Patch(":id/cancel")
   @ApiOkResponse({ type: ClientPlanResponseDto })
   cancel(

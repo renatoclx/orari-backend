@@ -19,6 +19,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateServiceDto } from "./dto/create-service.dto";
 import { FindServicesQueryDto } from "./dto/find-services-query.dto";
@@ -28,6 +29,7 @@ import { ServiceService } from "./service.service";
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
 @ApiTags("Serviços")
 @ApiBearerAuth()
+@Feature("services")
 @Controller("services")
 export class ServiceController {
   constructor(private readonly serviceService: ServiceService) {}

@@ -14,6 +14,10 @@ import { AuthenticatedUser } from "../../common/interfaces/authenticated-user.in
 import { detectImageExtension } from "../../common/storage/image-type";
 import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import {
+  DEFAULT_LIMITS,
+  defaultFeatureAccessRows,
+} from "../company-access/access-catalog";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateCompanyDto } from "./dto/create-company.dto";
@@ -39,7 +43,14 @@ export class CompanyService {
 
   async create(dto: CreateCompanyDto): Promise<Company> {
     try {
-      return await this.prisma.company.create({ data: dto });
+      // A empresa nasce com o modelo padrão (sem anamnese e turmas); o SUPER_ADMIN ajusta depois.
+      return await this.prisma.company.create({
+        data: {
+          ...dto,
+          featureAccess: { create: defaultFeatureAccessRows() },
+          limit: { create: DEFAULT_LIMITS },
+        },
+      });
     } catch (error) {
       throw this.mapUniqueViolation(error);
     }

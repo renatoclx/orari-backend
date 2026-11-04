@@ -13,6 +13,10 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiBody, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateBusinessHourDto } from "./dto/create-business-hour.dto";
 import { FindBusinessHoursQueryDto } from "./dto/find-business-hours-query.dto";
@@ -26,6 +30,9 @@ import { BusinessHourService } from "./business-hour.service";
 export class BusinessHourController {
   constructor(private readonly businessHourService: BusinessHourService) {}
 
+  // Ler fica livre (a agenda usa); gravar é da funcionalidade Configurações.
+  @Feature("settings")
+  @FeatureAction("edit")
   @Post()
   create(
     @Body() dto: CreateBusinessHourDto,
@@ -36,6 +43,8 @@ export class BusinessHourController {
 
   // Cria várias janelas de uma vez (ex.: a semana inteira no setup da
   // empresa). Corpo é um array no lugar de um único objeto.
+  @Feature("settings")
+  @FeatureAction("edit")
   @Post("batch")
   @ApiBody({ type: [CreateBusinessHourDto] })
   createMany(
@@ -62,6 +71,8 @@ export class BusinessHourController {
     return this.businessHourService.findOne(id, currentUser.companyId);
   }
 
+  @Feature("settings")
+  @FeatureAction("edit")
   @Patch(":id")
   update(
     @Param("id", ParseUUIDPipe) id: string,
@@ -71,6 +82,8 @@ export class BusinessHourController {
     return this.businessHourService.update(id, dto, currentUser.companyId);
   }
 
+  @Feature("settings")
+  @FeatureAction("edit")
   @Delete(":id")
   @HttpCode(204)
   remove(

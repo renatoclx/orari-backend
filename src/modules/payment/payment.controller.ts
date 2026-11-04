@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePaymentDto } from "./dto/create-payment.dto";
 import { FindCheckoutsQueryDto } from "./dto/find-checkouts-query.dto";
@@ -24,6 +25,7 @@ import { PaymentService } from "./payment.service";
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
 @ApiTags("Pagamentos")
 @ApiBearerAuth()
+@Feature("payments")
 @Controller("payments")
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
@@ -45,6 +47,8 @@ export class PaymentController {
   }
 
   // Comandas do dia, por cliente. Declarada antes de ":id" para não ser lida como id.
+  // Comandas do dia: outra funcionalidade (a rota continua sob /payments).
+  @Feature("tabs")
   @Get("checkouts")
   findCheckouts(
     @Query() query: FindCheckoutsQueryDto,
@@ -63,6 +67,7 @@ export class PaymentController {
   }
 
   // Baixa dos pagamentos escolhidos de um cliente. Antes de ":id" pelo mesmo motivo.
+  @Feature("tabs")
   @Patch("settle")
   settle(
     @Body() dto: SettleCheckoutDto,

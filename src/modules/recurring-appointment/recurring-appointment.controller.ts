@@ -17,6 +17,10 @@ import {
 } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
@@ -37,6 +41,7 @@ import { RecurringAppointmentService } from "./recurring-appointment.service";
 // Sem DELETE: a recorrência é desativada por isActive (ver domain.md).
 @ApiTags("Agendamentos recorrentes")
 @ApiBearerAuth()
+@Feature("recurrences")
 @Controller("recurring-appointments")
 export class RecurringAppointmentController {
   constructor(
@@ -97,6 +102,7 @@ export class RecurringAppointmentController {
   }
 
   // Pagamento integral: baixa todos os pagamentos pendentes de uma vez.
+  @FeatureAction("edit")
   @Post(":id/payments/settle")
   settlePayments(
     @Param("id", ParseUUIDPipe) id: string,
@@ -164,6 +170,7 @@ export class RecurringAppointmentController {
   }
 
   // Cancela um único agendamento da recorrência e o pagamento pendente dele.
+  @FeatureAction("remove")
   @Patch(":id/appointments/:appointmentId/cancel")
   cancelAppointment(
     @Param("id", ParseUUIDPipe) id: string,

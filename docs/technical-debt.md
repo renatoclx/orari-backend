@@ -162,3 +162,20 @@ e motivo) e um registro de auditoria das ações sensíveis (cadastro e inativa�
 empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
 
 **Registrado em:** 2026-10-23.
+
+---
+
+## Barreira por funcionalidade: contatos, endereços e leituras entre funcionalidades
+
+**Onde:** `/contacts`, `/addresses` e as telas que leem dados de outra funcionalidade.
+
+**O que é:** o controle de acesso por empresa (ver `business-rules.md`, "Acessos e limites da empresa") barra por funcionalidade, mas três pontos ficaram de fora:
+
+- `/contacts` e `/addresses` servem a pessoas (clientes, funcionários, profissionais) e à empresa. Não há como saber a funcionalidade só pela rota, e resolver o dono do contato exigiria consultas extras.
+- Uma tela que lê dados de outra funcionalidade (ex.: o agendamento que mostra o pagamento) depende de a empresa ter as duas. A matriz só valida as dependências de cadastros (clientes, profissionais e serviços).
+- Cancelar um agendamento é uma mudança de status (`PATCH`), então exige `edit`, não `remove`.
+
+**Impacto:** baixo. Contatos e endereços continuam restritos à empresa do usuário; uma empresa sem `clients` ainda consegue ler contatos de clientes se souber o `id`.
+
+**Como resolver:** quando houver necessidade, descobrir o dono do contato pelo registro (como o `/people` faz pelo tipo) e acrescentar as dependências que faltarem à matriz.
+

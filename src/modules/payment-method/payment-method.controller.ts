@@ -12,6 +12,10 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePaymentMethodDto } from "./dto/create-payment-method.dto";
 import { FindPaymentMethodsQueryDto } from "./dto/find-payment-methods-query.dto";
@@ -21,6 +25,7 @@ import { PaymentMethodService } from "./payment-method.service";
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
 @ApiTags("Métodos de pagamento")
 @ApiBearerAuth()
+@Feature("payment-methods")
 @Controller("payment-methods")
 export class PaymentMethodController {
   constructor(private readonly paymentMethodService: PaymentMethodService) {}
@@ -59,6 +64,7 @@ export class PaymentMethodController {
   }
 
   // Reativa um método inativado (limpa o deletedAt).
+  @FeatureAction("remove")
   @Patch(":id/restore")
   restore(
     @Param("id", ParseUUIDPipe) id: string,

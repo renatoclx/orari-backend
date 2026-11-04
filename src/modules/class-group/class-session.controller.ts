@@ -11,6 +11,10 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { ClassSessionService } from "./class-session.service";
@@ -28,6 +32,7 @@ import { FindClassSessionsQueryDto } from "./dto/find-class-sessions-query.dto";
 @ApiTags("Turmas")
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
+@Feature("class-groups")
 @Controller("class-sessions")
 export class ClassSessionController {
   constructor(private readonly classSessionService: ClassSessionService) {}
@@ -69,6 +74,8 @@ export class ClassSessionController {
 
   // Cancela a sessão inteira (antes do início): os agendamentos dos alunos e os
   // pagamentos pendentes deles são cancelados.
+  // Cancelar a sessão é a ação de excluir/inativar da funcionalidade.
+  @FeatureAction("remove")
   @Patch(":id/cancel")
   cancel(
     @Param("id", ParseUUIDPipe) id: string,
@@ -79,6 +86,7 @@ export class ClassSessionController {
   }
 
   // Encaixa um ou mais clientes numa sessão que já existe, tudo ou nada; devolve a sessão.
+  @FeatureAction("edit")
   @Post(":id/participants")
   enroll(
     @Param("id", ParseUUIDPipe) id: string,

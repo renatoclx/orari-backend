@@ -154,6 +154,8 @@ model Company {
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
+  featureAccess         CompanyFeatureAccess[]
+  limit                 CompanyLimit?
 
   @@map("companies")
 }
@@ -624,6 +626,7 @@ enum AuditAction {
   ANAMNESIS_LISTED
   ANAMNESIS_ENTRY_CREATED
   ANAMNESIS_PDF_GENERATED
+  COMPANY_ACCESS_CHANGED
 }
 
 /**
@@ -877,4 +880,38 @@ model ClassSession {
   @@index([companyId, startAt])
   @@index([professionalId, startAt])
   @@map("class_sessions")
+}
+
+/**
+ * O que os administradores de uma empresa podem fazer em cada funcionalidade
+ * (ver docs/business-rules.md, "Acessos e limites"). Sem linha = sem acesso:
+ * uma funcionalidade nova nasce desmarcada em todas as empresas.
+ */
+model CompanyFeatureAccess {
+  id        String  @id @default(uuid())
+  companyId String
+  // Chave do catálogo de funcionalidades (código, em access-catalog.ts).
+  feature   String
+  canView   Boolean @default(false)
+  canEdit   Boolean @default(false)
+  canCreate Boolean @default(false)
+  canRemove Boolean @default(false)
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, feature])
+  @@map("company_feature_access")
+}
+
+// Limites do plano da empresa. Baixar abaixo do uso é permitido: só bloqueia novos cadastros.
+model CompanyLimit {
+  companyId        String @id
+  // Profissionais ativos, contando o administrador que atua.
+  maxProfessionals Int
+  // Administradores (usuários com acesso).
+  maxAdmins        Int
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("company_limits")
 }

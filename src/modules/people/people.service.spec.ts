@@ -9,6 +9,7 @@ import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LocalFileStorage } from "../../common/storage/local-file-storage.service";
 import { CityService } from "../city/city.service";
+import { PlanLimitService } from "../company-access/plan-limit.service";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { PeopleService } from "./people.service";
@@ -18,8 +19,12 @@ const anyDate: unknown = expect.any(Date);
 describe("PeopleService", () => {
   let peopleService: PeopleService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Aceita a lista de operações e também a transação com callback (limite do plano).
+    $transaction: vi.fn(
+      (operations: Promise<unknown>[] | ((tx: unknown) => unknown)) =>
+        typeof operations === "function"
+          ? operations(prismaMock)
+          : Promise.all(operations),
     ),
     people: {
       create: vi.fn(),
@@ -32,6 +37,7 @@ describe("PeopleService", () => {
 
   const storageMock = { save: vi.fn(), remove: vi.fn() };
   const cityServiceMock = { findOne: vi.fn() };
+  const planLimitMock = { assertWithinLimit: vi.fn() };
 
   const dto: CreatePeopleDto = {
     name: "Maria",
@@ -58,6 +64,7 @@ describe("PeopleService", () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: LocalFileStorage, useValue: storageMock },
         { provide: CityService, useValue: cityServiceMock },
+        { provide: PlanLimitService, useValue: planLimitMock },
       ],
     }).compile();
 
@@ -532,7 +539,7 @@ describe("PeopleService", () => {
       });
       expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
         where: { id: "1", companyId: COMPANY_ID },
-        select: { deletedAt: true },
+        select: { deletedAt: true, type: true },
       });
       expect(prismaMock.people.update).toHaveBeenCalledWith({
         where: { id: "1" },
@@ -689,6 +696,86 @@ describe("PeopleService", () => {
 
       expect(prismaMock.people.update).not.toHaveBeenCalled();
       expect(storageMock.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("limite de profissionais do plano", () => {
+    const professional = { ...dto, type: "PROFESSIONAL" as const };
+
+    it("criar profissional confere o limite na mesma transação e grava por ela", async () => {
+      prismaMock.people.create.mockResolvedValue({
+        ...people,
+        type: "PROFESSIONAL",
+      });
+
+      await peopleService.create(professional, COMPANY_ID);
+
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledWith(
+        "professionals",
+        COMPANY_ID,
+        prismaMock,
+      );
+      expect(prismaMock.people.create).toHaveBeenCalled();
+    });
+
+    it("limite atingido: nada é gravado", async () => {
+      planLimitMock.assertWithinLimit.mockRejectedValueOnce(
+        new Error("limite"),
+      );
+
+      await expect(
+        peopleService.create(professional, COMPANY_ID),
+      ).rejects.toThrow("limite");
+      expect(prismaMock.people.create).not.toHaveBeenCalled();
+    });
+
+    it("criar cliente ou funcionário não confere o limite", async () => {
+      prismaMock.people.create.mockResolvedValue(people);
+
+      await peopleService.create(dto, COMPANY_ID);
+      await peopleService.create({ ...dto, type: "EMPLOYEE" }, COMPANY_ID);
+
+      expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
+    });
+
+    it("reativar um profissional confere o limite; reativar um cliente, não", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        deletedAt: new Date(),
+        type: "PROFESSIONAL",
+      });
+      prismaMock.people.update.mockResolvedValue(people);
+      await peopleService.restore("1", COMPANY_ID);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
+
+      prismaMock.people.findFirst.mockResolvedValue({
+        deletedAt: new Date(),
+        type: "CLIENT",
+      });
+      await peopleService.restore("1", COMPANY_ID);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
+    });
+
+    it("trocar o tipo para profissional confere o limite; manter o tipo, não", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        type: "CLIENT",
+      });
+      prismaMock.people.update.mockResolvedValue(people);
+
+      await peopleService.update("1", { type: "PROFESSIONAL" }, COMPANY_ID);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
+
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        type: "PROFESSIONAL",
+      });
+      await peopleService.update(
+        "1",
+        { type: "PROFESSIONAL", name: "Ana" },
+        COMPANY_ID,
+      );
+      await peopleService.update("1", { name: "Ana" }, COMPANY_ID);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
     });
   });
 });
