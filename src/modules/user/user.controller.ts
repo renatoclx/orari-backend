@@ -14,6 +14,10 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -24,6 +28,7 @@ import { UserService } from "./user.service";
 
 @ApiTags("Usuários")
 @ApiBearerAuth()
+@Feature("users")
 @Controller("users")
 // O alcance de cada tipo (empresa, contas visíveis) é aplicado no UserService.
 @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
@@ -76,6 +81,7 @@ export class UserController {
   }
 
   // Reativa um usuário inativado (limpa o deletedAt).
+  @FeatureAction("remove")
   @Patch(":id/restore")
   restore(
     @Param("id", ParseUUIDPipe) id: string,

@@ -23,6 +23,10 @@ import {
 } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  Feature,
+  FeatureAction,
+} from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CompanyService } from "./company.service";
@@ -51,6 +55,9 @@ export class CompanyController {
    * As rotas "me" (a empresa do token) vêm antes das rotas ":id": como o id é
    * validado como UUID, "me" cairia nelas e responderia 400.
    */
+  // Nome e logo da própria empresa: funcionalidade Configurações.
+  @Feature("settings")
+  @FeatureAction("edit")
   @Patch("me")
   @Roles(UserType.ADMIN, UserType.SUPER_ADMIN)
   @ApiOperation({
@@ -67,6 +74,8 @@ export class CompanyController {
   }
 
   // Logo da própria empresa (JPEG ou PNG, até 2 MB), enviada como multipart no campo "logo".
+  @Feature("settings")
+  @FeatureAction("edit")
   @Post("me/logo")
   @Roles(UserType.ADMIN, UserType.SUPER_ADMIN)
   @UseInterceptors(
@@ -91,6 +100,8 @@ export class CompanyController {
     return this.companyService.updateLogo(currentUser.companyId, file.buffer);
   }
 
+  @Feature("settings")
+  @FeatureAction("edit")
   @Delete("me/logo")
   @Roles(UserType.ADMIN, UserType.SUPER_ADMIN)
   @HttpCode(204)

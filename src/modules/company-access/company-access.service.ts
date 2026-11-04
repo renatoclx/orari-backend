@@ -78,6 +78,18 @@ export class CompanyAccessService {
     return this.loadFeatures(companyId);
   }
 
+  // Tipo da pessoa de um registro da empresa (inclui a excluída, para o restore).
+  async findPersonType(
+    companyId: string,
+    personId: string,
+  ): Promise<string | undefined> {
+    const person = await this.prisma.people.findFirst({
+      where: { id: personId, companyId },
+      select: { type: true },
+    });
+    return person?.type;
+  }
+
   // Uma consulta pela chave única: é o que a barreira das rotas faz a cada requisição.
   async can(
     companyId: string,

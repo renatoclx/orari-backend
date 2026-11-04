@@ -22,7 +22,7 @@ describe("actionFromMethod", () => {
 
 describe("FeatureAccessGuard", () => {
   const reflectorMock = { getAllAndOverride: vi.fn() };
-  const accessMock = { can: vi.fn() };
+  const accessMock = { can: vi.fn(), findPersonType: vi.fn() };
   let guard: FeatureAccessGuard;
 
   // Metadados da rota: público, funcionalidade e ação.
@@ -30,20 +30,32 @@ describe("FeatureAccessGuard", () => {
     isPublic?: boolean;
     feature?: string;
     action?: string;
+    byPersonType?: boolean;
   }) {
     reflectorMock.getAllAndOverride.mockImplementation((key: string) => {
       if (key === "isPublic") return meta.isPublic;
       if (key === "feature") return meta.feature;
       if (key === "featureAction") return meta.action;
+      if (key === "featureByPersonType") return meta.byPersonType;
       return undefined;
     });
   }
 
-  const contextFor = (user: unknown, method = "GET"): ExecutionContext =>
+  const contextFor = (
+    user: unknown,
+    method = "GET",
+    extra: {
+      params?: Record<string, string>;
+      body?: Record<string, unknown>;
+      query?: Record<string, unknown>;
+    } = {},
+  ): ExecutionContext =>
     ({
       getHandler: () => undefined,
       getClass: () => undefined,
-      switchToHttp: () => ({ getRequest: () => ({ user, method }) }),
+      switchToHttp: () => ({
+        getRequest: () => ({ user, method, ...extra }),
+      }),
     }) as unknown as ExecutionContext;
 
   beforeEach(() => {
@@ -113,6 +125,104 @@ describe("FeatureAccessGuard", () => {
     expect((error as ForbiddenException).getResponse()).toMatchObject({
       statusCode: 403,
       code: "FEATURE_NOT_IN_PLAN",
+    });
+  });
+
+  describe("rotas de pessoas (funcionalidade pelo tipo)", () => {
+    const allowOnly = (...features: string[]) =>
+      accessMock.can.mockImplementation((_company: string, feature: string) =>
+        Promise.resolve(features.includes(feature)),
+      );
+
+    beforeEach(() => route({ byPersonType: true }));
+
+    it("criação: vale o type do corpo", async () => {
+      allowOnly("clients");
+      await expect(
+        guard.canActivate(
+          contextFor(adminUser, "POST", { body: { type: "CLIENT" } }),
+        ),
+      ).resolves.toBe(true);
+      expect(accessMock.can).toHaveBeenCalledWith(
+        COMPANY_ID,
+        "clients",
+        "create",
+      );
+    });
+
+    it("sem acesso ao tipo pedido responde 403", async () => {
+      allowOnly("clients");
+      await expect(
+        guard.canActivate(
+          contextFor(adminUser, "GET", { query: { type: "PROFESSIONAL" } }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(accessMock.can).toHaveBeenCalledWith(
+        COMPANY_ID,
+        "professionals",
+        "view",
+      );
+    });
+
+    it("rota com :id usa o tipo gravado", async () => {
+      accessMock.findPersonType.mockResolvedValue("EMPLOYEE");
+      allowOnly("employees");
+
+      await expect(
+        guard.canActivate(
+          contextFor(adminUser, "PATCH", { params: { id: "p-1" } }),
+        ),
+      ).resolves.toBe(true);
+      expect(accessMock.findPersonType).toHaveBeenCalledWith(COMPANY_ID, "p-1");
+      expect(accessMock.can).toHaveBeenCalledWith(
+        COMPANY_ID,
+        "employees",
+        "edit",
+      );
+    });
+
+    it("trocar o tipo exige a funcionalidade do tipo gravado e a do novo", async () => {
+      accessMock.findPersonType.mockResolvedValue("CLIENT");
+      const request = contextFor(adminUser, "PATCH", {
+        params: { id: "p-1" },
+        body: { type: "PROFESSIONAL" },
+      });
+
+      allowOnly("clients");
+      await expect(guard.canActivate(request)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+
+      allowOnly("clients", "professionals");
+      await expect(guard.canActivate(request)).resolves.toBe(true);
+    });
+
+    it("listagem sem tipo exige as três funcionalidades", async () => {
+      allowOnly("clients", "professionals");
+      await expect(
+        guard.canActivate(contextFor(adminUser, "GET")),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      allowOnly("clients", "professionals", "employees");
+      await expect(
+        guard.canActivate(contextFor(adminUser, "GET")),
+      ).resolves.toBe(true);
+    });
+
+    it("tipo desconhecido (ex.: constructor) cai na exigência das três", async () => {
+      allowOnly("clients");
+      await expect(
+        guard.canActivate(
+          contextFor(adminUser, "GET", { query: { type: "constructor" } }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("SUPER_ADMIN passa sem consultar", async () => {
+      await expect(guard.canActivate(contextFor(superAdminUser))).resolves.toBe(
+        true,
+      );
+      expect(accessMock.can).not.toHaveBeenCalled();
     });
   });
 });

@@ -16,6 +16,10 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import {
+  FeatureAction,
+  FeatureByPersonType,
+} from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePeopleDto } from "./dto/create-people.dto";
 import { FindPeopleQueryDto } from "./dto/find-people-query.dto";
@@ -28,6 +32,7 @@ const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
 @ApiTags("Pessoas")
 @ApiBearerAuth()
+@FeatureByPersonType()
 @Controller("people")
 export class PeopleController {
   constructor(private readonly peopleService: PeopleService) {}
@@ -66,6 +71,8 @@ export class PeopleController {
   }
 
   // Reativa uma pessoa excluída (limpa o deletedAt).
+  // Reativar é o oposto de inativar: mesma coluna da matriz.
+  @FeatureAction("remove")
   @Patch(":id/restore")
   restore(
     @Param("id", ParseUUIDPipe) id: string,
@@ -84,6 +91,7 @@ export class PeopleController {
   }
 
   // Foto da pessoa (JPEG ou PNG, até 2 MB), enviada como multipart no campo "photo".
+  @FeatureAction("edit")
   @Post(":id/photo")
   @UseInterceptors(
     FileInterceptor("photo", { limits: { fileSize: MAX_PHOTO_BYTES } }),
@@ -112,6 +120,7 @@ export class PeopleController {
     );
   }
 
+  @FeatureAction("edit")
   @Delete(":id/photo")
   @HttpCode(204)
   removePhoto(

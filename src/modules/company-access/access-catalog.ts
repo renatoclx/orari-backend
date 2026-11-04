@@ -28,6 +28,13 @@ export const FEATURE_KEYS = [
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
+// Uma só rota (/people) atende os três cadastros: o tipo da pessoa diz a funcionalidade.
+export const PERSON_TYPE_FEATURE: Record<string, FeatureKey> = {
+  CLIENT: "clients",
+  EMPLOYEE: "employees",
+  PROFESSIONAL: "professionals",
+};
+
 interface FeatureDefinition {
   key: FeatureKey;
   // Ações que fazem sentido para a funcionalidade (as demais são sempre falsas).
