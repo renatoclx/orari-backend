@@ -156,6 +156,8 @@ model Company {
   classSessions         ClassSession[]
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
+  portalVerifications   PortalVerification[]
+  portalSessions        PortalSession[]
 
   @@map("companies")
 }
@@ -178,9 +180,10 @@ model People {
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
   photoUrl       String?
 
-  company   Company   @relation(fields: [companyId], references: [id])
-  contacts  Contact[]
-  addresses Address[]
+  company        Company         @relation(fields: [companyId], references: [id])
+  contacts       Contact[]
+  addresses      Address[]
+  portalSessions PortalSession[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
@@ -914,4 +917,49 @@ model CompanyLimit {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("company_limits")
+}
+
+/**
+ * Código enviado por WhatsApp para o cliente entrar no portal da clínica (ver
+ * docs/business-rules.md, "Portal do cliente"). Só o hash do código é gravado.
+ */
+model PortalVerification {
+  id         String    @id @default(uuid())
+  companyId  String
+  // Telefone com DDD, só dígitos (10 ou 11), como nos contatos.
+  phone      String
+  codeHash   String
+  // Tentativas erradas; no limite, o código deixa de valer.
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  // Código conferido: abre a escolha da pessoa e a criação da sessão.
+  verifiedAt DateTime?
+  // Já virou sessão: não pode ser usado de novo.
+  usedAt     DateTime?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, phone, createdAt])
+  @@map("portal_verifications")
+}
+
+// Sessão do cliente no portal (um aparelho). Token opaco: só o hash é gravado.
+model PortalSession {
+  id         String    @id @default(uuid())
+  companyId  String
+  peopleId   String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@index([peopleId])
+  @@map("portal_sessions")
 }

@@ -64,6 +64,22 @@
 - `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe tudo, pois a plataforma não é limitada por plano.
 - `PUT /companies/:companyId/access` (só SUPER_ADMIN) **substitui** a matriz e os limites de uma vez, na mesma transação do registro de auditoria `COMPANY_ACCESS_CHANGED`. A funcionalidade que faltar no corpo fica sem acesso. O registro de auditoria pertence à empresa do SUPER_ADMIN, não à empresa alterada: o cliente não vê a gestão do plano dele.
 
+## Portal do cliente
+
+> **Etapa 1a (entrada):** o cliente entra no portal da clínica pelo telefone, com código. Os horários livres, o agendamento e as regras do portal por clínica vêm nas próximas etapas. O código só é **enviado de verdade** quando houver um canal de WhatsApp (etapa 3); até lá, em desenvolvimento, ele aparece no log da API, e **em produção o pedido é recusado (503)**.
+
+- O portal de cada clínica é `/portal/:slug`, em que `slug` é o **subdomínio** da empresa. Clínica inexistente ou inativa: 404.
+- **Sem senha:** o cliente informa o telefone e recebe um **código de 6 dígitos no WhatsApp**. Não há conta de usuário: o cliente do portal é a própria pessoa CLIENT da clínica (nome e telefone bastam).
+- **Telefone:** com DDD, 10 ou 11 dígitos, como nos contatos; a API aceita máscara e o código do país (55). A busca é pelo número exato em qualquer contato ativo do cliente.
+- **Pedido do código** (`POST /portal/:slug/auth/code`): a resposta é a mesma com ou sem cadastro do telefone (o portal não revela quem é cliente da clínica). Limites: por IP (como o login) e por telefone, **3 pedidos em 10 minutos e 10 em 24 horas** (429). Só o **hash** do código é gravado (HMAC com o segredo da API, amarrado à empresa e ao telefone).
+- **Conferência** (`POST /portal/:slug/auth/verify`): vale o pedido mais recente do telefone, por **10 minutos**, com até **5 tentativas** (código errado conta uma). Código certo devolve um `verificationId` e as pessoas da clínica com esse telefone: **clientes ativos** com o número em algum contato ativo (`id` e `name`), em ordem de nome.
+- **Sessão** (`POST /portal/:slug/auth/session`), até 10 minutos depois da conferência, com **exatamente um** de:
+  - `personId`: uma das pessoas da lista (outra pessoa: 400; ninguém entra como outro cliente);
+  - `name`: o cliente não é nenhuma delas e é **cadastrado** com nome e telefone (o telefone vira o contato principal), como no cadastro rápido.
+  - Cada conferência vira **uma** sessão: duas chamadas ao mesmo tempo não abrem duas.
+  - Devolve o **token do portal** (uma única vez), a validade e a pessoa. A sessão vale **90 dias** e é de um aparelho; as outras não são afetadas.
+- **Cliente entrado:** `GET /portal/:slug/me` (pessoa e clínica: nome, logo e fuso) e `POST /portal/:slug/auth/logout` (encerra a sessão deste aparelho, 204). A sessão deixa de valer se for revogada, vencer, se o cliente for inativado ou se a clínica for inativada (401).
+
 ## Usuários e acesso
 
 - Todo usuário pertence a uma empresa, que não pode ser alterada.

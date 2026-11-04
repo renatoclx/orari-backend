@@ -117,6 +117,43 @@
 
 ---
 
+## PortalVerification
+
+- Código de entrada do portal do cliente, pedido por telefone (ver `business-rules.md`, "Portal do cliente").
+
+| Nome       | Descrição                                                    |
+| ---------- | ------------------------------------------------------------ |
+| id         | Identificador único                                          |
+| companyId  | Clínica do portal                                            |
+| phone      | Telefone com DDD, só dígitos                                 |
+| codeHash   | HMAC do código (o código em si não é gravado)                |
+| attempts   | Tentativas erradas                                           |
+| expiresAt  | Fim da validade do código (10 minutos)                       |
+| verifiedAt | Quando o código foi conferido                                |
+| usedAt     | Quando virou sessão (cada conferência vira uma só)           |
+| ip         | IP do pedido                                                 |
+
+---
+
+## PortalSession
+
+- Sessão do cliente no portal, por aparelho.
+
+| Nome       | Descrição                                      |
+| ---------- | ---------------------------------------------- |
+| id         | Identificador único                            |
+| companyId  | Clínica do portal                              |
+| peopleId   | Cliente (pessoa CLIENT) da sessão              |
+| tokenHash  | SHA-256 do token (o token não é gravado)       |
+| expiresAt  | Fim da validade (90 dias)                      |
+| revokedAt  | Quando o cliente saiu (ou a sessão foi revogada) |
+| lastUsedAt | Último uso (reservado)                         |
+| userAgent  | Aparelho que abriu a sessão                    |
+
+- Pertence a uma empresa e a uma pessoa.
+
+---
+
 ## User
 
 - Representa um usuário que terá acesso ao sistema.
