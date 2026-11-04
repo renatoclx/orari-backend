@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from "@nestjs/common";
 import {
@@ -23,6 +24,7 @@ import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreateServiceDto } from "./dto/create-service.dto";
 import { FindServicesQueryDto } from "./dto/find-services-query.dto";
+import { SetServiceProfessionalsDto } from "./dto/set-service-professionals.dto";
 import { UpdateServiceDto } from "./dto/update-service.dto";
 import { ServiceService } from "./service.service";
 
@@ -65,6 +67,37 @@ export class ServiceController {
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.serviceService.update(id, dto, currentUser.companyId);
+  }
+
+  @Get(":id/professionals")
+  @ApiOperation({
+    summary: "Profissionais que atendem o serviço",
+    description:
+      "O portal do cliente só mostra o serviço com ao menos um profissional ativo.",
+  })
+  findProfessionals(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.serviceService.findProfessionals(id, currentUser.companyId);
+  }
+
+  @Put(":id/professionals")
+  @ApiOperation({
+    summary: "Substitui os profissionais que atendem o serviço",
+    description:
+      "Só profissionais ativos da empresa (400). Lista vazia tira o serviço do portal.",
+  })
+  setProfessionals(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: SetServiceProfessionalsDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.serviceService.setProfessionals(
+      id,
+      dto.professionalIds,
+      currentUser.companyId,
+    );
   }
 
   @Delete(":id")

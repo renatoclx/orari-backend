@@ -158,6 +158,7 @@ model Company {
   limit                 CompanyLimit?
   portalVerifications   PortalVerification[]
   portalSessions        PortalSession[]
+  portalSettings        PortalSettings?
 
   @@map("companies")
 }
@@ -180,10 +181,12 @@ model People {
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
   photoUrl       String?
 
-  company        Company         @relation(fields: [companyId], references: [id])
+  company        Company               @relation(fields: [companyId], references: [id])
   contacts       Contact[]
   addresses      Address[]
   portalSessions PortalSession[]
+  // Serviços que o profissional atende (ver ServiceProfessional).
+  services       ServiceProfessional[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
@@ -322,6 +325,8 @@ model Service {
   planItems             PlanItem[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
+  // Profissionais que atendem o serviço (o portal só mostra serviço com ao menos um).
+  professionals         ServiceProfessional[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -344,6 +349,8 @@ model Appointment {
   // Encaixe: agendamento avulso marcado fora do horário de funcionamento. Retrato
   // do momento em que foi marcado; não é recalculado se o horário mudar depois.
   overBooking            Boolean                  @default(false)
+  // Onde o agendamento foi feito: na clínica ou pelo cliente, no portal.
+  source                 AppointmentSource        @default(CLINIC)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
   // Preenchido quando o agendamento é de um aluno numa sessão de turma.
@@ -962,4 +969,41 @@ model PortalSession {
 
   @@index([peopleId])
   @@map("portal_sessions")
+}
+
+enum AppointmentSource {
+  CLINIC
+  PORTAL
+}
+
+// Regras do portal do cliente definidas pela clínica (ver docs/business-rules.md, "Portal do cliente").
+model PortalSettings {
+  companyId         String    @id
+  // Desligado até a clínica ligar.
+  enabled           Boolean   @default(false)
+  // Antecedência mínima para o cliente agendar.
+  minAdvanceMinutes Int       @default(60)
+  // Até quantos dias à frente o cliente pode agendar.
+  maxDaysAhead      Int       @default(30)
+  // Até quantas horas antes o cliente pode cancelar.
+  cancelUntilHours  Int       @default(24)
+  updatedAt         DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("portal_settings")
+}
+
+// Quais profissionais atendem cada serviço. No portal, o serviço só aparece com ao menos um.
+model ServiceProfessional {
+  serviceId String
+  peopleId  String
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@id([serviceId, peopleId])
+  @@index([peopleId])
+  @@map("service_professionals")
 }

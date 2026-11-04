@@ -1,4 +1,8 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
@@ -25,6 +29,12 @@ describe("ServiceService", () => {
       update: vi.fn(),
     },
     classGroup: { count: vi.fn() },
+    people: { count: vi.fn() },
+    serviceProfessional: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
+    },
   };
 
   const dto: CreateServiceDto = { name: "Depilação", duration: 30 };
@@ -280,6 +290,65 @@ describe("ServiceService", () => {
         where: { id: "service-1" },
         data: { deletedAt: anyDate, updatedAt: anyDate },
       });
+    });
+  });
+
+  describe("profissionais do serviço", () => {
+    const service = { id: "s-1", companyId: COMPANY_ID, deletedAt: null };
+
+    it("substitui a lista quando todos são profissionais ativos da empresa", async () => {
+      prismaMock.service.findFirst.mockResolvedValue(service);
+      prismaMock.people.count.mockResolvedValue(2);
+      prismaMock.serviceProfessional.findMany.mockResolvedValue([]);
+
+      await serviceService.setProfessionals("s-1", ["p-1", "p-2"], COMPANY_ID);
+
+      expect(prismaMock.people.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: ["p-1", "p-2"] },
+          companyId: COMPANY_ID,
+          type: "PROFESSIONAL",
+          deletedAt: null,
+        },
+      });
+      expect(prismaMock.serviceProfessional.deleteMany).toHaveBeenCalledWith({
+        where: { serviceId: "s-1" },
+      });
+      expect(prismaMock.serviceProfessional.createMany).toHaveBeenCalledWith({
+        data: [
+          { serviceId: "s-1", peopleId: "p-1" },
+          { serviceId: "s-1", peopleId: "p-2" },
+        ],
+      });
+    });
+
+    it("alguém que não é profissional ativo da empresa: 400, sem gravar", async () => {
+      prismaMock.service.findFirst.mockResolvedValue(service);
+      prismaMock.people.count.mockResolvedValue(1);
+
+      await expect(
+        serviceService.setProfessionals("s-1", ["p-1", "c-9"], COMPANY_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.serviceProfessional.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("lista vazia tira todos (o serviço sai do portal)", async () => {
+      prismaMock.service.findFirst.mockResolvedValue(service);
+      prismaMock.people.count.mockResolvedValue(0);
+      prismaMock.serviceProfessional.findMany.mockResolvedValue([]);
+
+      await serviceService.setProfessionals("s-1", [], COMPANY_ID);
+
+      expect(prismaMock.serviceProfessional.createMany).toHaveBeenCalledWith({
+        data: [],
+      });
+    });
+
+    it("serviço de outra empresa: 404", async () => {
+      prismaMock.service.findFirst.mockResolvedValue(null);
+      await expect(
+        serviceService.findProfessionals("s-x", COMPANY_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

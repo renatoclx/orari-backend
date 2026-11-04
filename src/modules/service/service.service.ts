@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -141,6 +142,54 @@ export class ServiceService {
       where: { id },
       data: { deletedAt: now, updatedAt: now },
     });
+  }
+
+  /** Profissionais que atendem o serviço (o portal mostra o serviço com ao menos um). */
+  async findProfessionals(id: string, companyId: string) {
+    await this.findOne(id, companyId);
+    const links = await this.prisma.serviceProfessional.findMany({
+      where: { serviceId: id },
+      select: {
+        people: {
+          select: { id: true, name: true, photoUrl: true, deletedAt: true },
+        },
+      },
+      orderBy: { people: { name: "asc" } },
+    });
+    return links.map((link) => link.people);
+  }
+
+  /**
+   * Substitui a lista de profissionais do serviço. Cada um precisa ser um
+   * profissional ativo da mesma empresa (senão, 400 sem gravar nada).
+   */
+  async setProfessionals(
+    id: string,
+    professionalIds: string[],
+    companyId: string,
+  ) {
+    await this.findOne(id, companyId);
+    const valid = await this.prisma.people.count({
+      where: {
+        id: { in: professionalIds },
+        companyId,
+        type: "PROFESSIONAL",
+        deletedAt: null,
+      },
+    });
+    if (valid !== professionalIds.length) {
+      throw new BadRequestException(
+        "Escolha apenas profissionais ativos da empresa",
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.serviceProfessional.deleteMany({ where: { serviceId: id } }),
+      this.prisma.serviceProfessional.createMany({
+        data: professionalIds.map((peopleId) => ({ serviceId: id, peopleId })),
+      }),
+    ]);
+    return this.findProfessionals(id, companyId);
   }
 
   // A leitura é por contagem de relações: não depende dos services de outros módulos.

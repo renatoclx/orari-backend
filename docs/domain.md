@@ -154,6 +154,35 @@
 
 ---
 
+## PortalSettings
+
+- Regras do portal do cliente definidas pela clínica (um registro por empresa, criado na primeira gravação).
+
+| Nome              | Descrição                                        |
+| ----------------- | ------------------------------------------------ |
+| companyId         | Empresa (também é o identificador)               |
+| enabled           | Portal ligado (padrão: desligado)                |
+| minAdvanceMinutes | Antecedência mínima para agendar, em minutos     |
+| maxDaysAhead      | Até quantos dias à frente o cliente agenda       |
+| cancelUntilHours  | Até quantas horas antes o cliente cancela        |
+| updatedAt         | Última alteração                                 |
+
+---
+
+## ServiceProfessional
+
+- Profissional que atende um serviço. No portal, o serviço só aparece com ao menos um profissional ativo.
+
+| Nome      | Descrição                      |
+| --------- | ------------------------------ |
+| serviceId | Serviço                        |
+| peopleId  | Profissional (pessoa PROFESSIONAL) |
+| createdAt | Quando foi ligado              |
+
+- Chave composta (serviço + profissional).
+
+---
+
 ## User
 
 - Representa um usuário que terá acesso ao sistema.
@@ -377,6 +406,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | status                 | Situação do agendamento                           |
 | note                   | Observação (opcional)                             |
 | overBooking            | Encaixe: marcado fora do horário de funcionamento |
+| source                 | Origem: `CLINIC` (feito na clínica) ou `PORTAL` (feito pelo cliente) |
 | recurringAppointmentId | Agendamento recorrente que o originou (opcional)  |
 | classSessionId         | Sessão da turma a que pertence (opcional)         |
 | cancelReason           | Motivo do cancelamento pela turma (opcional)      |

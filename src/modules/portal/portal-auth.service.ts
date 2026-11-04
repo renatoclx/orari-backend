@@ -3,13 +3,13 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
-  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { MessageSenderService } from "./message-sender.service";
+import { PortalCompanyService } from "./portal-company.service";
 import {
   CODE_REQUEST_LIMITS,
   CODE_TTL_MS,
@@ -32,11 +32,6 @@ export interface PortalClient {
   peopleId: string;
 }
 
-export interface PortalCompany {
-  id: string;
-  name: string;
-}
-
 const INVALID_CODE = "Código inválido ou vencido. Peça um novo código.";
 
 /**
@@ -52,27 +47,8 @@ export class PortalAuthService {
     private readonly config: ConfigService,
     private readonly peopleService: PeopleService,
     private readonly messageSender: MessageSenderService,
+    private readonly portalCompanyService: PortalCompanyService,
   ) {}
-
-  /** Clínica pelo endereço do portal (o subdomínio); inativa ou inexistente: 404. */
-  async findCompany(slug: string): Promise<PortalCompany> {
-    const company = await this.prisma.company.findUnique({
-      where: { subdomain: slug },
-      select: {
-        id: true,
-        fantasyName: true,
-        corporateReason: true,
-        isActive: true,
-      },
-    });
-    if (!company?.isActive) {
-      throw new NotFoundException("Clínica não encontrada");
-    }
-    return {
-      id: company.id,
-      name: company.fantasyName ?? company.corporateReason,
-    };
-  }
 
   /**
    * Gera e envia o código. A resposta é a mesma com ou sem cadastro do telefone:
@@ -83,7 +59,7 @@ export class PortalAuthService {
     rawPhone: string,
     ip?: string,
   ): Promise<{ expiresAt: Date }> {
-    const company = await this.findCompany(slug);
+    const company = await this.portalCompanyService.findBySlug(slug);
     const phone = this.phoneOrFail(rawPhone);
     await this.ensureRequestLimit(company.id, phone);
 
@@ -120,7 +96,7 @@ export class PortalAuthService {
     verificationId: string;
     people: { id: string; name: string }[];
   }> {
-    const company = await this.findCompany(slug);
+    const company = await this.portalCompanyService.findBySlug(slug);
     const phone = this.phoneOrFail(rawPhone);
 
     const verification = await this.prisma.portalVerification.findFirst({
@@ -166,7 +142,7 @@ export class PortalAuthService {
     expiresAt: Date;
     person: { id: string; name: string };
   }> {
-    const company = await this.findCompany(slug);
+    const company = await this.portalCompanyService.findBySlug(slug);
     const verification = await this.prisma.portalVerification.findFirst({
       where: { id: dto.verificationId, companyId: company.id },
     });
@@ -210,19 +186,21 @@ export class PortalAuthService {
    * Qualquer falha é 401, sem dizer o motivo.
    */
   async authenticate(slug: string, token: string): Promise<PortalClient> {
-    const session = await this.prisma.portalSession.findUnique({
-      where: { tokenHash: hashSessionToken(token) },
-      include: {
-        company: { select: { subdomain: true, isActive: true } },
-        people: { select: { deletedAt: true } },
-      },
-    });
+    // Clínica inativa, portal desligado ou fora do plano: a sessão também deixa de valer.
+    const company = await this.portalCompanyService
+      .findBySlug(slug)
+      .catch(() => null);
+    const session = company
+      ? await this.prisma.portalSession.findUnique({
+          where: { tokenHash: hashSessionToken(token) },
+          include: { people: { select: { deletedAt: true } } },
+        })
+      : null;
     if (
       !session ||
       session.revokedAt ||
       session.expiresAt <= new Date() ||
-      session.company.subdomain !== slug ||
-      !session.company.isActive ||
+      session.companyId !== company?.id ||
       session.people.deletedAt
     ) {
       throw new UnauthorizedException();

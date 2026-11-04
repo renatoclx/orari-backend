@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { MessageSenderService } from "./message-sender.service";
+import { PortalCompanyService } from "./portal-company.service";
 import { hashCode, hashSessionToken } from "./portal-code";
 import { PortalAuthService } from "./portal-auth.service";
 
@@ -40,10 +41,14 @@ describe("PortalAuthService", () => {
   };
   const peopleMock = { create: vi.fn() };
   const senderMock = { sendVerificationCode: vi.fn() };
+  const portalCompanyMock = { findBySlug: vi.fn() };
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    prismaMock.company.findUnique.mockResolvedValue(COMPANY);
+    portalCompanyMock.findBySlug.mockResolvedValue({
+      id: COMPANY.id,
+      name: "Studio Aurora",
+    });
     prismaMock.portalVerification.count.mockResolvedValue(0);
     prismaMock.portalVerification.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.people.findMany.mockResolvedValue([]);
@@ -55,25 +60,10 @@ describe("PortalAuthService", () => {
         { provide: ConfigService, useValue: { get: () => SECRET } },
         { provide: PeopleService, useValue: peopleMock },
         { provide: MessageSenderService, useValue: senderMock },
+        { provide: PortalCompanyService, useValue: portalCompanyMock },
       ],
     }).compile();
     service = module.get(PortalAuthService);
-  });
-
-  describe("findCompany", () => {
-    it("clínica inativa ou inexistente: 404", async () => {
-      prismaMock.company.findUnique.mockResolvedValue({
-        ...COMPANY,
-        isActive: false,
-      });
-      await expect(service.findCompany("aurora")).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-      prismaMock.company.findUnique.mockResolvedValue(null);
-      await expect(service.findCompany("x")).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
-    });
   });
 
   describe("requestCode", () => {
@@ -292,7 +282,6 @@ describe("PortalAuthService", () => {
       peopleId: "p-1",
       revokedAt: null,
       expiresAt: future(),
-      company: { subdomain: "aurora", isActive: true },
       people: { deletedAt: null },
       ...overrides,
     });
@@ -315,11 +304,7 @@ describe("PortalAuthService", () => {
       ["inexistente", null],
       ["revogada", { revokedAt: new Date() }],
       ["vencida", { expiresAt: past() }],
-      ["de outra clínica", { company: { subdomain: "outra", isActive: true } }],
-      [
-        "de clínica inativa",
-        { company: { subdomain: "aurora", isActive: false } },
-      ],
+      ["de outra clínica", { companyId: "company-2" }],
       ["de cliente inativo", { people: { deletedAt: new Date() } }],
     ])("sessão %s: 401", async (_, overrides) => {
       prismaMock.portalSession.findUnique.mockResolvedValue(
@@ -329,6 +314,14 @@ describe("PortalAuthService", () => {
         service.authenticate("aurora", "token"),
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
+  });
+
+  it("portal desligado, fora do plano ou clínica inativa: 401 sem consultar a sessão", async () => {
+    portalCompanyMock.findBySlug.mockRejectedValueOnce(new NotFoundException());
+    await expect(
+      service.authenticate("aurora", "token"),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prismaMock.portalSession.findUnique).not.toHaveBeenCalled();
   });
 
   it("logout revoga só a sessão deste aparelho", async () => {

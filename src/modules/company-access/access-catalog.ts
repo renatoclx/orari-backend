@@ -25,6 +25,7 @@ export const FEATURE_KEYS = [
   "anamnesis-audit",
   "class-groups",
   "settings",
+  "client-portal",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -68,6 +69,8 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "anamnesis-audit", actions: ["view"] },
   { key: "class-groups", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "settings", actions: ["view", "edit"] },
+  // Portal do cliente: Visualiza = portal disponível à clínica; Edita = mudar as regras dele.
+  { key: "client-portal", actions: ["view", "edit"] },
 ];
 
 // Funcionalidades que o modelo padrão de uma empresa nova deixa de fora.
