@@ -135,6 +135,22 @@
 
 ---
 
+## PortalAccessLink
+
+- Link de acesso ao portal gerado pela clínica para um cliente (uso único, 24 horas).
+
+| Nome      | Descrição                                           |
+| --------- | --------------------------------------------------- |
+| id        | Identificador único                                 |
+| companyId | Clínica                                             |
+| peopleId  | Cliente do link                                     |
+| tokenHash | SHA-256 do token (o token não é gravado)            |
+| expiresAt | Fim da validade                                     |
+| usedAt    | Quando virou sessão (ou foi substituído por um novo) |
+| createdAt | Quando foi gerado (quem gerou fica na auditoria)    |
+
+---
+
 ## PortalSession
 
 - Sessão do cliente no portal, por aparelho.

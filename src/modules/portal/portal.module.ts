@@ -3,6 +3,11 @@ import { AppointmentModule } from "../appointment/appointment.module";
 import { CompanyAccessModule } from "../company-access/company-access.module";
 import { PeopleModule } from "../people/people.module";
 import { MessageSenderService } from "./message-sender.service";
+import {
+  PortalAccessExchangeController,
+  PortalAccessLinkController,
+} from "./portal-access.controller";
+import { PortalAccessService } from "./portal-access.service";
 import { PortalAppointmentController } from "./portal-appointment.controller";
 import { PortalAppointmentService } from "./portal-appointment.service";
 import { PortalAuthController } from "./portal-auth.controller";
@@ -20,6 +25,8 @@ import { PortalSettingsService } from "./portal-settings.service";
   controllers: [
     PortalAuthController,
     PortalAppointmentController,
+    PortalAccessLinkController,
+    PortalAccessExchangeController,
     PortalCatalogController,
     PortalSettingsController,
   ],
@@ -31,6 +38,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalCatalogService,
     PortalAvailabilityService,
     PortalAppointmentService,
+    PortalAccessService,
     PortalSettingsService,
   ],
 })

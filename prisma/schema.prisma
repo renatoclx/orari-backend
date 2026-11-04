@@ -159,6 +159,7 @@ model Company {
   portalVerifications   PortalVerification[]
   portalSessions        PortalSession[]
   portalSettings        PortalSettings?
+  portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
 }
@@ -181,12 +182,13 @@ model People {
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
   photoUrl       String?
 
-  company        Company               @relation(fields: [companyId], references: [id])
-  contacts       Contact[]
-  addresses      Address[]
-  portalSessions PortalSession[]
+  company           Company               @relation(fields: [companyId], references: [id])
+  contacts          Contact[]
+  addresses         Address[]
+  portalSessions    PortalSession[]
+  portalAccessLinks PortalAccessLink[]
   // Serviços que o profissional atende (ver ServiceProfessional).
-  services       ServiceProfessional[]
+  services          ServiceProfessional[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
@@ -637,6 +639,7 @@ enum AuditAction {
   ANAMNESIS_ENTRY_CREATED
   ANAMNESIS_PDF_GENERATED
   COMPANY_ACCESS_CHANGED
+  PORTAL_ACCESS_LINK_CREATED
 }
 
 /**
@@ -1006,4 +1009,25 @@ model ServiceProfessional {
   @@id([serviceId, peopleId])
   @@index([peopleId])
   @@map("service_professionals")
+}
+
+/**
+ * Link de acesso ao portal gerado pela clínica para um cliente (enviado por ela,
+ * à mão, ou mostrado em QR code). Uso único e curto: só o hash do token é gravado.
+ */
+model PortalAccessLink {
+  id        String    @id @default(uuid())
+  companyId String
+  peopleId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Já virou sessão (ou foi substituído por um link mais novo).
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@index([peopleId])
+  @@map("portal_access_links")
 }

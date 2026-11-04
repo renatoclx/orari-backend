@@ -127,7 +127,7 @@ Exemplo:
   acessíveis de outra origem (o front os exibe).
 ## Portal do cliente (autenticação separada)
 
-- O cliente do portal **não é usuário**: entra pelo telefone, com código no WhatsApp (regras em `business-rules.md`, "Portal do cliente").
+- O cliente do portal **não é usuário**: entra pelo **link de acesso gerado pela clínica** (uso único, 24 h) ou, quando houver canal de envio, pelo telefone com código no WhatsApp (regras em `business-rules.md`, "Portal do cliente"). As duas formas abrem a mesma sessão.
 - O **token do portal** é uma string aleatória opaca (não é JWT), como o refresh token: só o hash (SHA-256) fica na tabela `PortalSession`, com validade de 90 dias, aparelho (`userAgent`) e revogação própria.
 - As rotas do portal (`/portal/:slug/...`) são `@Public()` para o `JwtAuthGuard`; as do cliente entrado usam o `PortalAuthGuard`, que confere o token no banco e exige a mesma clínica do endereço.
 - **Isolamento:** o token do portal não é um JWT, então o `JwtAuthGuard` o recusa (401) em todas as rotas da clínica; e o JWT da clínica não está na tabela de sessões, então o `PortalAuthGuard` o recusa (401) no portal. O token de uma clínica não vale no portal de outra.

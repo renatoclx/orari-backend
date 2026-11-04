@@ -167,11 +167,27 @@ export class PortalAuthService {
     });
     if (count === 0) throw new BadRequestException(INVALID_CODE);
 
+    return this.openSession(company.id, person, userAgent);
+  }
+
+  /**
+   * Sessão de 90 dias de um aparelho para o cliente. Usada pela entrada por
+   * código e pelo link de acesso gerado pela clínica.
+   */
+  async openSession(
+    companyId: string,
+    person: { id: string; name: string },
+    userAgent?: string,
+  ): Promise<{
+    token: string;
+    expiresAt: Date;
+    person: { id: string; name: string };
+  }> {
     const { token, tokenHash } = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
     await this.prisma.portalSession.create({
       data: {
-        companyId: company.id,
+        companyId,
         peopleId: person.id,
         tokenHash,
         expiresAt,
