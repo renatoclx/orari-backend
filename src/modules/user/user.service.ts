@@ -21,6 +21,7 @@ import { PaginatedResult } from "../../common/interfaces/paginated-result.interf
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { PlanLimitService } from "../company-access/plan-limit.service";
 import { CompanyService } from "../company/company.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { FindUsersQueryDto } from "./dto/find-users-query.dto";
@@ -84,6 +85,7 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly companyService: CompanyService,
     private readonly auditService: AuditService,
+    private readonly planLimitService: PlanLimitService,
   ) {}
 
   // Uso exclusivo da autenticação: é a única consulta que retorna o hash da senha.
@@ -121,6 +123,14 @@ export class UserService {
     try {
       // Usuário e auditoria do vínculo na mesma transação: sem rastro, sem vínculo.
       return await this.prisma.$transaction(async (tx) => {
+        // Nascer ADMIN ocupa uma vaga do limite de administradores.
+        if (dto.type === UserType.ADMIN) {
+          await this.planLimitService.assertWithinLimit(
+            "admins",
+            companyId,
+            tx,
+          );
+        }
         const created = await tx.user.create({
           data: {
             name: dto.name,
@@ -230,6 +240,14 @@ export class UserService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Virar ADMIN (vindo de outro tipo) ocupa uma vaga do limite.
+        if (typeChanged && dto.type === UserType.ADMIN) {
+          await this.planLimitService.assertWithinLimit(
+            "admins",
+            user.companyId,
+            tx,
+          );
+        }
         const updated = await tx.user.update({
           where: { id },
           data: { ...dto, updatedAt: new Date() },
@@ -296,7 +314,7 @@ export class UserService {
         id,
         ...this.visibleTo(currentUser, undefined, { includeDeleted: true }),
       },
-      select: { deletedAt: true, type: true, peopleId: true },
+      select: { deletedAt: true, type: true, peopleId: true, companyId: true },
     });
 
     if (!user) {
@@ -311,6 +329,14 @@ export class UserService {
       // inativação não volta a valer (a inativação já os revoga; isto cobre os
       // usuários inativados antes dessa regra).
       return await this.prisma.$transaction(async (tx) => {
+        // Reativar um ADMIN volta a ocupar uma vaga do limite.
+        if (user.type === UserType.ADMIN) {
+          await this.planLimitService.assertWithinLimit(
+            "admins",
+            user.companyId,
+            tx,
+          );
+        }
         const restored = await tx.user.update({
           where: { id },
           data: { deletedAt: null, updatedAt: new Date() },

@@ -16,6 +16,7 @@ import {
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { PlanLimitService } from "../company-access/plan-limit.service";
 import { CompanyService } from "../company/company.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { UserService } from "./user.service";
@@ -68,6 +69,7 @@ describe("UserService", () => {
     people: { findFirst: vi.fn() },
   };
   const auditServiceMock = { record: vi.fn() };
+  const planLimitMock = { assertWithinLimit: vi.fn() };
   // Revogação de todas as sessões do usuário-alvo.
   const revokeSessionsOf = (userId: string) => ({
     where: { userId, revokedAt: null },
@@ -104,6 +106,7 @@ describe("UserService", () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: CompanyService, useValue: companyServiceMock },
         { provide: AuditService, useValue: auditServiceMock },
+        { provide: PlanLimitService, useValue: planLimitMock },
       ],
     }).compile();
 
@@ -695,7 +698,12 @@ describe("UserService", () => {
 
       expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
         where: { id: "user-2", ...withDeleted(visibleToAdmin) },
-        select: { deletedAt: true, type: true, peopleId: true },
+        select: {
+          deletedAt: true,
+          type: true,
+          peopleId: true,
+          companyId: true,
+        },
       });
       expect(prismaMock.user.update).toHaveBeenCalledWith({
         where: { id: "user-2" },
@@ -794,5 +802,82 @@ describe("UserService", () => {
         expect(prismaMock.refreshToken.updateMany).not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe("limite de administradores do plano", () => {
+    it("criar ADMIN confere o limite da empresa na mesma transação", async () => {
+      prismaMock.user.create.mockResolvedValue({
+        ...storedUser,
+        type: "ADMIN",
+      });
+
+      await userService.create({ ...dto, type: "ADMIN" }, adminUser);
+
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledWith(
+        "admins",
+        COMPANY_ID,
+        prismaMock,
+      );
+    });
+
+    it("limite atingido: o usuário não é criado", async () => {
+      planLimitMock.assertWithinLimit.mockRejectedValueOnce(
+        new Error("limite"),
+      );
+
+      await expect(
+        userService.create({ ...dto, type: "ADMIN" }, adminUser),
+      ).rejects.toThrow("limite");
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
+
+    it("criar usuário comum não confere o limite", async () => {
+      prismaMock.user.create.mockResolvedValue(storedUser);
+
+      await userService.create(dto, adminUser);
+
+      expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
+    });
+
+    it("promover a ADMIN confere o limite; mudar para outro tipo, não", async () => {
+      prismaMock.user.findFirst.mockResolvedValue(storedUser);
+      prismaMock.user.update.mockResolvedValue({
+        ...storedUser,
+        type: "ADMIN",
+      });
+
+      await userService.update("user-2", { type: "ADMIN" }, adminUser);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledWith(
+        "admins",
+        COMPANY_ID,
+        prismaMock,
+      );
+
+      planLimitMock.assertWithinLimit.mockClear();
+      await userService.update("user-2", { name: "Maria Silva" }, adminUser);
+      expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
+    });
+
+    it("reativar ADMIN confere o limite; reativar usuário comum, não", async () => {
+      prismaMock.user.update.mockResolvedValue(storedUser);
+
+      prismaMock.user.findFirst.mockResolvedValue({
+        deletedAt: new Date(),
+        type: "ADMIN",
+        peopleId: null,
+        companyId: COMPANY_ID,
+      });
+      await userService.restore("user-2", adminUser);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
+
+      prismaMock.user.findFirst.mockResolvedValue({
+        deletedAt: new Date(),
+        type: "USER",
+        peopleId: null,
+        companyId: COMPANY_ID,
+      });
+      await userService.restore("user-2", adminUser);
+      expect(planLimitMock.assertWithinLimit).toHaveBeenCalledTimes(1);
+    });
   });
 });
