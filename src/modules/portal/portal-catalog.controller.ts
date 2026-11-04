@@ -1,6 +1,8 @@
-import { Controller, Get, Param } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../../common/decorators/public.decorator";
+import { FindAvailabilityQueryDto } from "./dto/find-availability-query.dto";
+import { PortalAvailabilityService } from "./portal-availability.service";
 import { PortalCatalogService } from "./portal-catalog.service";
 import { PortalCompanyService } from "./portal-company.service";
 
@@ -12,6 +14,7 @@ export class PortalCatalogController {
   constructor(
     private readonly portalCompanyService: PortalCompanyService,
     private readonly portalCatalogService: PortalCatalogService,
+    private readonly portalAvailabilityService: PortalAvailabilityService,
   ) {}
 
   @Get()
@@ -33,5 +36,24 @@ export class PortalCatalogController {
   async services(@Param("slug") slug: string) {
     const company = await this.portalCompanyService.findBySlug(slug);
     return this.portalCatalogService.services(company.id);
+  }
+
+  @Get("availability")
+  @ApiOperation({
+    summary: "Horários livres de um serviço com um profissional, num dia",
+    description:
+      "Dia no relógio da clínica (AAAA-MM-DD). Respeita o horário de funcionamento, os compromissos e as turmas do profissional, a antecedência mínima e os dias à frente; fora do período, lista vazia. Cada horário traz `time` (HH:MM) e `startAt` (UTC).",
+  })
+  async availability(
+    @Param("slug") slug: string,
+    @Query() query: FindAvailabilityQueryDto,
+  ) {
+    const company = await this.portalCompanyService.findBySlug(slug);
+    return this.portalAvailabilityService.findSlots(
+      company,
+      query.serviceId,
+      query.professionalId,
+      query.date,
+    );
   }
 }
