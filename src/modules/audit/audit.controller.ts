@@ -2,6 +2,7 @@ import { Controller, Get, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Feature } from "../../common/decorators/feature.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { AuditService } from "./audit.service";
@@ -11,6 +12,7 @@ import { FindAuditLogsQueryDto } from "./dto/find-audit-logs-query.dto";
 @ApiTags("Auditoria")
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
+@Feature("anamnesis-audit")
 @Controller("audit-logs")
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}

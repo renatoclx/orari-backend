@@ -5,6 +5,10 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import * as bcrypt from "bcrypt";
 import { PrismaClient } from "../generated/prisma/client";
 import { normalizeForSearch } from "../src/common/text/normalize-for-search";
+import {
+  DEFAULT_LIMITS,
+  defaultFeatureAccessRows,
+} from "../src/modules/company-access/access-catalog";
 import { isValidCpfOrCnpj } from "../src/common/validators/document.validator";
 
 interface StateSeed {
@@ -107,6 +111,8 @@ async function seedSuperAdmin() {
         foundationDate: process.env.SEED_COMPANY_FOUNDATION_DATE
           ? new Date(process.env.SEED_COMPANY_FOUNDATION_DATE)
           : undefined,
+        featureAccess: { create: defaultFeatureAccessRows() },
+        limit: { create: DEFAULT_LIMITS },
       },
     }));
 

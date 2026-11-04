@@ -8,6 +8,7 @@ import ms from "ms";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
+import { CompanyAccessService } from "../company-access/company-access.service";
 import { UserService } from "../user/user.service";
 import { AuthService } from "./auth.service";
 
@@ -31,6 +32,9 @@ describe("AuthService", () => {
   const companyServiceMock = {
     isActive: vi.fn(),
   };
+  const companyAccessServiceMock = {
+    findForUser: vi.fn(),
+  };
   const jwtServiceMock = {
     signAsync: vi.fn(),
   };
@@ -48,6 +52,7 @@ describe("AuthService", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     configServiceMock.get.mockReturnValue("7d");
+    companyAccessServiceMock.findForUser.mockResolvedValue([]);
     prismaMock.refreshToken.create.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,6 +60,10 @@ describe("AuthService", () => {
         AuthService,
         { provide: UserService, useValue: userServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
+        {
+          provide: CompanyAccessService,
+          useValue: companyAccessServiceMock,
+        },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PrismaService, useValue: prismaMock },
@@ -100,8 +109,31 @@ describe("AuthService", () => {
           timezone: "America/Sao_Paulo",
           logoUrl: null,
         },
+        access: { features: [] },
       });
       expect(userServiceMock.findProfile).toHaveBeenCalledWith("user-1");
+    });
+
+    it("deve incluir os acessos da empresa do usuário", async () => {
+      const features = [
+        {
+          feature: "clients",
+          view: true,
+          edit: true,
+          create: true,
+          remove: false,
+        },
+      ];
+      userServiceMock.findProfile.mockResolvedValue(profile);
+      companyAccessServiceMock.findForUser.mockResolvedValue(features);
+
+      const result = await authService.me("user-1");
+
+      expect(result.access).toEqual({ features });
+      expect(companyAccessServiceMock.findForUser).toHaveBeenCalledWith(
+        "ADMIN",
+        "company-1",
+      );
     });
 
     it("deve usar a razão social quando não há nome fantasia", async () => {

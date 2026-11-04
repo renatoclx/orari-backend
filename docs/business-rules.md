@@ -12,7 +12,7 @@
 - O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O USER não altera nada. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
 - A logo é opcional, em JPEG ou PNG, com até 2 MB; o formato é conferido pelo conteúdo do arquivo. É servida publicamente e o `logoUrl` guarda o caminho relativo. Enviar uma nova logo substitui a anterior, que é apagada; a logo também pode ser removida. Só se apaga do disco arquivo da pasta das logos: uma URL externa gravada no `logoUrl` pelo SUPER_ADMIN nunca é apagada.
 - ADMIN e USER consultam apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
-- Uma empresa é criada ativa, salvo indicação contrária.
+- Uma empresa é criada ativa, salvo indicação contrária, e com o **modelo padrão de acessos** (ver "Acessos e limites da empresa").
 - Empresas não são excluídas: são inativadas.
 - Enquanto uma empresa estiver inativa, seus dados relacionados ficam inacessíveis:
   - seus usuários não fazem login e perdem imediatamente o acesso, inclusive com tokens já emitidos;
@@ -22,6 +22,26 @@
 - Um SUPER_ADMIN não pode inativar a própria empresa.
 - O documento da empresa (`document`) é um CPF (11 dígitos) ou um CNPJ (14 caracteres), válido e sem máscara. O CNPJ pode ser numérico ou alfanumérico (letras são convertidas para maiúsculas). Quem não tem CNPJ usa o CPF, e a razão social passa a ser o nome da pessoa.
 - A data de fundação é opcional: não se aplica a quem usa CPF.
+
+## Acessos e limites da empresa
+
+> **Etapas 1 a 3a:** a API grava e consulta os acessos e os limites, informa os acessos em `GET /auth/me` e **já barra as rotas de Turmas e de Anamnese** (`class-groups`, `anamnesis`, `anamnesis-templates` e `anamnesis-audit`). As demais funcionalidades ainda **não são restringidas**, e os limites ainda **não são contados** no cadastro de profissionais e administradores; isso vem nas próximas etapas.
+
+- O SUPER_ADMIN define, por empresa, o que os administradores dela podem fazer em cada funcionalidade e quantos profissionais e administradores ela pode ter. Não há permissão por usuário: vale para a empresa toda.
+- **Funcionalidades** (catálogo no código): `appointments`, `recurrences`, `clients`, `employees`, `professionals`, `users`, `services`, `plans`, `contracts`, `tabs` (comandas), `payments`, `payment-methods`, `anamnesis` (fichas), `anamnesis-templates`, `anamnesis-audit`, `class-groups` e `settings`.
+- **Ações** por funcionalidade: `view` (visualiza), `edit` (edita), `create` (cria) e `remove` (exclui ou inativa). Cada funcionalidade só aceita as ações que fazem sentido: `anamnesis-audit` só tem `view` e `settings` só tem `view` e `edit`.
+- **Sem linha, sem acesso:** uma funcionalidade nova nasce desmarcada em todas as empresas; o SUPER_ADMIN a libera.
+- **Regras da matriz** (400 ao gravar): chave conhecida e sem repetição; `edit`, `create` e `remove` exigem `view`; e algumas funcionalidades exigem ver outras, porque as telas delas listam esses cadastros: `appointments`, `recurrences`, `contracts`, `tabs`, `anamnesis` e `class-groups` exigem `view` em `clients`, `professionals` e `services`.
+- **Limites:** `professionals` (profissionais ativos, contando o administrador que atua) e `admins` (administradores), inteiros de 1 a 999. Funcionários (`EMPLOYEE`) não entram na conta. Só os ativos contam: inativar um profissional libera a vaga. Baixar o limite abaixo do uso é permitido: a empresa continua funcionando e apenas não cadastra novos.
+- **Modelo padrão** de uma empresa nova: tudo liberado, exceto `anamnesis`, `anamnesis-templates`, `anamnesis-audit` e `class-groups`, com 3 profissionais e 1 administrador.
+- As empresas que já existiam ao implantar este recurso receberam acesso total e limites de 999, para nada mudar para quem já usa; o SUPER_ADMIN ajusta depois.
+- **Barreira nas rotas:** uma rota (ou controller) marcada com `@Feature("chave")` só atende a empresa que tem a ação liberada; o `FeatureAccessGuard` global roda depois do `JwtAuthGuard` e do `RolesGuard`. A ação sai do verbo HTTP (GET = `view`, POST = `create`, PATCH e PUT = `edit`, DELETE = `remove`), e `@FeatureAction` a substitui quando o verbo não a diz. O SUPER_ADMIN não é limitado por plano. Sem a ação liberada: 403 com `code: "FEATURE_NOT_IN_PLAN"`.
+- **Rotas já barradas:**
+  - `class-groups` (todas as rotas de `/class-groups` e `/class-sessions`): encaixar alunos (`POST .../participants`) exige `edit`, e cancelar a sessão (`PATCH /class-sessions/:id/cancel`) exige `remove`;
+  - `anamnesis` (`/anamnesis`), `anamnesis-templates` (`/anamnesis-templates`) e `anamnesis-audit` (`/audit-logs`).
+- `GET /companies/:companyId/access` (só SUPER_ADMIN; empresa inexistente: 404) traz uma entrada por funcionalidade (`feature`, `view`, `edit`, `create`, `remove`), os `limits` (`professionals`, `admins`) e o uso atual (`usage`).
+- `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe tudo, pois a plataforma não é limitada por plano.
+- `PUT /companies/:companyId/access` (só SUPER_ADMIN) **substitui** a matriz e os limites de uma vez, na mesma transação do registro de auditoria `COMPANY_ACCESS_CHANGED`. A funcionalidade que faltar no corpo fica sem acesso. O registro de auditoria pertence à empresa do SUPER_ADMIN, não à empresa alterada: o cliente não vê a gestão do plano dele.
 
 ## Usuários e acesso
 

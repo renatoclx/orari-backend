@@ -16,10 +16,12 @@ import {
   PLATFORM_COMPANY_ID,
   superAdminUser,
 } from "../../../test/fixtures/authenticated-users";
+import { DEFAULT_LIMITS } from "../company-access/access-catalog";
 import { CompanyService } from "./company.service";
 import { CreateCompanyDto } from "./dto/create-company.dto";
 
 const anyDate: unknown = expect.any(Date);
+const anyArray: unknown = expect.any(Array);
 
 const uniqueViolation = () =>
   new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
@@ -72,7 +74,34 @@ describe("CompanyService", () => {
       prismaMock.company.create.mockResolvedValue(company);
 
       await expect(companyService.create(dto)).resolves.toEqual(company);
-      expect(prismaMock.company.create).toHaveBeenCalledWith({ data: dto });
+      expect(prismaMock.company.create).toHaveBeenCalledWith({
+        data: {
+          ...dto,
+          featureAccess: { create: anyArray },
+          limit: { create: DEFAULT_LIMITS },
+        },
+      });
+    });
+
+    it("deve nascer com o modelo padrão: sem anamnese e turmas", async () => {
+      prismaMock.company.create.mockResolvedValue(company);
+
+      await companyService.create(dto);
+
+      const [{ data }] = prismaMock.company.create.mock.calls[0] as [
+        { data: { featureAccess: { create: { feature: string }[] } } },
+      ];
+      const { featureAccess } = data;
+      const features = featureAccess.create.map((row) => row.feature);
+      expect(features).toContain("appointments");
+      for (const off of [
+        "anamnesis",
+        "anamnesis-templates",
+        "anamnesis-audit",
+        "class-groups",
+      ]) {
+        expect(features).not.toContain(off);
+      }
     });
 
     it("deve criar a empresa de quem usa CPF, sem data de fundação", async () => {
@@ -89,7 +118,11 @@ describe("CompanyService", () => {
       await companyService.create(personal);
 
       expect(prismaMock.company.create).toHaveBeenCalledWith({
-        data: personal,
+        data: {
+          ...personal,
+          featureAccess: { create: anyArray },
+          limit: { create: DEFAULT_LIMITS },
+        },
       });
     });
 

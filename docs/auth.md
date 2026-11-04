@@ -55,6 +55,11 @@
   `timezone`, `logoUrl`).
   O `name` da empresa é o nome fantasia ou, sem ele, a razão social; o
   `timezone` permite ao front exibir os horários no fuso da empresa.
+- Também traz `access.features`: uma entrada por funcionalidade (`feature`, `view`,
+  `edit`, `create`, `remove`) com o que a empresa do usuário pode usar (ver
+  `business-rules.md`, "Acessos e limites da empresa"). É por ele que o front
+  esconde menus e botões. O SUPER_ADMIN não é limitado por plano: recebe todas as
+  ações de todas as funcionalidades.
 - Os dados vêm do banco a cada chamada, não do token: refletem alterações
   feitas depois do login. A senha nunca é lida nessa consulta.
 

@@ -7,6 +7,10 @@ import ms, { type StringValue } from "ms";
 import { PeopleType, UserType } from "../../../generated/prisma/enums";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
+import {
+  CompanyAccessService,
+  type FeatureAccessEntry,
+} from "../company-access/company-access.service";
 import { UserService } from "../user/user.service";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
@@ -50,6 +54,8 @@ export interface MeResponse {
     timezone: string;
     logoUrl: string | null;
   };
+  // O que a empresa do usuário enxerga; o front esconde menus e botões por aqui.
+  access: { features: FeatureAccessEntry[] };
 }
 
 @Injectable()
@@ -57,6 +63,7 @@ export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly companyService: CompanyService,
+    private readonly companyAccessService: CompanyAccessService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
@@ -118,6 +125,12 @@ export class AuthService {
         name: company.fantasyName ?? company.corporateReason,
         timezone: company.timezone,
         logoUrl: company.logoUrl,
+      },
+      access: {
+        features: await this.companyAccessService.findForUser(
+          user.type,
+          company.id,
+        ),
       },
     };
   }

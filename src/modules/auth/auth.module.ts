@@ -5,6 +5,8 @@ import { PassportModule } from "@nestjs/passport";
 import { ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import type { StringValue } from "ms";
+import { CompanyAccessModule } from "../company-access/company-access.module";
+import { FeatureAccessGuard } from "../company-access/feature-access.guard";
 import { CompanyModule } from "../company/company.module";
 import { UserModule } from "../user/user.module";
 import { AuthService } from "./auth.service";
@@ -18,6 +20,7 @@ import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
   imports: [
     UserModule,
     CompanyModule,
+    CompanyAccessModule,
     PassportModule,
     // Limite de tentativas das rotas públicas de credencial (ver AuthController).
     // Fica em memória, por instância da API: com mais de uma instância, o limite
@@ -47,6 +50,11 @@ import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // Por último: precisa do request.user e só vale para rotas com @Feature.
+    {
+      provide: APP_GUARD,
+      useClass: FeatureAccessGuard,
     },
   ],
 })
