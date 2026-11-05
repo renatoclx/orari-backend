@@ -117,6 +117,88 @@
 
 ---
 
+## PortalVerification
+
+- Código de entrada do portal do cliente, pedido por telefone (ver `business-rules.md`, "Portal do cliente").
+
+| Nome       | Descrição                                                    |
+| ---------- | ------------------------------------------------------------ |
+| id         | Identificador único                                          |
+| companyId  | Clínica do portal                                            |
+| phone      | Telefone com DDD, só dígitos                                 |
+| codeHash   | HMAC do código (o código em si não é gravado)                |
+| attempts   | Tentativas erradas                                           |
+| expiresAt  | Fim da validade do código (10 minutos)                       |
+| verifiedAt | Quando o código foi conferido                                |
+| usedAt     | Quando virou sessão (cada conferência vira uma só)           |
+| ip         | IP do pedido                                                 |
+
+---
+
+## PortalAccessLink
+
+- Link de acesso ao portal gerado pela clínica para um cliente (uso único, 24 horas).
+
+| Nome      | Descrição                                           |
+| --------- | --------------------------------------------------- |
+| id        | Identificador único                                 |
+| companyId | Clínica                                             |
+| peopleId  | Cliente do link                                     |
+| tokenHash | SHA-256 do token (o token não é gravado)            |
+| expiresAt | Fim da validade                                     |
+| usedAt    | Quando virou sessão (ou foi substituído por um novo) |
+| createdAt | Quando foi gerado (quem gerou fica na auditoria)    |
+
+---
+
+## PortalSession
+
+- Sessão do cliente no portal, por aparelho.
+
+| Nome       | Descrição                                      |
+| ---------- | ---------------------------------------------- |
+| id         | Identificador único                            |
+| companyId  | Clínica do portal                              |
+| peopleId   | Cliente (pessoa CLIENT) da sessão              |
+| tokenHash  | SHA-256 do token (o token não é gravado)       |
+| expiresAt  | Fim da validade (90 dias)                      |
+| revokedAt  | Quando o cliente saiu (ou a sessão foi revogada) |
+| lastUsedAt | Último uso (reservado)                         |
+| userAgent  | Aparelho que abriu a sessão                    |
+
+- Pertence a uma empresa e a uma pessoa.
+
+---
+
+## PortalSettings
+
+- Regras do portal do cliente definidas pela clínica (um registro por empresa, criado na primeira gravação).
+
+| Nome              | Descrição                                        |
+| ----------------- | ------------------------------------------------ |
+| companyId         | Empresa (também é o identificador)               |
+| enabled           | Portal ligado (padrão: desligado)                |
+| minAdvanceMinutes | Antecedência mínima para agendar, em minutos     |
+| maxDaysAhead      | Até quantos dias à frente o cliente agenda       |
+| cancelUntilHours  | Até quantas horas antes o cliente cancela        |
+| updatedAt         | Última alteração                                 |
+
+---
+
+## ServiceProfessional
+
+- Profissional que atende um serviço. No portal, o serviço só aparece com ao menos um profissional ativo.
+
+| Nome      | Descrição                      |
+| --------- | ------------------------------ |
+| serviceId | Serviço                        |
+| peopleId  | Profissional (pessoa PROFESSIONAL) |
+| createdAt | Quando foi ligado              |
+
+- Chave composta (serviço + profissional).
+
+---
+
 ## User
 
 - Representa um usuário que terá acesso ao sistema.
@@ -340,6 +422,7 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 | status                 | Situação do agendamento                           |
 | note                   | Observação (opcional)                             |
 | overBooking            | Encaixe: marcado fora do horário de funcionamento |
+| source                 | Origem: `CLINIC` (feito na clínica) ou `PORTAL` (feito pelo cliente) |
 | recurringAppointmentId | Agendamento recorrente que o originou (opcional)  |
 | classSessionId         | Sessão da turma a que pertence (opcional)         |
 | cancelReason           | Motivo do cancelamento pela turma (opcional)      |

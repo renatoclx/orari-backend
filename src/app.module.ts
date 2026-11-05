@@ -13,6 +13,7 @@ import { ClassGroupModule } from "./modules/class-group/class-group.module";
 import { ClientPlanModule } from "./modules/client-plan/client-plan.module";
 import { CityModule } from "./modules/city/city.module";
 import { CompanyAccessModule } from "./modules/company-access/company-access.module";
+import { PortalModule } from "./modules/portal/portal.module";
 import { CompanyModule } from "./modules/company/company.module";
 import { ContactModule } from "./modules/contact/contact.module";
 import { NotificationModule } from "./modules/notification/notification.module";
@@ -41,6 +42,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     CityModule,
     CompanyModule,
     CompanyAccessModule,
+    PortalModule,
     PeopleModule,
     ContactModule,
     AddressModule,

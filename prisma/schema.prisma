@@ -156,6 +156,10 @@ model Company {
   classSessions         ClassSession[]
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
+  portalVerifications   PortalVerification[]
+  portalSessions        PortalSession[]
+  portalSettings        PortalSettings?
+  portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
 }
@@ -178,9 +182,13 @@ model People {
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
   photoUrl       String?
 
-  company   Company   @relation(fields: [companyId], references: [id])
-  contacts  Contact[]
-  addresses Address[]
+  company           Company               @relation(fields: [companyId], references: [id])
+  contacts          Contact[]
+  addresses         Address[]
+  portalSessions    PortalSession[]
+  portalAccessLinks PortalAccessLink[]
+  // Serviços que o profissional atende (ver ServiceProfessional).
+  services          ServiceProfessional[]
 
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
@@ -319,6 +327,8 @@ model Service {
   planItems             PlanItem[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
+  // Profissionais que atendem o serviço (o portal só mostra serviço com ao menos um).
+  professionals         ServiceProfessional[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -341,6 +351,8 @@ model Appointment {
   // Encaixe: agendamento avulso marcado fora do horário de funcionamento. Retrato
   // do momento em que foi marcado; não é recalculado se o horário mudar depois.
   overBooking            Boolean                  @default(false)
+  // Onde o agendamento foi feito: na clínica ou pelo cliente, no portal.
+  source                 AppointmentSource        @default(CLINIC)
   // Preenchido quando o agendamento foi gerado por uma recorrência.
   recurringAppointmentId String?
   // Preenchido quando o agendamento é de um aluno numa sessão de turma.
@@ -627,6 +639,7 @@ enum AuditAction {
   ANAMNESIS_ENTRY_CREATED
   ANAMNESIS_PDF_GENERATED
   COMPANY_ACCESS_CHANGED
+  PORTAL_ACCESS_LINK_CREATED
 }
 
 /**
@@ -914,4 +927,107 @@ model CompanyLimit {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("company_limits")
+}
+
+/**
+ * Código enviado por WhatsApp para o cliente entrar no portal da clínica (ver
+ * docs/business-rules.md, "Portal do cliente"). Só o hash do código é gravado.
+ */
+model PortalVerification {
+  id         String    @id @default(uuid())
+  companyId  String
+  // Telefone com DDD, só dígitos (10 ou 11), como nos contatos.
+  phone      String
+  codeHash   String
+  // Tentativas erradas; no limite, o código deixa de valer.
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  // Código conferido: abre a escolha da pessoa e a criação da sessão.
+  verifiedAt DateTime?
+  // Já virou sessão: não pode ser usado de novo.
+  usedAt     DateTime?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, phone, createdAt])
+  @@map("portal_verifications")
+}
+
+// Sessão do cliente no portal (um aparelho). Token opaco: só o hash é gravado.
+model PortalSession {
+  id         String    @id @default(uuid())
+  companyId  String
+  peopleId   String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@index([peopleId])
+  @@map("portal_sessions")
+}
+
+enum AppointmentSource {
+  CLINIC
+  PORTAL
+}
+
+// Regras do portal do cliente definidas pela clínica (ver docs/business-rules.md, "Portal do cliente").
+model PortalSettings {
+  companyId         String    @id
+  // Desligado até a clínica ligar.
+  enabled           Boolean   @default(false)
+  // Antecedência mínima para o cliente agendar.
+  minAdvanceMinutes Int       @default(60)
+  // Até quantos dias à frente o cliente pode agendar.
+  maxDaysAhead      Int       @default(30)
+  // Até quantas horas antes o cliente pode cancelar.
+  cancelUntilHours  Int       @default(24)
+  updatedAt         DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("portal_settings")
+}
+
+// Quais profissionais atendem cada serviço. No portal, o serviço só aparece com ao menos um.
+model ServiceProfessional {
+  serviceId String
+  peopleId  String
+  createdAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@id([serviceId, peopleId])
+  @@index([peopleId])
+  @@map("service_professionals")
+}
+
+/**
+ * Link de acesso ao portal gerado pela clínica para um cliente (enviado por ela,
+ * à mão, ou mostrado em QR code). Uso único e curto: só o hash do token é gravado.
+ */
+model PortalAccessLink {
+  id        String    @id @default(uuid())
+  companyId String
+  peopleId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Já virou sessão (ou foi substituído por um link mais novo).
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  people  People  @relation(fields: [peopleId], references: [id])
+
+  @@index([peopleId])
+  @@map("portal_access_links")
 }

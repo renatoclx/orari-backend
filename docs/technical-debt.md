@@ -72,8 +72,10 @@ concentrada nesse service.
 
 ## Agenda sem trava contra marcações simultâneas
 
-**Onde:** `AppointmentService.ensureSlotIsFree` (criação, edição, recorrência e
-contratação).
+**Onde:** `AppointmentService.ensureSlotIsFree` na edição, na recorrência e na
+contratação. **A criação avulsa já foi resolvida** (2026-11-04, com o portal do
+cliente): ela trava o profissional com `pg_advisory_xact_lock` antes de conferir e
+gravar, na mesma transação.
 
 **O que é:** a conferência de horário livre e a gravação são passos separados.
 Duas marcações do mesmo profissional ou cliente, no mesmo horário e no mesmo

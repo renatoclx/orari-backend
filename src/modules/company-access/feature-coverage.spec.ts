@@ -23,6 +23,14 @@ import { PaymentController } from "../payment/payment.controller";
 import { PaymentMethodController } from "../payment-method/payment-method.controller";
 import { PeopleController } from "../people/people.controller";
 import { PlanController } from "../plan/plan.controller";
+import {
+  PortalAccessExchangeController,
+  PortalAccessLinkController,
+} from "../portal/portal-access.controller";
+import { PortalAppointmentController } from "../portal/portal-appointment.controller";
+import { PortalAuthController } from "../portal/portal-auth.controller";
+import { PortalCatalogController } from "../portal/portal-catalog.controller";
+import { PortalSettingsController } from "../portal/portal-settings.controller";
 import { RecurringAppointmentController } from "../recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../service/service.controller";
 import { StateController } from "../state/state.controller";
@@ -36,6 +44,14 @@ type Controller = new (...args: never[]) => unknown;
 const EXEMPT: Record<string, string> = {
   AuthController: "login, refresh e /me: valem para qualquer usuário",
   CompanyAccessController: "só o SUPER_ADMIN (@Roles)",
+  PortalAuthController:
+    "portal do cliente: fora do login da clínica, com autenticação própria (PortalAuthGuard)",
+  PortalAccessExchangeController:
+    "troca do link de acesso pelo cliente (fora do login da clínica)",
+  PortalAppointmentController:
+    "agendamentos do cliente no portal (PortalAuthGuard, token do portal)",
+  PortalCatalogController:
+    "vitrine pública do portal (só abre com o portal ligado e no plano)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
   NotificationController: "ainda sem uso (ver technical-debt.md)",
@@ -71,6 +87,12 @@ const CONTROLLERS: Controller[] = [
   PaymentController,
   PaymentMethodController,
   PeopleController,
+  PortalAuthController,
+  PortalAppointmentController,
+  PortalAccessLinkController,
+  PortalAccessExchangeController,
+  PortalCatalogController,
+  PortalSettingsController,
   PlanController,
   RecurringAppointmentController,
   ServiceController,
