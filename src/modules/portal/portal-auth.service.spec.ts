@@ -1,276 +1,135 @@
 import {
   BadRequestException,
-  HttpException,
+  ConflictException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { Test, TestingModule } from "@nestjs/testing";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaService } from "../../prisma/prisma.service";
-import { PeopleService } from "../people/people.service";
-import { MessageSenderService } from "./message-sender.service";
-import { PortalCompanyService } from "./portal-company.service";
-import { hashCode, hashSessionToken } from "./portal-code";
-import { PortalAuthService } from "./portal-auth.service";
+import * as bcrypt from "bcrypt";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../../generated/prisma/client";
+import type { PrismaService } from "../../prisma/prisma.service";
+import { hashSessionToken } from "./portal-code";
+import { NOT_A_CLIENT, PortalAuthService } from "./portal-auth.service";
+import type { PortalCompanyService } from "./portal-company.service";
 
-const SECRET = "segredo-de-teste";
-const COMPANY = {
-  id: "company-1",
-  fantasyName: "Studio Aurora",
-  corporateReason: "Aurora LTDA",
-  isActive: true,
-};
 const PHONE = "31988887777";
+const ACCOUNT = { sessionId: "s-1", accountId: "acc-1" };
 const future = () => new Date(Date.now() + 60_000);
 const past = () => new Date(Date.now() - 1_000);
 
 describe("PortalAuthService", () => {
-  let service: PortalAuthService;
   const prismaMock = {
-    company: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
-    people: { findMany: vi.fn(), findUniqueOrThrow: vi.fn() },
-    portalVerification: {
+    clientAccount: {
       create: vi.fn(),
-      count: vi.fn(),
-      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+    },
+    people: { findFirst: vi.fn() },
+    portalSession: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    portalSession: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    $transaction: vi.fn(),
   };
-  const peopleMock = { create: vi.fn() };
-  const senderMock = { sendVerificationCode: vi.fn() };
   const portalCompanyMock = { findBySlug: vi.fn() };
+  const service = new PortalAuthService(
+    prismaMock as unknown as PrismaService,
+    portalCompanyMock as unknown as PortalCompanyService,
+  );
+  let storedHash: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
+    storedHash = await bcrypt.hash("senha-certa", 4);
+  });
+
+  beforeEach(() => {
     vi.clearAllMocks();
     portalCompanyMock.findBySlug.mockResolvedValue({
-      id: COMPANY.id,
+      id: "company-1",
       name: "Studio Aurora",
-    });
-    prismaMock.portalVerification.count.mockResolvedValue(0);
-    prismaMock.portalVerification.updateMany.mockResolvedValue({ count: 1 });
-    prismaMock.people.findMany.mockResolvedValue([]);
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PortalAuthService,
-        { provide: PrismaService, useValue: prismaMock },
-        { provide: ConfigService, useValue: { get: () => SECRET } },
-        { provide: PeopleService, useValue: peopleMock },
-        { provide: MessageSenderService, useValue: senderMock },
-        { provide: PortalCompanyService, useValue: portalCompanyMock },
-      ],
-    }).compile();
-    service = module.get(PortalAuthService);
-  });
-
-  describe("requestCode", () => {
-    it("grava só o hash do código e envia o código com o nome da clínica", async () => {
-      await service.requestCode("aurora", "(31) 98888-7777", "1.2.3.4");
-
-      const { data } = prismaMock.portalVerification.create.mock
-        .calls[0][0] as {
-        data: { phone: string; codeHash: string; companyId: string };
-      };
-      const sent = senderMock.sendVerificationCode.mock.calls[0][0] as {
-        code: string;
-        companyName: string;
-        phone: string;
-      };
-      expect(data.phone).toBe(PHONE);
-      expect(data.codeHash).toBe(
-        hashCode(SECRET, COMPANY.id, PHONE, sent.code),
-      );
-      expect(data.codeHash).not.toContain(sent.code);
-      expect(sent).toMatchObject({
-        companyName: "Studio Aurora",
-        phone: PHONE,
-      });
-    });
-
-    it("telefone inválido: 400, sem gravar nem enviar", async () => {
-      await expect(service.requestCode("aurora", "123")).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(prismaMock.portalVerification.create).not.toHaveBeenCalled();
-      expect(senderMock.sendVerificationCode).not.toHaveBeenCalled();
-    });
-
-    it("pedidos demais para o telefone: 429", async () => {
-      prismaMock.portalVerification.count.mockResolvedValueOnce(3);
-      const error = await service
-        .requestCode("aurora", PHONE)
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(HttpException);
-      expect((error as HttpException).getStatus()).toBe(429);
-      expect(senderMock.sendVerificationCode).not.toHaveBeenCalled();
+      logoUrl: null,
     });
   });
 
-  describe("verifyCode", () => {
-    const pending = (overrides: object = {}) => ({
-      id: "v-1",
-      codeHash: hashCode(SECRET, COMPANY.id, PHONE, "123456"),
-      attempts: 0,
-      expiresAt: future(),
-      ...overrides,
-    });
+  describe("register", () => {
+    const dto = {
+      name: "Ana",
+      phone: "(31) 98888-7777",
+      password: "senha-forte",
+      passwordConfirmation: "senha-forte",
+    };
 
-    it("código certo: marca como conferido e lista as pessoas do telefone", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(pending());
-      prismaMock.people.findMany.mockResolvedValue([
-        { id: "p-1", name: "Ana" },
-      ]);
+    it("cria a conta com o telefone só em dígitos e a senha com hash, e abre a sessão", async () => {
+      prismaMock.clientAccount.create.mockResolvedValue({ id: "acc-1" });
 
+      const result = await service.register(dto, "Chrome");
+
+      const [{ data }] = prismaMock.clientAccount.create.mock.calls[0] as [
+        { data: { phone: string; name: string; passwordHash: string } },
+      ];
+      expect(data).toMatchObject({ phone: PHONE, name: "Ana" });
       await expect(
-        service.verifyCode("aurora", PHONE, "123456"),
-      ).resolves.toEqual({
-        verificationId: "v-1",
-        people: [{ id: "p-1", name: "Ana" }],
-      });
-      expect(prismaMock.portalVerification.update).toHaveBeenCalledWith({
-        where: { id: "v-1" },
-        data: { verifiedAt: expect.any(Date) as Date },
-      });
+        bcrypt.compare("senha-forte", data.passwordHash),
+      ).resolves.toBe(true);
+      const [{ data: session }] = prismaMock.portalSession.create.mock
+        .calls[0] as [{ data: { clientAccountId: string; tokenHash: string } }];
+      expect(session.clientAccountId).toBe("acc-1");
+      expect(session.tokenHash).toBe(hashSessionToken(result.token));
     });
 
-    it("procura só clientes ativos da clínica com o telefone num contato ativo", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(pending());
-      await service.verifyCode("aurora", PHONE, "123456");
-      expect(prismaMock.people.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            companyId: COMPANY.id,
-            type: "CLIENT",
-            deletedAt: null,
-            contacts: { some: { phone: PHONE, deletedAt: null } },
-          },
+    it("telefone inválido: 400, sem gravar", async () => {
+      await expect(
+        service.register({ ...dto, phone: "123" }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.clientAccount.create).not.toHaveBeenCalled();
+    });
+
+    it("telefone já usado por outra conta: 409", async () => {
+      prismaMock.clientAccount.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError("único", {
+          code: "P2002",
+          clientVersion: "7",
         }),
       );
+      await expect(service.register(dto)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
     });
+  });
 
-    it("código errado: conta a tentativa e recusa", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(pending());
-      await expect(
-        service.verifyCode("aurora", PHONE, "000000"),
-      ).rejects.toThrow("Código incorreto");
-      expect(prismaMock.portalVerification.update).toHaveBeenCalledWith({
-        where: { id: "v-1" },
-        data: { attempts: { increment: 1 } },
+  describe("login", () => {
+    it("telefone e senha certos: abre a sessão da conta", async () => {
+      prismaMock.clientAccount.findUnique.mockResolvedValue({
+        id: "acc-1",
+        passwordHash: storedHash,
       });
+
+      await service.login({
+        phone: "+55 31 98888-7777",
+        password: "senha-certa",
+      });
+
+      expect(prismaMock.clientAccount.findUnique).toHaveBeenCalledWith({
+        where: { phone: PHONE },
+        select: { id: true, passwordHash: true },
+      });
+      expect(prismaMock.portalSession.create).toHaveBeenCalled();
     });
 
     it.each([
-      ["vencido", { expiresAt: past() }],
-      ["sem tentativas", { attempts: 5 }],
-    ])("código %s: recusa sem conferir", async (_, overrides) => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(
-        pending(overrides),
+      ["senha errada", { id: "acc-1" }, "senha-errada"],
+      ["telefone sem conta", null, "senha-certa"],
+    ])("%s: o mesmo 401", async (_, account, password) => {
+      prismaMock.clientAccount.findUnique.mockResolvedValue(
+        account && { ...account, passwordHash: storedHash },
       );
-      await expect(
-        service.verifyCode("aurora", PHONE, "123456"),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.portalVerification.update).not.toHaveBeenCalled();
-    });
-
-    it("sem pedido pendente: recusa", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(null);
-      await expect(
-        service.verifyCode("aurora", PHONE, "123456"),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-  });
-
-  describe("createSession", () => {
-    const verified = (overrides: object = {}) => ({
-      id: "v-1",
-      phone: PHONE,
-      verifiedAt: new Date(),
-      usedAt: null,
-      ...overrides,
-    });
-
-    it("com uma das pessoas do telefone: abre a sessão e guarda só o hash do token", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(verified());
-      prismaMock.people.findMany.mockResolvedValue([
-        { id: "p-1", name: "Ana" },
-      ]);
-
-      const result = await service.createSession("aurora", {
-        verificationId: "v-1",
-        personId: "p-1",
-      });
-
-      const { data } = prismaMock.portalSession.create.mock.calls[0][0] as {
-        data: { tokenHash: string; peopleId: string; companyId: string };
-      };
-      expect(result.person).toEqual({ id: "p-1", name: "Ana" });
-      expect(data).toMatchObject({ peopleId: "p-1", companyId: COMPANY.id });
-      expect(data.tokenHash).toBe(hashSessionToken(result.token));
-    });
-
-    it("pessoa que não é do telefone conferido: recusa (ninguém entra como outro)", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(verified());
-      prismaMock.people.findMany.mockResolvedValue([
-        { id: "p-1", name: "Ana" },
-      ]);
-
-      await expect(
-        service.createSession("aurora", {
-          verificationId: "v-1",
-          personId: "p-9",
-        }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.portalSession.create).not.toHaveBeenCalled();
-    });
-
-    it("com o nome: cria o cliente com nome e telefone", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(verified());
-      peopleMock.create.mockResolvedValue({ id: "p-novo", name: "Bia" });
-
-      await service.createSession("aurora", {
-        verificationId: "v-1",
-        name: "Bia",
-      });
-
-      expect(peopleMock.create).toHaveBeenCalledWith(
-        { name: "Bia", type: "CLIENT", phone: PHONE },
-        COMPANY.id,
+      await expect(service.login({ phone: PHONE, password })).rejects.toThrow(
+        "Telefone ou senha inválidos",
       );
-    });
-
-    it.each([
-      ["não conferida", { verifiedAt: null }],
-      ["já usada", { usedAt: new Date() }],
-      [
-        "conferida há mais de 10 minutos",
-        { verifiedAt: new Date(Date.now() - 11 * 60_000) },
-      ],
-    ])("verificação %s: recusa", async (_, overrides) => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(
-        verified(overrides),
-      );
-      await expect(
-        service.createSession("aurora", { verificationId: "v-1", name: "Bia" }),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.portalSession.create).not.toHaveBeenCalled();
-    });
-
-    it("duas chamadas ao mesmo tempo: só uma abre a sessão", async () => {
-      prismaMock.portalVerification.findFirst.mockResolvedValue(verified());
-      prismaMock.people.findMany.mockResolvedValue([
-        { id: "p-1", name: "Ana" },
-      ]);
-      prismaMock.portalVerification.updateMany.mockResolvedValue({ count: 0 });
-
-      await expect(
-        service.createSession("aurora", {
-          verificationId: "v-1",
-          personId: "p-1",
-        }),
-      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.portalSession.create).not.toHaveBeenCalled();
     });
   });
@@ -278,21 +137,15 @@ describe("PortalAuthService", () => {
   describe("authenticate", () => {
     const session = (overrides: object = {}) => ({
       id: "s-1",
-      companyId: COMPANY.id,
-      peopleId: "p-1",
+      clientAccountId: "acc-1",
       revokedAt: null,
       expiresAt: future(),
-      people: { deletedAt: null },
       ...overrides,
     });
 
-    it("sessão válida: devolve o cliente", async () => {
+    it("sessão válida: devolve a conta", async () => {
       prismaMock.portalSession.findUnique.mockResolvedValue(session());
-      await expect(service.authenticate("aurora", "token")).resolves.toEqual({
-        sessionId: "s-1",
-        companyId: COMPANY.id,
-        peopleId: "p-1",
-      });
+      await expect(service.authenticate("token")).resolves.toEqual(ACCOUNT);
       expect(prismaMock.portalSession.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { tokenHash: hashSessionToken("token") },
@@ -304,32 +157,130 @@ describe("PortalAuthService", () => {
       ["inexistente", null],
       ["revogada", { revokedAt: new Date() }],
       ["vencida", { expiresAt: past() }],
-      ["de outra clínica", { companyId: "company-2" }],
-      ["de cliente inativo", { people: { deletedAt: new Date() } }],
     ])("sessão %s: 401", async (_, overrides) => {
       prismaMock.portalSession.findUnique.mockResolvedValue(
         overrides === null ? null : session(overrides),
       );
-      await expect(
-        service.authenticate("aurora", "token"),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(service.authenticate("token")).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
     });
   });
 
-  it("portal desligado, fora do plano ou clínica inativa: 401 sem consultar a sessão", async () => {
-    portalCompanyMock.findBySlug.mockRejectedValueOnce(new NotFoundException());
-    await expect(
-      service.authenticate("aurora", "token"),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(prismaMock.portalSession.findUnique).not.toHaveBeenCalled();
+  describe("resolveClient", () => {
+    it("acha o cadastro ativo da conta na clínica do endereço", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({ id: "cli-1" });
+
+      await expect(service.resolveClient(ACCOUNT, "aurora")).resolves.toEqual({
+        ...ACCOUNT,
+        companyId: "company-1",
+        peopleId: "cli-1",
+      });
+      expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
+        where: {
+          companyId: "company-1",
+          clientAccountId: "acc-1",
+          type: "CLIENT",
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+    });
+
+    it("sem cadastro nesta clínica: 403 NOT_A_CLIENT", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+      const error = await service
+        .resolveClient(ACCOUNT, "aurora")
+        .catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).getResponse()).toMatchObject({
+        code: NOT_A_CLIENT,
+      });
+    });
+
+    it("portal fechado: 404, sem procurar o cadastro", async () => {
+      portalCompanyMock.findBySlug.mockRejectedValueOnce(
+        new NotFoundException(),
+      );
+      await expect(
+        service.resolveClient(ACCOUNT, "aurora"),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  it("me: devolve a conta e só os locais com o portal aberto, em ordem alfabética", async () => {
+    prismaMock.clientAccount.findUniqueOrThrow.mockResolvedValue({
+      id: "acc-1",
+      name: "Ana",
+      phone: PHONE,
+      people: [
+        { company: { subdomain: "zeta" } },
+        { company: { subdomain: "fechada" } },
+        { company: { subdomain: "aurora" } },
+      ],
+    });
+    portalCompanyMock.findBySlug.mockImplementation((slug: string) =>
+      slug === "fechada"
+        ? Promise.reject(new NotFoundException())
+        : Promise.resolve({
+            name: slug === "zeta" ? "Zeta" : "Aurora",
+            logoUrl: null,
+          }),
+    );
+
+    await expect(service.me(ACCOUNT)).resolves.toEqual({
+      account: { id: "acc-1", name: "Ana", phone: PHONE },
+      places: [
+        { slug: "aurora", name: "Aurora", logoUrl: null },
+        { slug: "zeta", name: "Zeta", logoUrl: null },
+      ],
+    });
+  });
+
+  describe("changePassword", () => {
+    const dto = {
+      currentPassword: "senha-certa",
+      newPassword: "senha-nova-1",
+      newPasswordConfirmation: "senha-nova-1",
+    };
+
+    beforeEach(() => {
+      prismaMock.clientAccount.findUniqueOrThrow.mockResolvedValue({
+        passwordHash: storedHash,
+      });
+    });
+
+    it("senha atual certa: grava a nova e tira só os outros aparelhos", async () => {
+      await service.changePassword(ACCOUNT, dto);
+
+      const [{ data }] = prismaMock.clientAccount.update.mock.calls[0] as [
+        { data: { passwordHash: string } },
+      ];
+      await expect(
+        bcrypt.compare("senha-nova-1", data.passwordHash),
+      ).resolves.toBe(true);
+      expect(prismaMock.portalSession.updateMany).toHaveBeenCalledWith({
+        where: {
+          clientAccountId: "acc-1",
+          revokedAt: null,
+          id: { not: "s-1" },
+        },
+        data: { revokedAt: expect.any(Date) as Date },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+    });
+
+    it("senha atual errada: 400, sem gravar", async () => {
+      await expect(
+        service.changePassword(ACCOUNT, { ...dto, currentPassword: "errada" }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   it("logout revoga só a sessão deste aparelho", async () => {
-    await service.logout({
-      sessionId: "s-1",
-      companyId: COMPANY.id,
-      peopleId: "p-1",
-    });
+    await service.logout(ACCOUNT);
     expect(prismaMock.portalSession.update).toHaveBeenCalledWith({
       where: { id: "s-1" },
       data: { revokedAt: expect.any(Date) as Date },

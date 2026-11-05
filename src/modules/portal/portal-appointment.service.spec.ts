@@ -17,7 +17,12 @@ const company: PortalCompany = {
   timezone: "America/Sao_Paulo",
   rules: { minAdvanceMinutes: 60, maxDaysAhead: 30, cancelUntilHours: 24 },
 };
-const client = { sessionId: "s-1", companyId: "c-1", peopleId: "cli-1" };
+const client = {
+  sessionId: "s-1",
+  accountId: "acc-1",
+  companyId: "c-1",
+  peopleId: "cli-1",
+};
 const inHours = (hours: number) => new Date(Date.now() + hours * 3_600_000);
 
 const item = (overrides: object = {}) => ({

@@ -4,7 +4,7 @@ import { PortalAuthGuard } from "./portal-auth.guard";
 import { PortalAuthService } from "./portal-auth.service";
 
 describe("PortalAuthGuard", () => {
-  const serviceMock = { authenticate: vi.fn() };
+  const serviceMock = { authenticate: vi.fn(), resolveClient: vi.fn() };
   const guard = new PortalAuthGuard(
     serviceMock as unknown as PortalAuthService,
   );
@@ -12,19 +12,32 @@ describe("PortalAuthGuard", () => {
     ({
       switchToHttp: () => ({ getRequest: () => request }),
     }) as unknown as ExecutionContext;
+  const account = { sessionId: "s-1", accountId: "acc-1" };
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serviceMock.authenticate.mockResolvedValue(account);
+  });
 
-  it("token do portal válido: passa e guarda o cliente na requisição", async () => {
-    const client = { sessionId: "s-1", companyId: "c-1", peopleId: "p-1" };
-    serviceMock.authenticate.mockResolvedValue(client);
+  it("rota da conta: guarda só a conta na requisição", async () => {
+    const request = { headers: { authorization: "Bearer abc" }, params: {} };
+
+    await expect(guard.canActivate(contextFor(request))).resolves.toBe(true);
+    expect(serviceMock.authenticate).toHaveBeenCalledWith("abc");
+    expect(serviceMock.resolveClient).not.toHaveBeenCalled();
+    expect(request).toMatchObject({ portalAccount: account });
+  });
+
+  it("rota de um local: guarda também o cadastro da conta nessa clínica", async () => {
+    const client = { ...account, companyId: "c-1", peopleId: "p-1" };
+    serviceMock.resolveClient.mockResolvedValue(client);
     const request = {
       headers: { authorization: "Bearer abc" },
       params: { slug: "aurora" },
     };
 
     await expect(guard.canActivate(contextFor(request))).resolves.toBe(true);
-    expect(serviceMock.authenticate).toHaveBeenCalledWith("aurora", "abc");
+    expect(serviceMock.resolveClient).toHaveBeenCalledWith(account, "aurora");
     expect(request).toMatchObject({ portalClient: client });
   });
 

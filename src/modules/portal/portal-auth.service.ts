@@ -1,270 +1,254 @@
 import {
   BadRequestException,
-  HttpException,
-  HttpStatus,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import * as bcrypt from "bcrypt";
+import type { Prisma } from "../../../generated/prisma/client";
+import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
-import { PeopleService } from "../people/people.service";
-import { MessageSenderService } from "./message-sender.service";
 import { PortalCompanyService } from "./portal-company.service";
 import {
-  CODE_REQUEST_LIMITS,
-  CODE_TTL_MS,
-  MAX_CODE_ATTEMPTS,
   SESSION_TTL_MS,
-  VERIFIED_TTL_MS,
-  generateCode,
   generateSessionToken,
-  hashCode,
   hashSessionToken,
-  sameHash,
 } from "./portal-code";
 import { normalizePortalPhone } from "./portal-phone";
-import { CreateSessionDto } from "./dto/create-session.dto";
+import { ChangePasswordDto } from "./dto/change-password.dto";
+import { LoginDto } from "./dto/login.dto";
+import { RegisterDto } from "./dto/register.dto";
 
-/** Cliente autenticado no portal (preenchido pelo PortalAuthGuard). */
-export interface PortalClient {
+/** Conta do cliente entrada no app (preenchida pelo PortalAuthGuard). */
+export interface PortalAccount {
   sessionId: string;
+  accountId: string;
+}
+
+/** Cadastro do cliente na clínica do endereço, encontrado pela conta. */
+export interface PortalClient extends PortalAccount {
   companyId: string;
   peopleId: string;
 }
 
-const INVALID_CODE = "Código inválido ou vencido. Peça um novo código.";
+// Mesmo custo das senhas dos usuários da clínica.
+const PASSWORD_SALT_ROUNDS = 10;
 
 /**
- * Entrada do cliente no portal da clínica, sem senha: o telefone é conferido
- * por um código enviado no WhatsApp (ver docs/business-rules.md, "Portal do
- * cliente"). Fluxo: pedir o código → conferir → escolher a pessoa (ou se
- * cadastrar) → sessão de 90 dias por aparelho.
+ * Hash bcrypt de um texto qualquer: quando o telefone não tem conta, a senha é
+ * comparada com ele para o login levar o mesmo tempo nos dois casos (como no
+ * login da clínica).
+ */
+const TIMING_PLACEHOLDER_HASH =
+  "$2b$10$XmRU9YoHggPHKfhUuaInaOJmQbcemEM0nCmq9lkAKJq6Wd6tLdsnq";
+
+const INVALID_LOGIN = "Telefone ou senha inválidos";
+
+// Código do 403 que o app usa para oferecer "Entrar neste estabelecimento".
+export const NOT_A_CLIENT = "NOT_A_CLIENT";
+
+/**
+ * Conta do cliente no app: telefone + senha, única no Orari (ver
+ * docs/business-rules.md, "Portal do cliente"). A sessão é da conta; em cada
+ * clínica o cliente é o cadastro dela (People) ligado à conta.
  */
 @Injectable()
 export class PortalAuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-    private readonly peopleService: PeopleService,
-    private readonly messageSender: MessageSenderService,
     private readonly portalCompanyService: PortalCompanyService,
   ) {}
 
   /**
-   * Gera e envia o código. A resposta é a mesma com ou sem cadastro do telefone:
-   * o portal não revela quem é cliente da clínica.
+   * Cria a conta e já abre a sessão. Não liga a conta a nenhum cadastro de
+   * clínica: isso só acontece pelo link da clínica ou ao entrar num local.
    */
-  async requestCode(
-    slug: string,
-    rawPhone: string,
-    ip?: string,
-  ): Promise<{ expiresAt: Date }> {
-    const company = await this.portalCompanyService.findBySlug(slug);
-    const phone = this.phoneOrFail(rawPhone);
-    await this.ensureRequestLimit(company.id, phone);
-
-    const code = generateCode();
-    const expiresAt = new Date(Date.now() + CODE_TTL_MS);
-    await this.prisma.portalVerification.create({
-      data: {
-        companyId: company.id,
-        phone,
-        codeHash: this.hash(company.id, phone, code),
-        expiresAt,
-        ip,
-      },
-    });
-    await this.messageSender.sendVerificationCode({
-      companyId: company.id,
-      companyName: company.name,
-      phone,
-      code,
-    });
-    return { expiresAt };
-  }
-
-  /**
-   * Confere o código do pedido mais recente. Certo: devolve a verificação e as
-   * pessoas (clientes ativos) da clínica com esse telefone, para o cliente
-   * escolher quem é ou se cadastrar.
-   */
-  async verifyCode(
-    slug: string,
-    rawPhone: string,
-    code: string,
-  ): Promise<{
-    verificationId: string;
-    people: { id: string; name: string }[];
-  }> {
-    const company = await this.portalCompanyService.findBySlug(slug);
-    const phone = this.phoneOrFail(rawPhone);
-
-    const verification = await this.prisma.portalVerification.findFirst({
-      where: { companyId: company.id, phone, verifiedAt: null, usedAt: null },
-      orderBy: { createdAt: "desc" },
-    });
-    if (
-      !verification ||
-      verification.expiresAt <= new Date() ||
-      verification.attempts >= MAX_CODE_ATTEMPTS
-    ) {
-      throw new BadRequestException(INVALID_CODE);
-    }
-
-    if (!sameHash(verification.codeHash, this.hash(company.id, phone, code))) {
-      await this.prisma.portalVerification.update({
-        where: { id: verification.id },
-        data: { attempts: { increment: 1 } },
+  async register(dto: RegisterDto, userAgent?: string) {
+    const phone = this.phoneOrFail(dto.phone);
+    const passwordHash = await this.hashPassword(dto.password);
+    try {
+      const account = await this.prisma.clientAccount.create({
+        data: { phone, name: dto.name, passwordHash },
+        select: { id: true },
       });
-      throw new BadRequestException("Código incorreto");
+      return await this.openSession(account.id, userAgent);
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new ConflictException(
+          "Já existe uma conta com este telefone. Entre com a senha ou peça o link de acesso ao estabelecimento.",
+        );
+      }
+      throw error;
     }
-
-    await this.prisma.portalVerification.update({
-      where: { id: verification.id },
-      data: { verifiedAt: new Date() },
-    });
-    return {
-      verificationId: verification.id,
-      people: await this.findClientsByPhone(company.id, phone),
-    };
   }
 
-  /**
-   * Cria a sessão do aparelho para uma das pessoas do telefone ou, com o nome,
-   * para um cadastro novo (nome + telefone). Cada verificação vira uma sessão só.
-   */
-  async createSession(
-    slug: string,
-    dto: CreateSessionDto,
-    userAgent?: string,
-  ): Promise<{
-    token: string;
-    expiresAt: Date;
-    person: { id: string; name: string };
-  }> {
-    const company = await this.portalCompanyService.findBySlug(slug);
-    const verification = await this.prisma.portalVerification.findFirst({
-      where: { id: dto.verificationId, companyId: company.id },
-    });
-    if (
-      !verification?.verifiedAt ||
-      verification.usedAt ||
-      verification.verifiedAt.getTime() + VERIFIED_TTL_MS <= Date.now()
-    ) {
-      throw new BadRequestException(INVALID_CODE);
-    }
-
-    const person = await this.resolvePerson(
-      company.id,
-      verification.phone,
-      dto,
+  async login(dto: LoginDto, userAgent?: string) {
+    const phone = normalizePortalPhone(dto.phone);
+    const account = phone
+      ? await this.prisma.clientAccount.findUnique({
+          where: { phone },
+          select: { id: true, passwordHash: true },
+        })
+      : null;
+    // A comparação roda mesmo sem conta (ver TIMING_PLACEHOLDER_HASH).
+    const matches = await bcrypt.compare(
+      dto.password,
+      account?.passwordHash ?? TIMING_PLACEHOLDER_HASH,
     );
-
-    // Marca o uso só se ninguém usou antes: duas chamadas simultâneas não abrem duas sessões.
-    const { count } = await this.prisma.portalVerification.updateMany({
-      where: { id: verification.id, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-    if (count === 0) throw new BadRequestException(INVALID_CODE);
-
-    return this.openSession(company.id, person, userAgent);
+    if (!account || !matches) throw new UnauthorizedException(INVALID_LOGIN);
+    return this.openSession(account.id, userAgent);
   }
 
-  /**
-   * Sessão de 90 dias de um aparelho para o cliente. Usada pela entrada por
-   * código e pelo link de acesso gerado pela clínica.
-   */
+  /** Sessão de 90 dias de um aparelho para a conta. O token volta uma vez só. */
   async openSession(
-    companyId: string,
-    person: { id: string; name: string },
+    accountId: string,
     userAgent?: string,
-  ): Promise<{
-    token: string;
-    expiresAt: Date;
-    person: { id: string; name: string };
-  }> {
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<{ token: string; expiresAt: Date }> {
     const { token, tokenHash } = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-    await this.prisma.portalSession.create({
+    await db.portalSession.create({
       data: {
-        companyId,
-        peopleId: person.id,
+        clientAccountId: accountId,
         tokenHash,
         expiresAt,
         userAgent: userAgent?.slice(0, 300),
       },
     });
-    return { token, expiresAt, person };
+    return { token, expiresAt };
+  }
+
+  /** Sessão válida (não revogada, no prazo). Qualquer falha é 401, sem motivo. */
+  async authenticate(token: string): Promise<PortalAccount> {
+    const session = await this.prisma.portalSession.findUnique({
+      where: { tokenHash: hashSessionToken(token) },
+      select: {
+        id: true,
+        clientAccountId: true,
+        revokedAt: true,
+        expiresAt: true,
+      },
+    });
+    if (!session || session.revokedAt || session.expiresAt <= new Date()) {
+      throw new UnauthorizedException();
+    }
+    return { sessionId: session.id, accountId: session.clientAccountId };
   }
 
   /**
-   * Sessão válida do portal desta clínica: não revogada, no prazo, cliente ativo.
-   * Qualquer falha é 401, sem dizer o motivo.
+   * O cadastro ativo da conta na clínica do endereço. Sem cadastro, 403
+   * NOT_A_CLIENT: o app oferece entrar no estabelecimento.
    */
-  async authenticate(slug: string, token: string): Promise<PortalClient> {
-    // Clínica inativa, portal desligado ou fora do plano: a sessão também deixa de valer.
-    const company = await this.portalCompanyService
-      .findBySlug(slug)
-      .catch(() => null);
-    const session = company
-      ? await this.prisma.portalSession.findUnique({
-          where: { tokenHash: hashSessionToken(token) },
-          include: { people: { select: { deletedAt: true } } },
-        })
-      : null;
-    if (
-      !session ||
-      session.revokedAt ||
-      session.expiresAt <= new Date() ||
-      session.companyId !== company?.id ||
-      session.people.deletedAt
-    ) {
-      throw new UnauthorizedException();
+  async resolveClient(
+    account: PortalAccount,
+    slug: string,
+  ): Promise<PortalClient> {
+    const company = await this.portalCompanyService.findBySlug(slug);
+    const person = await this.prisma.people.findFirst({
+      where: {
+        companyId: company.id,
+        clientAccountId: account.accountId,
+        type: "CLIENT",
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!person) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "Forbidden",
+        code: NOT_A_CLIENT,
+        message: "Você ainda não é cliente deste estabelecimento",
+      });
     }
+    return { ...account, companyId: company.id, peopleId: person.id };
+  }
+
+  /**
+   * A conta e os locais dela: os cadastros ativos ligados à conta, só das
+   * clínicas com o portal aberto (ligado, ativas e no plano).
+   */
+  async me(account: PortalAccount) {
+    const found = await this.prisma.clientAccount.findUniqueOrThrow({
+      where: { id: account.accountId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        people: {
+          where: { deletedAt: null, type: "CLIENT" },
+          select: { company: { select: { subdomain: true } } },
+        },
+      },
+    });
+
+    const places = await Promise.all(
+      found.people.map(({ company }) =>
+        this.portalCompanyService
+          .findBySlug(company.subdomain)
+          .then((open) => ({
+            slug: company.subdomain,
+            name: open.name,
+            logoUrl: open.logoUrl,
+          }))
+          // Portal fechado: o local some da lista, sem dizer o motivo.
+          .catch(() => null),
+      ),
+    );
+
     return {
-      sessionId: session.id,
-      companyId: session.companyId,
-      peopleId: session.peopleId,
+      account: { id: found.id, name: found.name, phone: found.phone },
+      places: places
+        .filter((place) => place !== null)
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
     };
   }
 
-  async me(client: PortalClient) {
-    const [person, company] = await Promise.all([
-      this.prisma.people.findUniqueOrThrow({
-        where: { id: client.peopleId },
-        select: { id: true, name: true },
+  /**
+   * Troca a senha conferindo a atual. Os outros aparelhos saem; este continua.
+   */
+  async changePassword(
+    account: PortalAccount,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const found = await this.prisma.clientAccount.findUniqueOrThrow({
+      where: { id: account.accountId },
+      select: { passwordHash: true },
+    });
+    if (!(await bcrypt.compare(dto.currentPassword, found.passwordHash))) {
+      throw new BadRequestException("Senha atual incorreta");
+    }
+    const passwordHash = await this.hashPassword(dto.newPassword);
+    await this.prisma.$transaction([
+      this.prisma.clientAccount.update({
+        where: { id: account.accountId },
+        data: { passwordHash, updatedAt: new Date() },
       }),
-      this.prisma.company.findUniqueOrThrow({
-        where: { id: client.companyId },
-        select: {
-          id: true,
-          fantasyName: true,
-          corporateReason: true,
-          logoUrl: true,
-          timezone: true,
+      this.prisma.portalSession.updateMany({
+        where: {
+          clientAccountId: account.accountId,
+          revokedAt: null,
+          id: { not: account.sessionId },
         },
+        data: { revokedAt: new Date() },
       }),
     ]);
-    return {
-      person,
-      company: {
-        id: company.id,
-        name: company.fantasyName ?? company.corporateReason,
-        logoUrl: company.logoUrl,
-        timezone: company.timezone,
-      },
-    };
   }
 
-  /** Sai do portal neste aparelho (as outras sessões continuam). */
-  async logout(client: PortalClient): Promise<void> {
+  /** Sai do app neste aparelho (as outras sessões continuam). */
+  async logout(account: PortalAccount): Promise<void> {
     await this.prisma.portalSession.update({
-      where: { id: client.sessionId },
+      where: { id: account.sessionId },
       data: { revokedAt: new Date() },
     });
   }
 
-  private phoneOrFail(rawPhone: string): string {
+  hashPassword(password: string): Promise<string> {
+    return bcrypt.hash(password, PASSWORD_SALT_ROUNDS);
+  }
+
+  phoneOrFail(rawPhone: string): string {
     const phone = normalizePortalPhone(rawPhone);
     if (!phone) {
       throw new BadRequestException(
@@ -272,72 +256,5 @@ export class PortalAuthService {
       );
     }
     return phone;
-  }
-
-  private hash(companyId: string, phone: string, code: string): string {
-    return hashCode(
-      this.config.get<string>("JWT_SECRET")!,
-      companyId,
-      phone,
-      code,
-    );
-  }
-
-  // Limite por telefone (o limite por IP é do ThrottlerGuard, no controller).
-  private async ensureRequestLimit(
-    companyId: string,
-    phone: string,
-  ): Promise<void> {
-    for (const { max, windowMs } of CODE_REQUEST_LIMITS) {
-      const recent = await this.prisma.portalVerification.count({
-        where: {
-          companyId,
-          phone,
-          createdAt: { gte: new Date(Date.now() - windowMs) },
-        },
-      });
-      if (recent >= max) {
-        throw new HttpException(
-          "Muitos códigos pedidos para este telefone. Aguarde alguns minutos.",
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-      }
-    }
-  }
-
-  // Clientes ativos da clínica com esse telefone em algum contato ativo.
-  private findClientsByPhone(companyId: string, phone: string) {
-    return this.prisma.people.findMany({
-      where: {
-        companyId,
-        type: "CLIENT",
-        deletedAt: null,
-        contacts: { some: { phone, deletedAt: null } },
-      },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-  }
-
-  private async resolvePerson(
-    companyId: string,
-    phone: string,
-    dto: CreateSessionDto,
-  ): Promise<{ id: string; name: string }> {
-    if (dto.personId) {
-      const people = await this.findClientsByPhone(companyId, phone);
-      const chosen = people.find((person) => person.id === dto.personId);
-      // Só uma das pessoas do telefone conferido: ninguém entra como outro cliente.
-      if (!chosen)
-        throw new BadRequestException(
-          "Pessoa não encontrada para este telefone",
-        );
-      return chosen;
-    }
-    const created = await this.peopleService.create(
-      { name: dto.name!, type: "CLIENT", phone },
-      companyId,
-    );
-    return { id: created.id, name: created.name };
   }
 }

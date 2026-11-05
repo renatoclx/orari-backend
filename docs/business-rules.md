@@ -67,7 +67,7 @@
 
 ## Portal do cliente
 
-> **Etapas 1a a 2c (backend completo):** entrada pelo telefone com código, regras do portal por clínica, vitrine pública, profissionais de cada serviço, horários livres, e o cliente lista, agenda e cancela os próprios agendamentos. O código só é **enviado de verdade** quando houver um canal de WhatsApp (etapa 3); até lá, em desenvolvimento, ele aparece no log da API, e **em produção o pedido é recusado (503)**.
+> **Estado:** regras do portal por clínica, vitrine pública, profissionais de cada serviço, horários livres, e o cliente lista, agenda e cancela os próprios agendamentos. Desde a etapa 6a (2026-11-05), o cliente tem uma **conta no app** com telefone e senha, válida em todos os estabelecimentos. A confirmação do telefone pelo código no WhatsApp volta quando houver canal de envio (etapa 3).
 
 - O portal de cada clínica é `/portal/:slug`, em que `slug` é o **subdomínio** da empresa. O portal só existe quando a clínica está ativa, **a clínica o ligou** e a funcionalidade `client-portal` está liberada no plano; nos demais casos, toda rota do portal responde 404 (inclusive o pedido de código), sem dizer o motivo, e as sessões abertas deixam de valer (401).
 - **Regras do portal** (`GET` e `PUT /portal-settings`, só ADMIN, funcionalidade `client-portal`: ler exige `view`, gravar `edit`): `enabled` (portal ligado), `minAdvanceMinutes` (antecedência mínima para agendar, 0 a 7 dias), `maxDaysAhead` (até quantos dias à frente, 1 a 365) e `cancelUntilHours` (até quantas horas antes o cliente cancela, 0 a 30 dias). Padrão de quem nunca gravou: **desligado**, 60 minutos, 30 dias e 24 horas. O `PUT` substitui tudo.
@@ -83,18 +83,30 @@
   - `POST /portal/:slug/appointments` (`serviceId`, `professionalId`, `startAt`): o `startAt` precisa estar entre os **horários livres no momento do pedido** (mesma regra da lista; senão, **409** "Este horário não está mais disponível"). A gravação é a mesma da clínica (cliente = a pessoa da sessão, sem encaixe), com a origem `PORTAL`.
   - `PATCH /portal/:slug/appointments/:id/cancel` (204): só agendamento do **próprio cliente** (de outro, 404), **avulso** (recorrência, pacote e turma: 400, a clínica cancela) e até **`cancelUntilHours` antes** do início (depois, 400 "Fale com a clínica"). As demais regras (já iniciado, concluído, pagamento) são as do cancelamento da clínica.
 - Pelo portal só se fazem **agendamentos avulsos**; recorrências, pacotes e turmas continuam sendo feitos na clínica. O agendamento guarda a **origem** (`source`: `CLINIC` ou `PORTAL`).
-- **Sem senha e sem conta de usuário:** o cliente do portal é a própria pessoa CLIENT da clínica (nome e telefone bastam). Há duas formas de entrar:
-  - **Link de acesso gerado pela clínica (a forma principal por enquanto):** `POST /people/:id/portal-access` (funcionalidade `clients`, ação `edit`) gera, para um **cliente ativo** da empresa, um link de **uso único** que vale **24 horas**. A clínica o envia pelo WhatsApp dela, à mão, ou mostra em QR code. Um link novo invalida o anterior ainda não usado. Com o portal desligado, a resposta é 409 (o link não abriria nada). Só o hash do token é gravado, e a geração fica na **auditoria** (`PORTAL_ACCESS_LINK_CREATED`, na ficha do cliente). A resposta traz `token`, `expiresAt` e `path` (o caminho do portal no frontend, `/p/<subdomínio>/acesso/<token>`). O cliente abre o link e `POST /portal/:slug/auth/link` (`token`) troca o link por uma sessão de 90 dias; link inexistente, de outra clínica, já usado, vencido ou de cliente inativo: 400. A prova de identidade é a clínica, que conhece o cliente: **não depende do WhatsApp**. Cliente novo pede o acesso à clínica.
-  - **Código pelo WhatsApp** (pronto no backend, ativo quando houver canal de envio): o cliente informa o telefone e recebe um **código de 6 dígitos no WhatsApp**, como descrito abaixo.
-- **Telefone:** com DDD, 10 ou 11 dígitos, como nos contatos; a API aceita máscara e o código do país (55). A busca é pelo número exato em qualquer contato ativo do cliente.
-- **Pedido do código** (`POST /portal/:slug/auth/code`): a resposta é a mesma com ou sem cadastro do telefone (o portal não revela quem é cliente da clínica). Limites: por IP (como o login) e por telefone, **3 pedidos em 10 minutos e 10 em 24 horas** (429). Só o **hash** do código é gravado (HMAC com o segredo da API, amarrado à empresa e ao telefone).
-- **Conferência** (`POST /portal/:slug/auth/verify`): vale o pedido mais recente do telefone, por **10 minutos**, com até **5 tentativas** (código errado conta uma). Código certo devolve um `verificationId` e as pessoas da clínica com esse telefone: **clientes ativos** com o número em algum contato ativo (`id` e `name`), em ordem de nome.
-- **Sessão** (`POST /portal/:slug/auth/session`), até 10 minutos depois da conferência, com **exatamente um** de:
-  - `personId`: uma das pessoas da lista (outra pessoa: 400; ninguém entra como outro cliente);
-  - `name`: o cliente não é nenhuma delas e é **cadastrado** com nome e telefone (o telefone vira o contato principal), como no cadastro rápido.
-  - Cada conferência vira **uma** sessão: duas chamadas ao mesmo tempo não abrem duas.
-  - Devolve o **token do portal** (uma única vez), a validade e a pessoa. A sessão vale **90 dias** e é de um aparelho; as outras não são afetadas.
-- **Cliente entrado:** `GET /portal/:slug/me` (pessoa e clínica: nome, logo e fuso) e `POST /portal/:slug/auth/logout` (encerra a sessão deste aparelho, 204). A sessão deixa de valer se for revogada, vencer, se o cliente for inativado ou se a clínica for inativada (401).
+- **Conta do cliente no app** (desde 2026-11-05): o cliente tem **uma conta só no Orari**, com **telefone e senha**, e com ela usa todos os estabelecimentos. Em cada clínica, o cliente continua sendo o **cadastro dela** (pessoa CLIENT), **ligado à conta**; uma conta tem no máximo um cadastro ativo em cada clínica. Uma clínica nunca vê o que outra guardou.
+  - **Telefone:** com DDD, 10 ou 11 dígitos, como nos contatos; a API aceita máscara e o código do país (55). É o login e é único entre as contas.
+  - **Senha:** a mesma regra dos usuários da clínica (8 a 72 caracteres, com confirmação), guardada com bcrypt.
+  - **Ainda não há confirmação do telefone:** quem cria a conta digita o número. Por isso, a conta **só se liga a um cadastro que já existe pelo link da clínica**, e nunca porque o telefone é igual.
+- **Rotas da conta** (`/portal-account`, fora do `/portal/:slug` para não disputar o endereço com as clínicas):
+  - `POST /portal-account/register` (`name`, `phone`, `password`, `passwordConfirmation`): cria a conta, sem nenhum estabelecimento, e já abre a sessão. Telefone de outra conta: **409**.
+  - `POST /portal-account/login` (`phone`, `password`): telefone sem conta ou senha errada dão o mesmo **401** "Telefone ou senha inválidos", no mesmo tempo de resposta.
+  - `GET /portal-account`: a conta (nome e telefone) e os **locais** dela (`slug`, nome e logo), só os de portal aberto, em ordem alfabética.
+  - `PATCH /portal-account/password` (`currentPassword`, `newPassword`, `newPasswordConfirmation`; 204): senha atual errada, 400. Os **outros aparelhos saem**; este continua.
+  - `POST /portal-account/logout` (204): encerra a sessão deste aparelho.
+  - Cadastro, login, troca de senha e link têm limite de tentativas por IP (429).
+- **Sessão:** devolvida uma única vez (`token` e `expiresAt`), vale **90 dias**, é de um aparelho e é **da conta**. Nas rotas de um estabelecimento (`/portal/:slug/...`), a API procura o cadastro ativo da conta naquela clínica; sem cadastro, **403 `NOT_A_CLIENT`** "Você ainda não é cliente deste estabelecimento" (o app oferece entrar nele). Portal fechado: 404.
+- **Link de acesso gerado pela clínica:** `POST /people/:id/portal-access` (funcionalidade `clients`, ação `edit`) gera, para um **cliente ativo** da empresa, um link de **uso único** que vale **24 horas**. A clínica o envia pelo WhatsApp dela ou mostra em QR code. Um link novo invalida o anterior ainda não usado. Com o portal desligado, 409. Só o hash do token é gravado, e a geração fica na **auditoria** (`PORTAL_ACCESS_LINK_CREATED`). A resposta traz `token`, `expiresAt` e `path` (`/app/acesso/<token>`, o caminho no app).
+  - É o **único caminho que liga a conta a um cadastro que já existe**: quem prova a identidade é a clínica, que conhece o cliente.
+  - `POST /portal-account/link/check` (`token`) confere o link **sem usá-lo** e devolve o estabelecimento, o nome do cliente, `needsPhone` (o cadastro não tem telefone) e `hasAccount` (a senha será a nova senha de uma conta que já existe).
+  - `POST /portal-account/link` (`token`; `password` e `passwordConfirmation`; `phone` só quando `needsPhone`) usa o link uma vez só:
+    - **com a conta entrada** (token do portal no cabeçalho): liga o cadastro da clínica a ela. Cadastro já ligado a outra conta: 409.
+    - **cadastro já ligado a uma conta:** a senha passa a ser a **senha nova** dessa conta, e os aparelhos dela saem. É o **"esqueci a senha"**: o cliente pede um link à clínica.
+    - **telefone da clínica com conta:** liga o cadastro a essa conta e troca a senha (a clínica garantiu que o telefone é do cliente).
+    - **sem conta:** cria a conta com o nome do cadastro e o telefone da clínica (ou o digitado, quando o cadastro não tem) e liga.
+    - **telefone digitado que já tem conta:** 409 (pode ser de outra pessoa); o cliente entra nela e abre o link de novo.
+    - Link inexistente, usado, vencido, de cliente inativo ou de portal fechado: 400. Dois cliques ao mesmo tempo: só um vale.
+  - A conta já ter outro cadastro na mesma clínica: 409.
+- **Código pelo WhatsApp:** as peças continuam no backend (cálculo e hash do código, limites, tabela `PortalVerification`, envio), mas **sem rotas** desde a etapa 6a. Voltam quando houver canal de envio, para **confirmar o telefone da conta**.
 
 ## Usuários e acesso
 

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Headers,
+  HttpCode,
   Ip,
   Param,
   ParseUUIDPipe,
@@ -22,8 +23,10 @@ import {
 } from "../../common/decorators/feature.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
-import { ExchangeLinkDto } from "./dto/exchange-link.dto";
+import { CheckAccessLinkDto, UseAccessLinkDto } from "./dto/access-link.dto";
 import { PortalAccessService } from "./portal-access.service";
+import { bearerToken } from "./portal-auth.guard";
+import { PortalAuthService } from "./portal-auth.service";
 
 // A clínica gera o link de acesso ao portal na ficha do cliente.
 @ApiTags("Portal do cliente (clínica)")
@@ -36,7 +39,7 @@ export class PortalAccessLinkController {
   @Feature("clients")
   @FeatureAction("edit")
   @ApiOperation({
-    summary: "Gera o link de acesso ao portal para o cliente (24 h, uso único)",
+    summary: "Gera o link de acesso ao app para o cliente (24 h, uso único)",
     description:
       "Para a clínica enviar pelo WhatsApp dela ou mostrar em QR code. Um link novo invalida o anterior não usado. Portal desligado: 409. Fica na auditoria.",
   })
@@ -49,24 +52,47 @@ export class PortalAccessLinkController {
   }
 }
 
-// O cliente abre o link e entra, sem código.
+// O cliente abre o link no app: liga o cadastro à conta, cria a conta ou cria
+// uma senha nova. Fica junto da conta, em /portal-account (ver PortalAccountController).
 @ApiTags("Portal do cliente")
 @Public()
-@Controller("portal/:slug/auth")
-export class PortalAccessExchangeController {
-  constructor(private readonly portalAccessService: PortalAccessService) {}
+@UseGuards(ThrottlerGuard)
+@ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
+@Controller("portal-account/link")
+export class PortalAccessUseController {
+  constructor(
+    private readonly portalAccessService: PortalAccessService,
+    private readonly portalAuthService: PortalAuthService,
+  ) {}
 
-  @Post("link")
-  @UseGuards(ThrottlerGuard)
-  @ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
+  @Post("check")
+  @HttpCode(200)
   @ApiOperation({
-    summary: "Troca o link de acesso da clínica por uma sessão de 90 dias",
+    summary: "Confere o link sem usá-lo",
+    description:
+      "Devolve o estabelecimento, o nome do cliente, `needsPhone` (o cadastro não tem telefone) e `hasAccount` (a senha será a nova senha de uma conta que já existe). Link inválido, usado ou vencido: 400.",
   })
-  exchange(
-    @Param("slug") slug: string,
-    @Body() dto: ExchangeLinkDto,
+  check(@Body() dto: CheckAccessLinkDto) {
+    return this.portalAccessService.check(dto.token);
+  }
+
+  @Post()
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Usa o link de acesso (uma vez só)",
+    description:
+      "Com o token do portal: liga o cadastro do estabelecimento à conta entrada (devolve só `place`). Sem ele: `password` cria a conta ou é a senha nova da conta que já existe (os outros aparelhos saem); devolve também `token` e `expiresAt`. `phone` só quando `needsPhone`.",
+  })
+  async use(
+    @Body() dto: UseAccessLinkDto,
+    @Headers("authorization") authorization?: string,
     @Headers("user-agent") userAgent?: string,
   ) {
-    return this.portalAccessService.exchange(slug, dto.token, userAgent);
+    const token = bearerToken({ headers: { authorization }, params: {} });
+    // Token presente mas inválido: 401, para o app não criar outra conta sem querer.
+    const account = token
+      ? await this.portalAuthService.authenticate(token)
+      : null;
+    return this.portalAccessService.use(dto, account, userAgent);
   }
 }

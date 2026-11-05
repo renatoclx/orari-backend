@@ -181,3 +181,27 @@ empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
 
 **Como resolver:** quando houver necessidade, descobrir o dono do contato pelo registro (como o `/people` faz pelo tipo) e acrescentar as dependências que faltarem à matriz.
 
+---
+
+## Telefone da conta do cliente sem confirmação
+
+**Onde:** `PortalAuthService.register` e `PortalAccessService.use` (conta do
+cliente no app, etapa 6a).
+
+**O que é:** quem cria a conta digita o telefone, e nada confirma que o número é
+dele. Alguém pode criar uma conta com o número de outra pessoa; quando o dono
+tentar se cadastrar, recebe "já existe uma conta com este telefone".
+
+**Impacto:** a conta não enxerga nada de ninguém por causa disso (ela só se liga
+a um cadastro existente pelo link da clínica), mas o dono do número fica sem
+conseguir criar a conta sozinho. Hoje, a saída é a clínica gerar o link de
+acesso: se a ficha do cliente tem esse telefone, o link liga a ficha à conta do
+número e cria uma senha nova, tirando quem a criou.
+
+**Como resolver:** confirmar o telefone pelo código no WhatsApp (etapa 3, depende
+do canal da Meta). As peças já estão no backend (`portal-code.ts`,
+`MessageSenderService`, `PortalVerification`); falta ligá-las à conta: código no
+cadastro e um "esqueci a senha" pelo próprio app.
+
+**Registrado em:** 2026-11-05.
+
