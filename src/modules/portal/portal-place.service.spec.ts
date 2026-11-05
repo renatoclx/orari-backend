@@ -7,7 +7,12 @@ import type { PortalCompanyService } from "./portal-company.service";
 import { PortalPlaceService } from "./portal-place.service";
 
 const ACCOUNT = { sessionId: "s-1", accountId: "acc-1" };
-const AURORA = { id: "c-1", name: "Studio Aurora", logoUrl: null };
+const AURORA = {
+  id: "c-1",
+  name: "Studio Aurora",
+  logoUrl: null,
+  timezone: "America/Sao_Paulo",
+};
 const at = (iso: string) => ({ startAt: new Date(iso) });
 
 describe("PortalPlaceService", () => {
@@ -37,7 +42,12 @@ describe("PortalPlaceService", () => {
       prismaMock.people.findFirst.mockResolvedValue(null);
 
       await expect(service.join(ACCOUNT, "aurora")).resolves.toEqual({
-        place: { slug: "aurora", name: "Studio Aurora", logoUrl: null },
+        place: {
+          slug: "aurora",
+          name: "Studio Aurora",
+          logoUrl: null,
+          timezone: "America/Sao_Paulo",
+        },
         joined: true,
       });
       expect(prismaMock.people.create).toHaveBeenCalledWith({

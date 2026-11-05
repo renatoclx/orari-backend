@@ -94,7 +94,7 @@
 - **Rotas da conta** (`/portal-account`, fora do `/portal/:slug` para não disputar o endereço com as clínicas):
   - `POST /portal-account/register` (`name`, `phone`, `password`, `passwordConfirmation`): cria a conta, sem nenhum estabelecimento, e já abre a sessão. Telefone de outra conta: **409**.
   - `POST /portal-account/login` (`phone`, `password`): telefone sem conta ou senha errada dão o mesmo **401** "Telefone ou senha inválidos", no mesmo tempo de resposta.
-  - `GET /portal-account`: a conta (nome e telefone) e os **locais** dela (`slug`, nome e logo), só os de portal aberto, em ordem alfabética.
+  - `GET /portal-account`: a conta (nome e telefone) e os **locais** dela (`slug`, nome, logo e fuso), só os de portal aberto, em ordem alfabética.
   - `PATCH /portal-account/password` (`currentPassword`, `newPassword`, `newPasswordConfirmation`; 204): senha atual errada, 400. Os **outros aparelhos saem**; este continua.
   - `POST /portal-account/logout` (204): encerra a sessão deste aparelho.
   - Cadastro, login, troca de senha e link têm limite de tentativas por IP (429).
@@ -114,7 +114,7 @@
   - Esse cadastro nasce **não confirmado** (`portalConfirmed = false`). Até a clínica confirmar, o cliente pode ter **no máximo 2 agendamentos futuros** (não cancelados, de qualquer origem) naquela clínica; o terceiro pelo app é recusado com **403 `UNCONFIRMED_LIMIT`**. Agendamentos feitos pela clínica não são barrados.
   - **A clínica confirma** pelo `PATCH /people/:id/portal-confirm` (funcionalidade `clients`, ação `edit`; 204; já confirmado, nada muda; fica na **auditoria**, `PORTAL_CLIENT_CONFIRMED`). O cadastro também passa a confirmado quando é ligado ou recebe senha nova **pelo link da clínica**.
   - Os cadastros da clínica (inclusive os antigos) nascem confirmados.
-- **Agendamentos de todos os estabelecimentos** (`GET /portal-account/appointments`): `upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes) de todos os cadastros da conta em clínicas de portal aberto. Cada item é o mesmo da lista de um estabelecimento, com `place` (`slug`, nome e logo).
+- **Agendamentos de todos os estabelecimentos** (`GET /portal-account/appointments`): `upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes) de todos os cadastros da conta em clínicas de portal aberto. Cada item é o mesmo da lista de um estabelecimento, com `place` (`slug`, nome, logo e fuso, para mostrar o horário no relógio da clínica).
 - **Código pelo WhatsApp:** as peças continuam no backend (cálculo e hash do código, limites, tabela `PortalVerification`, envio), mas **sem rotas** desde a etapa 6a. Voltam quando houver canal de envio, para **confirmar o telefone da conta**.
 
 ## Usuários e acesso

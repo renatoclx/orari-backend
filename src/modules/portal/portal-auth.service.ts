@@ -191,6 +191,7 @@ export class PortalAuthService {
             slug: company.subdomain,
             name: open.name,
             logoUrl: open.logoUrl,
+            timezone: open.timezone,
           }))
           // Portal fechado: o local some da lista, sem dizer o motivo.
           .catch(() => null),

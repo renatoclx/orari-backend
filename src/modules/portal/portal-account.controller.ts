@@ -70,7 +70,7 @@ export class PortalAccountController {
   @ApiOperation({
     summary: "A conta entrada e os estabelecimentos dela",
     description:
-      "`places` traz só os estabelecimentos com o portal aberto, em ordem alfabética.",
+      "`places` traz só os estabelecimentos com o portal aberto, em ordem alfabética, cada um com `slug`, nome, logo e fuso.",
   })
   me(@CurrentAccount() account: PortalAccount) {
     return this.portalAuthService.me(account);
@@ -82,7 +82,7 @@ export class PortalAccountController {
   @ApiOperation({
     summary: "Agendamentos da conta em todos os estabelecimentos",
     description:
-      "`upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes). Cada item é o da lista de um estabelecimento, com `place` (slug, nome e logo).",
+      "`upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes). Cada item é o da lista de um estabelecimento, com `place` (slug, nome, logo e fuso).",
   })
   appointments(@CurrentAccount() account: PortalAccount) {
     return this.portalPlaceService.appointments(account);

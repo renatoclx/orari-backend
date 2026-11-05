@@ -226,14 +226,25 @@ describe("PortalAuthService", () => {
         : Promise.resolve({
             name: slug === "zeta" ? "Zeta" : "Aurora",
             logoUrl: null,
+            timezone: "America/Sao_Paulo",
           }),
     );
 
     await expect(service.me(ACCOUNT)).resolves.toEqual({
       account: { id: "acc-1", name: "Ana", phone: PHONE },
       places: [
-        { slug: "aurora", name: "Aurora", logoUrl: null },
-        { slug: "zeta", name: "Zeta", logoUrl: null },
+        {
+          slug: "aurora",
+          name: "Aurora",
+          logoUrl: null,
+          timezone: "America/Sao_Paulo",
+        },
+        {
+          slug: "zeta",
+          name: "Zeta",
+          logoUrl: null,
+          timezone: "America/Sao_Paulo",
+        },
       ],
     });
   });

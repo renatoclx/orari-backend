@@ -132,6 +132,12 @@ export class PortalPlaceService {
   }
 }
 
+// O fuso vai junto: o app mostra cada horário no relógio da clínica.
 function toPlace(slug: string, company: PortalCompany) {
-  return { slug, name: company.name, logoUrl: company.logoUrl };
+  return {
+    slug,
+    name: company.name,
+    logoUrl: company.logoUrl,
+    timezone: company.timezone,
+  };
 }
