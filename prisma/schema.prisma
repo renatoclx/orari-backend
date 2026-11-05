@@ -109,8 +109,9 @@ model City {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime?
 
-  state     State     @relation(fields: [stateId], references: [id])
-  addresses Address[]
+  state          State           @relation(fields: [stateId], references: [id])
+  addresses      Address[]
+  clientAccounts ClientAccount[]
 
   @@unique([name, stateId])
   @@index([stateId])
@@ -984,13 +985,31 @@ model PortalSession {
 // Conta do cliente no app (portal), única no Orari e com senha. Cada clínica
 // continua com o próprio cadastro do cliente (People), ligado a esta conta.
 model ClientAccount {
-  id           String    @id @default(uuid())
+  id                  String    @id @default(uuid())
   // Telefone com DDD, só dígitos (10 ou 11), como nos contatos. É o login.
-  phone        String    @unique @db.VarChar(11)
-  name         String
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime?
+  phone               String    @unique @db.VarChar(11)
+  name                String
+  passwordHash        String
+  // "Meus dados" do app: o cadastro do cliente, copiado para o cadastro em
+  // cada clínica ligada à conta ao salvar (ver PortalProfileService).
+  email               String?
+  // CPF sem máscara (11 dígitos).
+  document            String?   @db.Char(11)
+  birthDate           DateTime? @db.Date
+  profession          String?
+  // Foto da conta; cada clínica recebe a própria cópia do arquivo.
+  photoUrl            String?
+  // Endereço principal (o mesmo formato dos endereços das pessoas).
+  addressCep          String?   @db.Char(8)
+  addressStreet       String?
+  addressNumber       String?
+  addressComplement   String?
+  addressNeighborhood String?
+  addressCityId       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime?
+
+  addressCity City? @relation(fields: [addressCityId], references: [id])
 
   people   People[]
   sessions PortalSession[]

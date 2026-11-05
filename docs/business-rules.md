@@ -115,6 +115,18 @@
   - **A clínica confirma** pelo `PATCH /people/:id/portal-confirm` (funcionalidade `clients`, ação `edit`; 204; já confirmado, nada muda; fica na **auditoria**, `PORTAL_CLIENT_CONFIRMED`). O cadastro também passa a confirmado quando é ligado ou recebe senha nova **pelo link da clínica**.
   - Os cadastros da clínica (inclusive os antigos) nascem confirmados.
 - **Agendamentos de todos os estabelecimentos** (`GET /portal-account/appointments`): `upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes) de todos os cadastros da conta em clínicas de portal aberto. Cada item é o mesmo da lista de um estabelecimento, com `place` (`slug`, nome, logo e fuso, para mostrar o horário no relógio da clínica).
+- **Meus dados** (desde 2026-11-05): a conta guarda o **cadastro do cliente** e o copia para o cadastro dele em **cada clínica** ligada à conta.
+  - `GET /portal-account/city?name=&state=`: a cidade pelo nome (sem acentos) e pela UF, para o app preencher o endereço pelo CEP (não achou: 404).
+  - `GET /portal-account/profile`: nome, telefone, e-mail, CPF, nascimento, profissão, foto e o endereço principal (`address` nulo sem endereço).
+  - `PUT /portal-account/profile` substitui tudo (campo opcional que não vem fica vazio) e copia para cada cadastro ativo da conta, numa transação: nome, CPF, nascimento e profissão; telefone e e-mail no **contato principal** (criado se não houver); o **endereço principal** (criado se não houver). **Sem endereço no app, o da clínica fica** (não é apagado). As **observações** da clínica nunca são tocadas nem mostradas ao cliente.
+  - Trocar o **telefone** (o login) pede `currentPassword` (sem ela ou errada: 400); telefone de outra conta: 409.
+  - **CPF** em outro cadastro ativo de alguma das clínicas (lá ele é único): 409 "Este CPF já está em outro cadastro de <clínica>. Fale com o estabelecimento.", sem salvar nada.
+  - **Foto** (`POST /portal-account/photo`, multipart `photo`, JPEG ou PNG conferidos pelo conteúdo, até 2 MB; `DELETE` tira): grava a da conta e **uma cópia para cada clínica** (se a clínica trocar a foto no painel, as outras não perdem a sua); os arquivos antigos só são apagados depois que o banco aponta para os novos.
+  - **Vale o último a salvar:** a clínica continua podendo corrigir o cadastro dela no painel; o próximo "Salvar" do app sobrescreve com Meus dados.
+  - **Ao entrar sozinho** num estabelecimento, o cadastro novo já nasce com Meus dados (o CPF só se não estiver em outro cadastro da clínica; a foto vai na próxima troca). **Ao criar a conta pelo link**, ela nasce com o que a clínica tem (CPF, nascimento, profissão e e-mail).
+- **Pacotes e recorrências, só para ver** (desde 2026-11-05), de todos os estabelecimentos de portal aberto:
+  - `GET /portal-account/plans`: cada pacote contratado com o nome do plano, `startDate`/`endDate` (aaaa-mm-dd), `status` pela mesma regra da clínica (`cancelled`; `finished` quando a data final já passou; senão `active`) e `place`. **Sem valores.** Ativos primeiro, depois os mais recentes.
+  - `GET /portal-account/recurrences`: as recorrências **em vigor** (ativas, sem saída da turma, sem data final ou com ela de hoje em diante): `kind` (`RECURRENCE` horário fixo, `PLAN` de pacote, `CLASS` turma), serviço, profissional, `days` (dia da semana, início e fim em HH:MM), período e `place`. Quem marca e muda é a clínica.
 - **Código pelo WhatsApp:** as peças continuam no backend (cálculo e hash do código, limites, tabela `PortalVerification`, envio), mas **sem rotas** desde a etapa 6a. Voltam quando houver canal de envio, para **confirmar o telefone da conta**.
 
 ## Usuários e acesso
