@@ -87,7 +87,7 @@ export class PortalAccessService {
     // Sem portal ligado, o link não abriria nada: avisa em vez de gerar.
     await this.portalCompanyService.findBySlug(company.subdomain).catch(() => {
       throw new ConflictException(
-        "Ligue o portal do cliente em Configurações antes de gerar o acesso",
+        "Ligue o portal na tela Portal do cliente antes de gerar o acesso",
       );
     });
 
