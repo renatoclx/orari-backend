@@ -23,6 +23,7 @@ describe("PortalCompanyService", () => {
       minAdvanceMinutes: 120,
       maxDaysAhead: 15,
       cancelUntilHours: 12,
+      segment: "PILATES",
     },
     ...overrides,
   });
@@ -38,6 +39,7 @@ describe("PortalCompanyService", () => {
       id: "c-1",
       name: "Studio Aurora",
       logoUrl: null,
+      segment: "PILATES",
       timezone: "America/Sao_Paulo",
       rules: { minAdvanceMinutes: 120, maxDaysAhead: 15, cancelUntilHours: 12 },
     });

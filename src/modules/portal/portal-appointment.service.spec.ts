@@ -15,6 +15,7 @@ const company: PortalCompany = {
   id: "c-1",
   name: "Studio Aurora",
   logoUrl: null,
+  segment: null,
   timezone: "America/Sao_Paulo",
   rules: { minAdvanceMinutes: 60, maxDaysAhead: 30, cancelUntilHours: 24 },
 };

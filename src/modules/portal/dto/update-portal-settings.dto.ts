@@ -1,4 +1,12 @@
-import { IsBoolean, IsInt, Max, Min } from "class-validator";
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  Max,
+  Min,
+} from "class-validator";
+import { BusinessSegment } from "../../../../generated/prisma/enums";
 
 export class UpdatePortalSettingsDto {
   /** Portal disponível para os clientes. */
@@ -22,4 +30,17 @@ export class UpdatePortalSettingsDto {
   @Min(0)
   @Max(30 * 24)
   cancelUntilHours!: number;
+
+  /**
+   * Aparecer na busca de estabelecimentos do app. Sem o campo, fica como está
+   * (as telas antigas não o enviam).
+   */
+  @IsOptional()
+  @IsBoolean()
+  listed?: boolean;
+
+  /** Ramo do estabelecimento; obrigatório para aparecer na busca. Sem o campo, fica como está. */
+  @IsOptional()
+  @IsEnum(BusinessSegment)
+  segment?: BusinessSegment;
 }

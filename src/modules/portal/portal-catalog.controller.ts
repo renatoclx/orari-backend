@@ -5,6 +5,7 @@ import { FindAvailabilityQueryDto } from "./dto/find-availability-query.dto";
 import { PortalAvailabilityService } from "./portal-availability.service";
 import { PortalCatalogService } from "./portal-catalog.service";
 import { PortalCompanyService } from "./portal-company.service";
+import { PortalDirectoryService } from "./portal-directory.service";
 
 // Vitrine do portal, sem login: a clínica, as regras e os serviços com quem os atende.
 @ApiTags("Portal do cliente")
@@ -15,18 +16,22 @@ export class PortalCatalogController {
     private readonly portalCompanyService: PortalCompanyService,
     private readonly portalCatalogService: PortalCatalogService,
     private readonly portalAvailabilityService: PortalAvailabilityService,
+    private readonly portalDirectoryService: PortalDirectoryService,
   ) {}
 
   @Get()
   @ApiOperation({
-    summary: "Clínica do portal: nome, logo, fuso e regras para o cliente",
-    description: "Portal desligado, fora do plano ou clínica inativa: 404.",
+    summary:
+      "Clínica do portal: nome, logo, segmento, cidade, fuso e regras para o cliente",
+    description:
+      "`segment` e `city` podem ser nulos. Portal desligado, fora do plano ou clínica inativa: 404.",
   })
   async company(@Param("slug") slug: string) {
     // O id interno da clínica não vai para a vitrine pública.
-    const { name, logoUrl, timezone, rules } =
+    const { id, name, logoUrl, segment, timezone, rules } =
       await this.portalCompanyService.findBySlug(slug);
-    return { name, logoUrl, timezone, rules };
+    const city = await this.portalDirectoryService.cityOf(id);
+    return { name, logoUrl, segment, city, timezone, rules };
   }
 
   @Get("services")

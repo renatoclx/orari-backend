@@ -31,6 +31,7 @@ import {
 import { PortalAccountController } from "../portal/portal-account.controller";
 import { PortalAppointmentController } from "../portal/portal-appointment.controller";
 import { PortalCatalogController } from "../portal/portal-catalog.controller";
+import { PortalDirectoryController } from "../portal/portal-directory.controller";
 import { PortalSettingsController } from "../portal/portal-settings.controller";
 import { RecurringAppointmentController } from "../recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../service/service.controller";
@@ -53,6 +54,8 @@ const EXEMPT: Record<string, string> = {
     "agendamentos do cliente no portal (PortalAuthGuard, token do portal)",
   PortalCatalogController:
     "vitrine pública do portal (só abre com o portal ligado e no plano)",
+  PortalDirectoryController:
+    "busca pública de estabelecimentos (só os de portal ligado, no plano e que escolheram aparecer)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
   NotificationController: "ainda sem uso (ver technical-debt.md)",
@@ -94,6 +97,7 @@ const CONTROLLERS: Controller[] = [
   PortalAccessUseController,
   PortalClientConfirmController,
   PortalCatalogController,
+  PortalDirectoryController,
   PortalSettingsController,
   PlanController,
   RecurringAppointmentController,

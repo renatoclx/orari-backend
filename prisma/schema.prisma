@@ -1004,16 +1004,35 @@ enum AppointmentSource {
 }
 
 // Regras do portal do cliente definidas pela clínica (ver docs/business-rules.md, "Portal do cliente").
+// Ramo do estabelecimento na busca do app.
+enum BusinessSegment {
+  BARBERSHOP
+  BEAUTY_SALON
+  AESTHETICS
+  NAIL_SALON
+  EYEBROW_DESIGN
+  PHYSIOTHERAPY
+  PILATES
+  PSYCHOLOGY
+  NUTRITION
+  DENTISTRY
+  OTHER
+}
+
 model PortalSettings {
-  companyId         String    @id
+  companyId         String           @id
   // Desligado até a clínica ligar.
-  enabled           Boolean   @default(false)
+  enabled           Boolean          @default(false)
   // Antecedência mínima para o cliente agendar.
-  minAdvanceMinutes Int       @default(60)
+  minAdvanceMinutes Int              @default(60)
   // Até quantos dias à frente o cliente pode agendar.
-  maxDaysAhead      Int       @default(30)
+  maxDaysAhead      Int              @default(30)
   // Até quantas horas antes o cliente pode cancelar.
-  cancelUntilHours  Int       @default(24)
+  cancelUntilHours  Int              @default(24)
+  // A clínica aparece na busca de estabelecimentos do app (desligado até ela escolher).
+  listed            Boolean          @default(false)
+  // Ramo do estabelecimento, mostrado na busca; obrigatório para aparecer nela.
+  segment           BusinessSegment?
   updatedAt         DateTime?
 
   company Company @relation(fields: [companyId], references: [id])

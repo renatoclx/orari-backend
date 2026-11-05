@@ -18,6 +18,8 @@ import { PortalAvailabilityService } from "./portal-availability.service";
 import { PortalCatalogController } from "./portal-catalog.controller";
 import { PortalCatalogService } from "./portal-catalog.service";
 import { PortalCompanyService } from "./portal-company.service";
+import { PortalDirectoryController } from "./portal-directory.controller";
+import { PortalDirectoryService } from "./portal-directory.service";
 import { PortalPlaceService } from "./portal-place.service";
 import { PortalSettingsController } from "./portal-settings.controller";
 import { PortalSettingsService } from "./portal-settings.service";
@@ -31,6 +33,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalAccessUseController,
     PortalClientConfirmController,
     PortalCatalogController,
+    PortalDirectoryController,
     PortalSettingsController,
   ],
   providers: [
@@ -44,6 +47,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalAccessService,
     PortalSettingsService,
     PortalPlaceService,
+    PortalDirectoryService,
   ],
 })
 export class PortalModule {}

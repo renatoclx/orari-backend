@@ -194,6 +194,8 @@
 | ----------------- | ------------------------------------------------ |
 | companyId         | Empresa (também é o identificador)               |
 | enabled           | Portal ligado (padrão: desligado)                |
+| listed            | Aparece na busca de estabelecimentos do app (padrão: não) |
+| segment           | Ramo do estabelecimento (`BusinessSegment`); obrigatório para aparecer na busca |
 | minAdvanceMinutes | Antecedência mínima para agendar, em minutos     |
 | maxDaysAhead      | Até quantos dias à frente o cliente agenda       |
 | cancelUntilHours  | Até quantas horas antes o cliente cancela        |

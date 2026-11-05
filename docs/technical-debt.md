@@ -224,3 +224,22 @@ chave do cliente) na mesma transação da contagem e da gravação.
 
 **Registrado em:** 2026-11-05.
 
+---
+
+## Busca de estabelecimentos filtra o nome fora do banco
+
+**Onde:** `PortalDirectoryService.search` (etapa 6c).
+
+**O que é:** a consulta traz todas as clínicas que aparecem na busca, e o filtro
+pelo nome (sem acentos) é feito na API, porque o nome da empresa não tem coluna
+normalizada (o banco não tem a extensão `unaccent`).
+
+**Impacto:** nenhum enquanto poucas clínicas aparecem na busca. Com centenas, cada
+busca passaria a ler todas.
+
+**Como resolver:** coluna normalizada do nome na empresa (como o `normalizedName`
+das pessoas), com índice GIN trigram, e o filtro no banco. Fazer junto da
+geolocalização, que também muda a consulta.
+
+**Registrado em:** 2026-11-05.
+
