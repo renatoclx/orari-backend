@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -18,8 +19,12 @@ describe("PortalSettingsService", () => {
     maxDaysAhead: 60,
     cancelUntilHours: 6,
   };
+  const directory = { listed: false, segment: null };
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.portalSettings.findUnique.mockResolvedValue(null);
+  });
 
   it("clínica sem registro: o padrão (portal desligado, 1 h, 30 dias, 24 h)", async () => {
     prismaMock.portalSettings.findUnique.mockResolvedValue(null);
@@ -29,6 +34,8 @@ describe("PortalSettingsService", () => {
       minAdvanceMinutes: 60,
       maxDaysAhead: 30,
       cancelUntilHours: 24,
+      listed: false,
+      segment: null,
     });
   });
 
@@ -36,12 +43,51 @@ describe("PortalSettingsService", () => {
     prismaMock.portalSettings.upsert.mockResolvedValue({
       companyId: "c-1",
       ...rules,
+      ...directory,
     });
-    await expect(service.replace("c-1", rules)).resolves.toEqual(rules);
+    await expect(service.replace("c-1", rules)).resolves.toEqual({
+      ...rules,
+      ...directory,
+    });
     expect(prismaMock.portalSettings.upsert).toHaveBeenCalledWith({
       where: { companyId: "c-1" },
       create: { companyId: "c-1", ...rules },
       update: { ...rules, updatedAt: expect.any(Date) as Date },
     });
+  });
+
+  it("aparecer na busca com o segmento: grava os dois", async () => {
+    const dto = { ...rules, listed: true, segment: "AESTHETICS" as const };
+    prismaMock.portalSettings.upsert.mockResolvedValue({
+      companyId: "c-1",
+      ...dto,
+    });
+    await expect(service.replace("c-1", dto)).resolves.toMatchObject({
+      listed: true,
+      segment: "AESTHETICS",
+    });
+  });
+
+  it("aparecer na busca sem segmento (nem gravado antes): 400, sem gravar", async () => {
+    await expect(
+      service.replace("c-1", { ...rules, listed: true }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.portalSettings.upsert).not.toHaveBeenCalled();
+  });
+
+  it("sem os campos da busca: aproveita o segmento já gravado", async () => {
+    prismaMock.portalSettings.findUnique.mockResolvedValue({
+      ...rules,
+      listed: false,
+      segment: "PILATES",
+    });
+    prismaMock.portalSettings.upsert.mockResolvedValue({
+      companyId: "c-1",
+      ...rules,
+      listed: true,
+      segment: "PILATES",
+    });
+    await service.replace("c-1", { ...rules, listed: true });
+    expect(prismaMock.portalSettings.upsert).toHaveBeenCalled();
   });
 });

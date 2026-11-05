@@ -119,7 +119,7 @@
 
 ## PortalVerification
 
-- Código de entrada do portal do cliente, pedido por telefone (ver `business-rules.md`, "Portal do cliente").
+- Código pelo WhatsApp, pedido por telefone (ver `business-rules.md`, "Portal do cliente"). Sem rotas desde a etapa 6a; volta para confirmar o telefone da conta.
 
 | Nome       | Descrição                                                    |
 | ---------- | ------------------------------------------------------------ |
@@ -146,27 +146,43 @@
 | peopleId  | Cliente do link                                     |
 | tokenHash | SHA-256 do token (o token não é gravado)            |
 | expiresAt | Fim da validade                                     |
-| usedAt    | Quando virou sessão (ou foi substituído por um novo) |
+| usedAt    | Quando foi usado (ou substituído por um novo)       |
 | createdAt | Quando foi gerado (quem gerou fica na auditoria)    |
+
+---
+
+## ClientAccount
+
+- Conta do cliente no app, única no Orari, com telefone e senha. Em cada clínica, o cliente é o cadastro dela (`People`) ligado à conta.
+
+| Nome         | Descrição                                    |
+| ------------ | -------------------------------------------- |
+| id           | Identificador único                          |
+| phone        | Telefone com DDD, só dígitos (único; é o login) |
+| name         | Nome do cliente                              |
+| passwordHash | Hash bcrypt da senha                         |
+| createdAt    | Data de criação                              |
+| updatedAt    | Última alteração (ex.: troca de senha)       |
+
+- Não pertence a uma empresa.
 
 ---
 
 ## PortalSession
 
-- Sessão do cliente no portal, por aparelho.
+- Sessão da conta do cliente no app, por aparelho.
 
-| Nome       | Descrição                                      |
-| ---------- | ---------------------------------------------- |
-| id         | Identificador único                            |
-| companyId  | Clínica do portal                              |
-| peopleId   | Cliente (pessoa CLIENT) da sessão              |
-| tokenHash  | SHA-256 do token (o token não é gravado)       |
-| expiresAt  | Fim da validade (90 dias)                      |
-| revokedAt  | Quando o cliente saiu (ou a sessão foi revogada) |
-| lastUsedAt | Último uso (reservado)                         |
-| userAgent  | Aparelho que abriu a sessão                    |
+| Nome            | Descrição                                        |
+| --------------- | ------------------------------------------------ |
+| id              | Identificador único                              |
+| clientAccountId | Conta do cliente                                 |
+| tokenHash       | SHA-256 do token (o token não é gravado)         |
+| expiresAt       | Fim da validade (90 dias)                        |
+| revokedAt       | Quando o cliente saiu (ou a sessão foi revogada) |
+| lastUsedAt      | Último uso (reservado)                           |
+| userAgent       | Aparelho que abriu a sessão                      |
 
-- Pertence a uma empresa e a uma pessoa.
+- Pertence a uma conta do cliente (vale em todos os estabelecimentos dela).
 
 ---
 
@@ -178,6 +194,8 @@
 | ----------------- | ------------------------------------------------ |
 | companyId         | Empresa (também é o identificador)               |
 | enabled           | Portal ligado (padrão: desligado)                |
+| listed            | Aparece na busca de estabelecimentos do app (padrão: não) |
+| segment           | Ramo do estabelecimento (`BusinessSegment`); obrigatório para aparecer na busca |
 | minAdvanceMinutes | Antecedência mínima para agendar, em minutos     |
 | maxDaysAhead      | Até quantos dias à frente o cliente agenda       |
 | cancelUntilHours  | Até quantas horas antes o cliente cancela        |
@@ -272,6 +290,8 @@
 | note       | Observações (opcional)        |
 | photoUrl   | Caminho da foto (opcional)    |
 | companyId  | Código da empresa             |
+| clientAccountId | Conta do cliente no app ligada a este cadastro (opcional; no máximo um cadastro ativo por conta em cada empresa) |
+| portalConfirmed | `false` quando o cliente entrou sozinho pelo app e a clínica ainda não confirmou (padrão: `true`) |
 
 - Telefone e e-mail da pessoa ficam nos contatos (`Contact`).
 

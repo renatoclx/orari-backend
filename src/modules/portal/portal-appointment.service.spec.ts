@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,10 +15,16 @@ const company: PortalCompany = {
   id: "c-1",
   name: "Studio Aurora",
   logoUrl: null,
+  segment: null,
   timezone: "America/Sao_Paulo",
   rules: { minAdvanceMinutes: 60, maxDaysAhead: 30, cancelUntilHours: 24 },
 };
-const client = { sessionId: "s-1", companyId: "c-1", peopleId: "cli-1" };
+const client = {
+  sessionId: "s-1",
+  accountId: "acc-1",
+  companyId: "c-1",
+  peopleId: "cli-1",
+};
 const inHours = (hours: number) => new Date(Date.now() + hours * 3_600_000);
 
 const item = (overrides: object = {}) => ({
@@ -40,7 +47,9 @@ describe("PortalAppointmentService", () => {
       findMany: vi.fn(),
       findFirst: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      count: vi.fn(),
     },
+    people: { findUniqueOrThrow: vi.fn() },
   };
   const appointmentMock = { create: vi.fn(), update: vi.fn() };
   const availabilityMock = { findSlots: vi.fn() };
@@ -50,7 +59,12 @@ describe("PortalAppointmentService", () => {
     availabilityMock as unknown as PortalAvailabilityService,
   );
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.people.findUniqueOrThrow.mockResolvedValue({
+      portalConfirmed: true,
+    });
+  });
 
   describe("list", () => {
     it("separa próximos e passados, só do próprio cliente, e marca o que pode cancelar", async () => {
@@ -135,6 +149,56 @@ describe("PortalAppointmentService", () => {
         ConflictException,
       );
       expect(appointmentMock.create).not.toHaveBeenCalled();
+    });
+
+    describe("cliente não confirmado pela clínica", () => {
+      beforeEach(() => {
+        prismaMock.people.findUniqueOrThrow.mockResolvedValue({
+          portalConfirmed: false,
+        });
+        availabilityMock.findSlots.mockResolvedValue([
+          { time: "08:00", startAt: "2026-11-12T11:00:00.000Z" },
+        ]);
+        appointmentMock.create.mockResolvedValue({ id: "a-1" });
+        prismaMock.appointment.findUniqueOrThrow.mockResolvedValue(item());
+      });
+
+      it("com menos de 2 futuros: agenda", async () => {
+        prismaMock.appointment.count.mockResolvedValue(1);
+        await service.book(company, client, dto);
+        expect(prismaMock.appointment.count).toHaveBeenCalledWith({
+          where: {
+            companyId: "c-1",
+            clientId: "cli-1",
+            startAt: { gte: expect.any(Date) as Date },
+            status: { not: "CANCELLED" },
+          },
+        });
+        expect(appointmentMock.create).toHaveBeenCalled();
+      });
+
+      it("já com 2 futuros: 403 UNCONFIRMED_LIMIT, sem procurar horário", async () => {
+        prismaMock.appointment.count.mockResolvedValue(2);
+        const error = await service
+          .book(company, client, dto)
+          .catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect((error as ForbiddenException).getResponse()).toMatchObject({
+          code: "UNCONFIRMED_LIMIT",
+        });
+        expect(availabilityMock.findSlots).not.toHaveBeenCalled();
+        expect(appointmentMock.create).not.toHaveBeenCalled();
+      });
+    });
+
+    it("cliente confirmado: não conta os futuros", async () => {
+      availabilityMock.findSlots.mockResolvedValue([
+        { time: "08:00", startAt: "2026-11-12T11:00:00.000Z" },
+      ]);
+      appointmentMock.create.mockResolvedValue({ id: "a-1" });
+      prismaMock.appointment.findUniqueOrThrow.mockResolvedValue(item());
+      await service.book(company, client, dto);
+      expect(prismaMock.appointment.count).not.toHaveBeenCalled();
     });
   });
 

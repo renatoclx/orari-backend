@@ -127,11 +127,12 @@ Exemplo:
   acessíveis de outra origem (o front os exibe).
 ## Portal do cliente (autenticação separada)
 
-- O cliente do portal **não é usuário**: entra pelo **link de acesso gerado pela clínica** (uso único, 24 h) ou, quando houver canal de envio, pelo telefone com código no WhatsApp (regras em `business-rules.md`, "Portal do cliente"). As duas formas abrem a mesma sessão.
-- O **token do portal** é uma string aleatória opaca (não é JWT), como o refresh token: só o hash (SHA-256) fica na tabela `PortalSession`, com validade de 90 dias, aparelho (`userAgent`) e revogação própria.
-- As rotas do portal (`/portal/:slug/...`) são `@Public()` para o `JwtAuthGuard`; as do cliente entrado usam o `PortalAuthGuard`, que confere o token no banco e exige a mesma clínica do endereço.
-- **Isolamento:** o token do portal não é um JWT, então o `JwtAuthGuard` o recusa (401) em todas as rotas da clínica; e o JWT da clínica não está na tabela de sessões, então o `PortalAuthGuard` o recusa (401) no portal. O token de uma clínica não vale no portal de outra.
-- O código do portal é gravado como HMAC (segredo da API + empresa + telefone): com só um milhão de códigos possíveis, um hash simples seria quebrado por força bruta se a tabela vazasse.
+- O cliente do app **não é usuário**: tem uma **conta do cliente** (`ClientAccount`), com telefone e senha, única no Orari. Em cada clínica, o cliente é o cadastro dela (pessoa CLIENT) ligado à conta (regras em `business-rules.md`, "Portal do cliente").
+- A senha é guardada com bcrypt, com o mesmo custo das senhas dos usuários; o login compara a senha mesmo quando o telefone não tem conta, para a resposta levar o mesmo tempo.
+- O **token do portal** é uma string aleatória opaca (não é JWT), como o refresh token: só o hash (SHA-256) fica na tabela `PortalSession`, com validade de 90 dias, aparelho (`userAgent`) e revogação própria. A sessão é **da conta**. Trocar a senha tira os outros aparelhos; criar uma senha nova pelo link da clínica tira todos.
+- As rotas da conta (`/portal-account/...`) e dos estabelecimentos (`/portal/:slug/...`) são `@Public()` para o `JwtAuthGuard`; as que exigem a conta entrada usam o `PortalAuthGuard`, que confere o token no banco e, nas rotas de um estabelecimento, procura o cadastro da conta nessa clínica (sem cadastro: 403 `NOT_A_CLIENT`).
+- **Isolamento:** o token do portal não é um JWT, então o `JwtAuthGuard` o recusa (401) em todas as rotas da clínica; e o JWT da clínica não está na tabela de sessões, então o `PortalAuthGuard` o recusa (401) no app. Uma conta só enxerga, em cada clínica, o próprio cadastro.
+- O código do portal (quando voltar, para confirmar o telefone) é gravado como HMAC (segredo da API + empresa + telefone): com só um milhão de códigos possíveis, um hash simples seria quebrado por força bruta se a tabela vazasse.
 
 - O Swagger (`/docs`) fica desligado em produção, a menos que
   `SWAGGER_ENABLED=true`.

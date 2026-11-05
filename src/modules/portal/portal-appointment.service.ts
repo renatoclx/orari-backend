@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -19,6 +20,11 @@ import { BookAppointmentDto } from "./dto/book-appointment.dto";
 
 // Quantos atendimentos passados o cliente vê no histórico do portal.
 const HISTORY_SIZE = 20;
+
+// Cliente que entrou sozinho e ainda não foi confirmado pela clínica: no máximo
+// esta quantidade de agendamentos futuros, para limitar marcações falsas.
+export const UNCONFIRMED_UPCOMING_LIMIT = 2;
+export const UNCONFIRMED_LIMIT = "UNCONFIRMED_LIMIT";
 
 type Kind = "SINGLE" | "RECURRENCE" | "PLAN" | "CLASS";
 
@@ -83,6 +89,8 @@ export class PortalAppointmentService {
     client: PortalClient,
     dto: BookAppointmentDto,
   ) {
+    await this.ensureUnconfirmedLimit(client);
+
     const { year, month, day } = toZonedParts(dto.startAt, company.timezone);
     const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const slots = await this.portalAvailabilityService.findSlots(
@@ -140,6 +148,35 @@ export class PortalAppointmentService {
       { status: AppointmentStatus.CANCELLED },
       company.id,
     );
+  }
+
+  /**
+   * Cliente não confirmado já com o limite de agendamentos futuros: 403
+   * UNCONFIRMED_LIMIT. Conta os futuros não cancelados, de qualquer origem.
+   */
+  private async ensureUnconfirmedLimit(client: PortalClient) {
+    const person = await this.prisma.people.findUniqueOrThrow({
+      where: { id: client.peopleId },
+      select: { portalConfirmed: true },
+    });
+    if (person.portalConfirmed) return;
+
+    const upcoming = await this.prisma.appointment.count({
+      where: {
+        companyId: client.companyId,
+        clientId: client.peopleId,
+        startAt: { gte: new Date() },
+        status: { not: AppointmentStatus.CANCELLED },
+      },
+    });
+    if (upcoming >= UNCONFIRMED_UPCOMING_LIMIT) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: "Forbidden",
+        code: UNCONFIRMED_LIMIT,
+        message: `Até o estabelecimento confirmar o seu cadastro, você pode ter no máximo ${UNCONFIRMED_UPCOMING_LIMIT} agendamentos futuros.`,
+      });
+    }
   }
 
   private toView(

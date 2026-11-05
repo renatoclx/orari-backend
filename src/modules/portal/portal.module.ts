@@ -4,30 +4,36 @@ import { CompanyAccessModule } from "../company-access/company-access.module";
 import { PeopleModule } from "../people/people.module";
 import { MessageSenderService } from "./message-sender.service";
 import {
-  PortalAccessExchangeController,
   PortalAccessLinkController,
+  PortalAccessUseController,
+  PortalClientConfirmController,
 } from "./portal-access.controller";
+import { PortalAccountController } from "./portal-account.controller";
 import { PortalAccessService } from "./portal-access.service";
 import { PortalAppointmentController } from "./portal-appointment.controller";
 import { PortalAppointmentService } from "./portal-appointment.service";
-import { PortalAuthController } from "./portal-auth.controller";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { PortalAuthService } from "./portal-auth.service";
 import { PortalAvailabilityService } from "./portal-availability.service";
 import { PortalCatalogController } from "./portal-catalog.controller";
 import { PortalCatalogService } from "./portal-catalog.service";
 import { PortalCompanyService } from "./portal-company.service";
+import { PortalDirectoryController } from "./portal-directory.controller";
+import { PortalDirectoryService } from "./portal-directory.service";
+import { PortalPlaceService } from "./portal-place.service";
 import { PortalSettingsController } from "./portal-settings.controller";
 import { PortalSettingsService } from "./portal-settings.service";
 
 @Module({
   imports: [PeopleModule, CompanyAccessModule, AppointmentModule],
   controllers: [
-    PortalAuthController,
+    PortalAccountController,
     PortalAppointmentController,
     PortalAccessLinkController,
-    PortalAccessExchangeController,
+    PortalAccessUseController,
+    PortalClientConfirmController,
     PortalCatalogController,
+    PortalDirectoryController,
     PortalSettingsController,
   ],
   providers: [
@@ -40,6 +46,8 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalAppointmentService,
     PortalAccessService,
     PortalSettingsService,
+    PortalPlaceService,
+    PortalDirectoryService,
   ],
 })
 export class PortalModule {}

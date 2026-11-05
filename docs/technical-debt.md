@@ -181,3 +181,65 @@ empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
 
 **Como resolver:** quando houver necessidade, descobrir o dono do contato pelo registro (como o `/people` faz pelo tipo) e acrescentar as dependências que faltarem à matriz.
 
+---
+
+## Telefone da conta do cliente sem confirmação
+
+**Onde:** `PortalAuthService.register` e `PortalAccessService.use` (conta do
+cliente no app, etapa 6a).
+
+**O que é:** quem cria a conta digita o telefone, e nada confirma que o número é
+dele. Alguém pode criar uma conta com o número de outra pessoa; quando o dono
+tentar se cadastrar, recebe "já existe uma conta com este telefone".
+
+**Impacto:** a conta não enxerga nada de ninguém por causa disso (ela só se liga
+a um cadastro existente pelo link da clínica), mas o dono do número fica sem
+conseguir criar a conta sozinho. Hoje, a saída é a clínica gerar o link de
+acesso: se a ficha do cliente tem esse telefone, o link liga a ficha à conta do
+número e cria uma senha nova, tirando quem a criou.
+
+**Como resolver:** confirmar o telefone pelo código no WhatsApp (etapa 3, depende
+do canal da Meta). As peças já estão no backend (`portal-code.ts`,
+`MessageSenderService`, `PortalVerification`); falta ligá-las à conta: código no
+cadastro e um "esqueci a senha" pelo próprio app.
+
+**Registrado em:** 2026-11-05.
+
+---
+
+## Limite do cliente não confirmado sem trava
+
+**Onde:** `PortalAppointmentService.ensureUnconfirmedLimit` (etapa 6b).
+
+**O que é:** o limite de 2 agendamentos futuros conta os agendamentos e depois
+grava, em passos separados. A trava da criação é por **profissional**; dois
+pedidos do mesmo cliente, ao mesmo tempo e com profissionais diferentes, podem
+passar os dois e deixar 3 agendamentos.
+
+**Impacto:** pequeno: o limite é uma barreira contra abuso, não uma regra de
+negócio exata, e a clínica vê e cancela o excedente.
+
+**Como resolver:** travar também pelo cliente (`pg_advisory_xact_lock` com a
+chave do cliente) na mesma transação da contagem e da gravação.
+
+**Registrado em:** 2026-11-05.
+
+---
+
+## Busca de estabelecimentos filtra o nome fora do banco
+
+**Onde:** `PortalDirectoryService.search` (etapa 6c).
+
+**O que é:** a consulta traz todas as clínicas que aparecem na busca, e o filtro
+pelo nome (sem acentos) é feito na API, porque o nome da empresa não tem coluna
+normalizada (o banco não tem a extensão `unaccent`).
+
+**Impacto:** nenhum enquanto poucas clínicas aparecem na busca. Com centenas, cada
+busca passaria a ler todas.
+
+**Como resolver:** coluna normalizada do nome na empresa (como o `normalizedName`
+das pessoas), com índice GIN trigram, e o filtro no banco. Fazer junto da
+geolocalização, que também muda a consulta.
+
+**Registrado em:** 2026-11-05.
+

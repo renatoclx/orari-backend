@@ -24,12 +24,14 @@ import { PaymentMethodController } from "../payment-method/payment-method.contro
 import { PeopleController } from "../people/people.controller";
 import { PlanController } from "../plan/plan.controller";
 import {
-  PortalAccessExchangeController,
   PortalAccessLinkController,
+  PortalAccessUseController,
+  PortalClientConfirmController,
 } from "../portal/portal-access.controller";
+import { PortalAccountController } from "../portal/portal-account.controller";
 import { PortalAppointmentController } from "../portal/portal-appointment.controller";
-import { PortalAuthController } from "../portal/portal-auth.controller";
 import { PortalCatalogController } from "../portal/portal-catalog.controller";
+import { PortalDirectoryController } from "../portal/portal-directory.controller";
 import { PortalSettingsController } from "../portal/portal-settings.controller";
 import { RecurringAppointmentController } from "../recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../service/service.controller";
@@ -44,14 +46,16 @@ type Controller = new (...args: never[]) => unknown;
 const EXEMPT: Record<string, string> = {
   AuthController: "login, refresh e /me: valem para qualquer usuário",
   CompanyAccessController: "só o SUPER_ADMIN (@Roles)",
-  PortalAuthController:
-    "portal do cliente: fora do login da clínica, com autenticação própria (PortalAuthGuard)",
-  PortalAccessExchangeController:
-    "troca do link de acesso pelo cliente (fora do login da clínica)",
+  PortalAccountController:
+    "conta do cliente no app: fora do login da clínica, com autenticação própria (PortalAuthGuard)",
+  PortalAccessUseController:
+    "uso do link de acesso pelo cliente (fora do login da clínica)",
   PortalAppointmentController:
     "agendamentos do cliente no portal (PortalAuthGuard, token do portal)",
   PortalCatalogController:
     "vitrine pública do portal (só abre com o portal ligado e no plano)",
+  PortalDirectoryController:
+    "busca pública de estabelecimentos (só os de portal ligado, no plano e que escolheram aparecer)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
   NotificationController: "ainda sem uso (ver technical-debt.md)",
@@ -87,11 +91,13 @@ const CONTROLLERS: Controller[] = [
   PaymentController,
   PaymentMethodController,
   PeopleController,
-  PortalAuthController,
+  PortalAccountController,
   PortalAppointmentController,
   PortalAccessLinkController,
-  PortalAccessExchangeController,
+  PortalAccessUseController,
+  PortalClientConfirmController,
   PortalCatalogController,
+  PortalDirectoryController,
   PortalSettingsController,
   PlanController,
   RecurringAppointmentController,

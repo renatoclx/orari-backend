@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import type { BusinessSegment } from "../../../generated/prisma/enums";
 import { CompanyAccessService } from "../company-access/company-access.service";
 import { PORTAL_DEFAULTS, type PortalRules } from "./portal-settings.service";
 
@@ -7,6 +8,7 @@ export interface PortalCompany {
   id: string;
   name: string;
   logoUrl: string | null;
+  segment: BusinessSegment | null;
   timezone: string;
   rules: PortalRules;
 }
@@ -54,6 +56,7 @@ export class PortalCompanyService {
       id: company.id,
       name: company.fantasyName ?? company.corporateReason,
       logoUrl: company.logoUrl,
+      segment: settings.segment,
       timezone: company.timezone,
       rules: {
         minAdvanceMinutes: settings.minAdvanceMinutes,

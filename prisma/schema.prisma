@@ -157,7 +157,6 @@ model Company {
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
   portalVerifications   PortalVerification[]
-  portalSessions        PortalSession[]
   portalSettings        PortalSettings?
   portalAccessLinks     PortalAccessLink[]
 
@@ -165,27 +164,33 @@ model Company {
 }
 
 model People {
-  id             String     @id @default(uuid())
-  name           String
+  id              String     @id @default(uuid())
+  name            String
   // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
-  normalizedName String
+  normalizedName  String
   // Opcionais: o cliente poderá se cadastrar só com nome e telefone (contato).
-  document       String?    @db.Char(11)
-  birthDate      DateTime?  @db.Date
-  profession     String?
-  type           PeopleType
-  companyId      String
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime?
-  deletedAt      DateTime?
-  note           String?
+  document        String?    @db.Char(11)
+  birthDate       DateTime?  @db.Date
+  profession      String?
+  type            PeopleType
+  companyId       String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime?
+  deletedAt       DateTime?
+  note            String?
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
-  photoUrl       String?
+  photoUrl        String?
+  // Conta do app do cliente ligada a este cadastro (só pelo link da clínica ou
+  // pelo cadastro feito no próprio app); no máximo um cadastro por conta em cada clínica.
+  clientAccountId String?
+  // false: o cliente entrou sozinho pelo app e a clínica ainda não confirmou o
+  // cadastro (telefone não conferido); até lá, no máximo 2 agendamentos futuros pelo app.
+  portalConfirmed Boolean    @default(true)
 
   company           Company               @relation(fields: [companyId], references: [id])
+  clientAccount     ClientAccount?        @relation(fields: [clientAccountId], references: [id])
   contacts          Contact[]
   addresses         Address[]
-  portalSessions    PortalSession[]
   portalAccessLinks PortalAccessLink[]
   // Serviços que o profissional atende (ver ServiceProfessional).
   services          ServiceProfessional[]
@@ -205,6 +210,8 @@ model People {
   // Parcial: um registro excluído logicamente não bloqueia o reuso do documento.
   // Pessoas sem documento não entram em conflito entre si.
   @@unique([companyId, document], where: raw("\"deletedAt\" IS NULL"))
+  // Uma conta do app tem no máximo um cadastro ativo em cada clínica.
+  @@unique([companyId, clientAccountId], where: raw("\"deletedAt\" IS NULL AND \"clientAccountId\" IS NOT NULL"))
   @@index([companyId])
   // GIN trigram: acelera a busca parcial (LIKE '%termo%') pelo nome normalizado.
   @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
@@ -640,6 +647,7 @@ enum AuditAction {
   ANAMNESIS_PDF_GENERATED
   COMPANY_ACCESS_CHANGED
   PORTAL_ACCESS_LINK_CREATED
+  PORTAL_CLIENT_CONFIRMED
 }
 
 /**
@@ -957,21 +965,37 @@ model PortalVerification {
 
 // Sessão do cliente no portal (um aparelho). Token opaco: só o hash é gravado.
 model PortalSession {
-  id         String    @id @default(uuid())
-  companyId  String
-  peopleId   String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  lastUsedAt DateTime?
-  userAgent  String?
-  createdAt  DateTime  @default(now())
+  id              String    @id @default(uuid())
+  // A sessão é da conta do cliente, não de uma clínica: vale em todos os locais dela.
+  clientAccountId String
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  lastUsedAt      DateTime?
+  userAgent       String?
+  createdAt       DateTime  @default(now())
 
-  company Company @relation(fields: [companyId], references: [id])
-  people  People  @relation(fields: [peopleId], references: [id])
+  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
 
-  @@index([peopleId])
+  @@index([clientAccountId])
   @@map("portal_sessions")
+}
+
+// Conta do cliente no app (portal), única no Orari e com senha. Cada clínica
+// continua com o próprio cadastro do cliente (People), ligado a esta conta.
+model ClientAccount {
+  id           String    @id @default(uuid())
+  // Telefone com DDD, só dígitos (10 ou 11), como nos contatos. É o login.
+  phone        String    @unique @db.VarChar(11)
+  name         String
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime?
+
+  people   People[]
+  sessions PortalSession[]
+
+  @@map("client_accounts")
 }
 
 enum AppointmentSource {
@@ -980,16 +1004,35 @@ enum AppointmentSource {
 }
 
 // Regras do portal do cliente definidas pela clínica (ver docs/business-rules.md, "Portal do cliente").
+// Ramo do estabelecimento na busca do app.
+enum BusinessSegment {
+  BARBERSHOP
+  BEAUTY_SALON
+  AESTHETICS
+  NAIL_SALON
+  EYEBROW_DESIGN
+  PHYSIOTHERAPY
+  PILATES
+  PSYCHOLOGY
+  NUTRITION
+  DENTISTRY
+  OTHER
+}
+
 model PortalSettings {
-  companyId         String    @id
+  companyId         String           @id
   // Desligado até a clínica ligar.
-  enabled           Boolean   @default(false)
+  enabled           Boolean          @default(false)
   // Antecedência mínima para o cliente agendar.
-  minAdvanceMinutes Int       @default(60)
+  minAdvanceMinutes Int              @default(60)
   // Até quantos dias à frente o cliente pode agendar.
-  maxDaysAhead      Int       @default(30)
+  maxDaysAhead      Int              @default(30)
   // Até quantas horas antes o cliente pode cancelar.
-  cancelUntilHours  Int       @default(24)
+  cancelUntilHours  Int              @default(24)
+  // A clínica aparece na busca de estabelecimentos do app (desligado até ela escolher).
+  listed            Boolean          @default(false)
+  // Ramo do estabelecimento, mostrado na busca; obrigatório para aparecer nela.
+  segment           BusinessSegment?
   updatedAt         DateTime?
 
   company Company @relation(fields: [companyId], references: [id])
