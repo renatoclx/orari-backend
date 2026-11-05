@@ -180,6 +180,8 @@ export class PortalAuthService {
           where: { deletedAt: null, type: "CLIENT" },
           select: { company: { select: { subdomain: true } } },
         },
+        // Avisos não lidos: o número na aba Menu do app.
+        _count: { select: { messages: { where: { readAt: null } } } },
       },
     });
 
@@ -200,6 +202,7 @@ export class PortalAuthService {
 
     return {
       account: { id: found.id, name: found.name, phone: found.phone },
+      unreadMessages: found._count.messages,
       places: places
         .filter((place) => place !== null)
         .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
@@ -207,7 +210,8 @@ export class PortalAuthService {
   }
 
   /**
-   * Troca a senha conferindo a atual. Os outros aparelhos saem; este continua.
+   * Troca a senha conferindo a atual. Os outros aparelhos saem (e deixam de
+   * receber os avisos do app); este continua.
    */
   async changePassword(
     account: PortalAccount,
@@ -234,15 +238,29 @@ export class PortalAuthService {
         },
         data: { revokedAt: new Date() },
       }),
+      this.prisma.pushSubscription.deleteMany({
+        where: {
+          clientAccountId: account.accountId,
+          portalSessionId: { not: account.sessionId },
+        },
+      }),
     ]);
   }
 
-  /** Sai do app neste aparelho (as outras sessões continuam). */
+  /**
+   * Sai do app neste aparelho (as outras sessões continuam). Os avisos deste
+   * aparelho param junto: quem entrar depois nele não recebe os da conta.
+   */
   async logout(account: PortalAccount): Promise<void> {
-    await this.prisma.portalSession.update({
-      where: { id: account.sessionId },
-      data: { revokedAt: new Date() },
-    });
+    await this.prisma.$transaction([
+      this.prisma.pushSubscription.deleteMany({
+        where: { portalSessionId: account.sessionId },
+      }),
+      this.prisma.portalSession.update({
+        where: { id: account.sessionId },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
   }
 
   hashPassword(password: string): Promise<string> {

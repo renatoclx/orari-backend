@@ -243,3 +243,19 @@ geolocalização, que também muda a consulta.
 
 **Registrado em:** 2026-11-05.
 
+## Avisos do app enviados na hora, sem fila
+
+**Onde:** `ClientNotifierService` (etapa 8a).
+
+**O que é:** cada aviso é gravado e enviado na própria requisição (ou no job), um
+aparelho de cada vez em paralelo, sem fila nem nova tentativa. Uma falha do serviço
+de push que não seja "aparelho não existe" só vai para o log; o aviso continua na
+caixa de Avisos.
+
+**Impacto:** nenhum para avisos de um cliente. Uma mensagem da clínica para
+milhares de clientes (etapa 8e) ocuparia a API por mais tempo.
+
+**Como resolver:** fila de envio (tabela ou Redis) com novas tentativas, se o volume
+das mensagens em massa pedir.
+
+**Registrado em:** 2026-11-05.

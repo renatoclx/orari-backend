@@ -164,6 +164,8 @@
 | email, document, birthDate, profession | Meus dados (opcionais; CPF sem máscara) |
 | photoUrl     | Foto da conta (cada clínica tem a própria cópia) |
 | addressCep, addressStreet, addressNumber, addressComplement, addressNeighborhood, addressCityId | Endereço principal (opcional) |
+| notifyAppointments | Avisos de lembretes e agendamentos (padrão ligado) |
+| notifyPromotions | Avisos de novidades e promoções (padrão ligado) |
 | createdAt    | Data de criação                              |
 | updatedAt    | Última alteração (ex.: troca de senha)       |
 
@@ -186,6 +188,43 @@
 | userAgent       | Aparelho que abriu a sessão                      |
 
 - Pertence a uma conta do cliente (vale em todos os estabelecimentos dela).
+
+---
+
+## PushSubscription
+
+- Aparelho em que o cliente ativou os avisos do app (Web Push).
+
+| Nome            | Descrição                                                  |
+| --------------- | ---------------------------------------------------------- |
+| id              | Identificador único                                        |
+| clientAccountId | Conta do cliente                                           |
+| portalSessionId | Sessão do aparelho (ao sair do app, a inscrição é apagada) |
+| endpoint        | Endereço de entrega do serviço de push (único)             |
+| p256dh, auth    | Chaves do aparelho que cifram o conteúdo do aviso          |
+| userAgent       | Aparelho que ativou                                        |
+| createdAt       | Data de criação                                            |
+
+- Pertence a uma conta do cliente e a uma sessão. Não tem exclusão lógica: some ao sair, ao desativar ou quando o serviço de push diz que o aparelho não existe mais.
+
+---
+
+## ClientMessage
+
+- Aviso recebido pelo cliente no app (a caixa de Avisos).
+
+| Nome            | Descrição                                                                   |
+| --------------- | --------------------------------------------------------------------------- |
+| id              | Identificador único                                                         |
+| clientAccountId | Conta do cliente                                                            |
+| companyId       | Clínica que enviou (nula no aviso de teste)                                 |
+| kind            | `REMINDER`, `APPOINTMENT`, `BIRTHDAY`, `MISS_YOU`, `CAMPAIGN` ou `TEST`     |
+| title, body     | Título (até 100) e texto (até 500)                                          |
+| url             | Caminho do app aberto ao tocar (ex.: `/app/agendamentos`)                   |
+| readAt          | Quando o cliente viu (opcional)                                             |
+| createdAt       | Data do envio                                                               |
+
+- Pertence a uma conta do cliente; a clínica é opcional. Não é a `Notification` (aviso para a clínica).
 
 ---
 

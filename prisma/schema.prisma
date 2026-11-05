@@ -159,6 +159,7 @@ model Company {
   limit                 CompanyLimit?
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
+  clientMessages        ClientMessage[]
   portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
@@ -976,10 +977,65 @@ model PortalSession {
   userAgent       String?
   createdAt       DateTime  @default(now())
 
-  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  clientAccount     ClientAccount      @relation(fields: [clientAccountId], references: [id])
+  pushSubscriptions PushSubscription[]
 
   @@index([clientAccountId])
   @@map("portal_sessions")
+}
+
+// Aparelho com os avisos do app ativados (Web Push). Fica ligado à sessão: ao
+// sair do app a inscrição é apagada, e quem entrar depois no mesmo aparelho não
+// recebe os avisos da conta anterior. Sessão vencida ou revogada não recebe.
+model PushSubscription {
+  id              String   @id @default(uuid())
+  clientAccountId String
+  portalSessionId String
+  // Endereço de entrega do serviço de push do navegador: um por aparelho.
+  endpoint        String   @unique
+  // Chaves do aparelho que cifram o conteúdo do aviso (padrão Web Push).
+  p256dh          String
+  auth            String
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  portalSession PortalSession @relation(fields: [portalSessionId], references: [id], onDelete: Cascade)
+
+  @@index([clientAccountId])
+  @@map("push_subscriptions")
+}
+
+// Tipo do aviso; define qual interruptor do cliente vale (ver ClientNotifierService).
+enum ClientMessageKind {
+  REMINDER
+  APPOINTMENT
+  BIRTHDAY
+  MISS_YOU
+  CAMPAIGN
+  TEST
+}
+
+// Aviso recebido pelo cliente: a caixa de Avisos do app. Gravado mesmo sem
+// aparelho inscrito, para o cliente ver depois.
+model ClientMessage {
+  id              String            @id @default(uuid())
+  clientAccountId String
+  // Clínica que enviou; nulo no aviso de teste (é do Orari).
+  companyId       String?
+  kind            ClientMessageKind
+  title           String            @db.VarChar(100)
+  body            String            @db.VarChar(500)
+  // Caminho do app aberto ao tocar no aviso (ex.: /app/agendamentos).
+  url             String?
+  readAt          DateTime?
+  createdAt       DateTime          @default(now())
+
+  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  company       Company?      @relation(fields: [companyId], references: [id])
+
+  @@index([clientAccountId, createdAt])
+  @@map("client_messages")
 }
 
 // Conta do cliente no app (portal), única no Orari e com senha. Cada clínica
@@ -1006,13 +1062,19 @@ model ClientAccount {
   addressComplement   String?
   addressNeighborhood String?
   addressCityId       String?
+  // Interruptores dos avisos do app (Menu): lembretes e agendamentos; novidades
+  // e promoções. Desligado, o aviso daquele tipo nem é gravado nem enviado.
+  notifyAppointments  Boolean   @default(true)
+  notifyPromotions    Boolean   @default(true)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime?
 
   addressCity City? @relation(fields: [addressCityId], references: [id])
 
-  people   People[]
-  sessions PortalSession[]
+  people            People[]
+  sessions          PortalSession[]
+  pushSubscriptions PushSubscription[]
+  messages          ClientMessage[]
 
   @@map("client_accounts")
 }

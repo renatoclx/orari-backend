@@ -94,9 +94,9 @@
 - **Rotas da conta** (`/portal-account`, fora do `/portal/:slug` para não disputar o endereço com as clínicas):
   - `POST /portal-account/register` (`name`, `phone`, `password`, `passwordConfirmation`): cria a conta, sem nenhum estabelecimento, e já abre a sessão. Telefone de outra conta: **409**.
   - `POST /portal-account/login` (`phone`, `password`): telefone sem conta ou senha errada dão o mesmo **401** "Telefone ou senha inválidos", no mesmo tempo de resposta.
-  - `GET /portal-account`: a conta (nome e telefone) e os **locais** dela (`slug`, nome, logo e fuso), só os de portal aberto, em ordem alfabética.
-  - `PATCH /portal-account/password` (`currentPassword`, `newPassword`, `newPasswordConfirmation`; 204): senha atual errada, 400. Os **outros aparelhos saem**; este continua.
-  - `POST /portal-account/logout` (204): encerra a sessão deste aparelho.
+  - `GET /portal-account`: a conta (nome e telefone), `unreadMessages` (avisos não lidos, ver "Avisos do app") e os **locais** dela (`slug`, nome, logo e fuso), só os de portal aberto, em ordem alfabética.
+  - `PATCH /portal-account/password` (`currentPassword`, `newPassword`, `newPasswordConfirmation`; 204): senha atual errada, 400. Os **outros aparelhos saem** (e deixam de receber os avisos do app); este continua.
+  - `POST /portal-account/logout` (204): encerra a sessão deste aparelho e apaga a inscrição dos avisos dele (quem entrar depois no aparelho não recebe os da conta).
   - Cadastro, login, troca de senha e link têm limite de tentativas por IP (429).
 - **Sessão:** devolvida uma única vez (`token` e `expiresAt`), vale **90 dias**, é de um aparelho e é **da conta**. Nas rotas de um estabelecimento (`/portal/:slug/...`), a API procura o cadastro ativo da conta naquela clínica; sem cadastro, **403 `NOT_A_CLIENT`** "Você ainda não é cliente deste estabelecimento" (o app oferece entrar nele). Portal fechado: 404.
 - **Link de acesso gerado pela clínica:** `POST /people/:id/portal-access` (funcionalidade `clients`, ação `edit`) gera, para um **cliente ativo** da empresa, um link de **uso único** que vale **24 horas**. A clínica o envia pelo WhatsApp dela ou mostra em QR code. Um link novo invalida o anterior ainda não usado. Com o portal desligado, 409. Usar o link **confirma** o cadastro (ver "Entrar sozinho"). Só o hash do token é gravado, e a geração fica na **auditoria** (`PORTAL_ACCESS_LINK_CREATED`). A resposta traz `token`, `expiresAt` e `path` (`/app/acesso/<token>`, o caminho no app).
@@ -128,6 +128,25 @@
   - `GET /portal-account/plans`: cada pacote contratado com o nome do plano, `startDate`/`endDate` (aaaa-mm-dd), `status` pela mesma regra da clínica (`cancelled`; `finished` quando a data final já passou; senão `active`) e `place`. **Sem valores.** Ativos primeiro, depois os mais recentes.
   - `GET /portal-account/recurrences`: as recorrências **em vigor** (ativas, sem saída da turma, sem data final ou com ela de hoje em diante): `kind` (`RECURRENCE` horário fixo, `PLAN` de pacote, `CLASS` turma), serviço, profissional, `days` (dia da semana, início e fim em HH:MM), período e `place`. Quem marca e muda é a clínica.
 - **Código pelo WhatsApp:** as peças continuam no backend (cálculo e hash do código, limites, tabela `PortalVerification`, envio), mas **sem rotas** desde a etapa 6a. Voltam quando houver canal de envio, para **confirmar o telefone da conta**.
+
+## Avisos do app
+
+> **Estado:** desde a etapa 8a (2026-11-05), a base: inscrição dos aparelhos, interruptores do cliente, aviso de teste e a caixa de Avisos. Os avisos automáticos (lembrete, agendamento, aniversário, sentimos sua falta) e as mensagens da clínica vêm nas etapas 8c e 8e.
+
+- **Canal:** notificação **push** do navegador (padrão Web Push, chaves VAPID), para o app do cliente (`/app`). Não depende do WhatsApp nem tem custo por mensagem. Sem as chaves no ambiente (`VAPID_*`, ver `deploy.md`), o push fica **desligado**: nada é enviado e o app não oferece ativar; o resto da API funciona.
+- **Quem recebe:** a **conta** do cliente, nos aparelhos em que ele **ativou os avisos** (no iPhone, só com o app instalado na tela de início, iOS 16.4+). A inscrição é do aparelho e fica **ligada à sessão**: ao sair do app ela é apagada, e sessão vencida ou revogada (troca de senha) não recebe. Quando o serviço de push responde que o aparelho não existe mais (404/410), a inscrição é apagada.
+- **Endereços aceitos:** só os dos serviços de push dos navegadores (Google, Apple, Mozilla, Microsoft), em HTTPS; outro endereço: 400. Assim a API nunca envia para um endereço qualquer.
+- **Interruptores do cliente** (ligados por padrão): `notifyAppointments` (**lembretes e agendamentos**: lembrete de horário; agendamento marcado, alterado ou cancelado pela clínica) e `notifyPromotions` (**novidades e promoções**: aniversário, sentimos sua falta e mensagens da clínica). Com o interruptor desligado, o aviso daquele tipo **nem é gravado nem enviado**. O aviso de teste não depende deles.
+- **Caixa de Avisos:** todo aviso enviado fica gravado para a conta (`ClientMessage`), **mesmo sem aparelho inscrito**, com a clínica que enviou, o tipo, título (até 100), texto (até 500) e o caminho do app aberto ao tocar.
+- **Envio:** um ponto só (`ClientNotifierService`), que nunca falha para quem chamou: um agendamento salvo não dá erro porque o aviso não saiu; a falha vai para o log.
+- **Rotas** (com o token do portal):
+  - `GET /portal-account/push`: `publicKey` (nula com o push desligado) e os dois interruptores.
+  - `POST /portal-account/push/subscriptions` (204): o `PushSubscription.toJSON()` do navegador (`endpoint`, `keys.p256dh`, `keys.auth`). O mesmo aparelho que já estava inscrito passa para esta conta e sessão. Push desligado: 503.
+  - `DELETE /portal-account/push/subscriptions` (`endpoint`; 204): desativa neste aparelho (só a inscrição da própria conta).
+  - `PUT /portal-account/push/preferences` (`notifyAppointments`, `notifyPromotions`): os dois interruptores.
+  - `POST /portal-account/push/test`: aviso de teste aos aparelhos da conta; devolve `devices` (para quantos saiu). Até 5 a cada 10 minutos por IP (429). Push desligado: 503.
+  - `GET /portal-account/messages` (`page`, `limit` até 100): dos mais novos aos mais antigos, com `place` (nome e logo da clínica; nulo no teste), `total` e `unread`.
+  - `PATCH /portal-account/messages/read` (204): marca todos como lidos.
 
 ## Usuários e acesso
 
