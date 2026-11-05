@@ -123,7 +123,10 @@ describe("PortalAccessService", () => {
       name: "Ana Souza",
       deletedAt: null,
       clientAccountId: null,
-      contacts: [{ phone: "31988887777" }],
+      document: "12345678909",
+      birthDate: null,
+      profession: "Professora",
+      contacts: [{ phone: "31988887777", email: "ana@exemplo.com" }],
       ...people,
     },
     ...overrides,
@@ -275,7 +278,7 @@ describe("PortalAccessService", () => {
       );
     });
 
-    it("sem conta para o telefone da clínica: cria a conta com o nome do cadastro e liga", async () => {
+    it("sem conta para o telefone da clínica: cria a conta com os dados do cadastro e liga", async () => {
       prismaMock.portalAccessLink.findUnique.mockResolvedValue(link());
       tx.clientAccount.findUnique.mockResolvedValue(null);
       tx.clientAccount.create.mockResolvedValue({ id: "acc-novo" });
@@ -291,6 +294,10 @@ describe("PortalAccessService", () => {
           phone: "31988887777",
           name: "Ana Souza",
           passwordHash: "hash-novo",
+          document: "12345678909",
+          birthDate: null,
+          profession: "Professora",
+          email: "ana@exemplo.com",
         },
         select: { id: true },
       });

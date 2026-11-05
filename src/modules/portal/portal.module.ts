@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { StorageModule } from "../../common/storage/storage.module";
 import { AppointmentModule } from "../appointment/appointment.module";
 import { CompanyAccessModule } from "../company-access/company-access.module";
 import { PeopleModule } from "../people/people.module";
@@ -21,11 +22,17 @@ import { PortalCompanyService } from "./portal-company.service";
 import { PortalDirectoryController } from "./portal-directory.controller";
 import { PortalDirectoryService } from "./portal-directory.service";
 import { PortalPlaceService } from "./portal-place.service";
+import { PortalProfileService } from "./portal-profile.service";
 import { PortalSettingsController } from "./portal-settings.controller";
 import { PortalSettingsService } from "./portal-settings.service";
 
 @Module({
-  imports: [PeopleModule, CompanyAccessModule, AppointmentModule],
+  imports: [
+    PeopleModule,
+    CompanyAccessModule,
+    AppointmentModule,
+    StorageModule,
+  ],
   controllers: [
     PortalAccountController,
     PortalAppointmentController,
@@ -48,6 +55,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalSettingsService,
     PortalPlaceService,
     PortalDirectoryService,
+    PortalProfileService,
   ],
 })
 export class PortalModule {}

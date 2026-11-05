@@ -161,6 +161,9 @@
 | phone        | Telefone com DDD, só dígitos (único; é o login) |
 | name         | Nome do cliente                              |
 | passwordHash | Hash bcrypt da senha                         |
+| email, document, birthDate, profession | Meus dados (opcionais; CPF sem máscara) |
+| photoUrl     | Foto da conta (cada clínica tem a própria cópia) |
+| addressCep, addressStreet, addressNumber, addressComplement, addressNeighborhood, addressCityId | Endereço principal (opcional) |
 | createdAt    | Data de criação                              |
 | updatedAt    | Última alteração (ex.: troca de senha)       |
 

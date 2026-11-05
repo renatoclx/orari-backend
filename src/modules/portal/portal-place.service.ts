@@ -1,6 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import { ContactType, PeopleType } from "../../../generated/prisma/enums";
+import {
+  AddressType,
+  ContactType,
+  PeopleType,
+} from "../../../generated/prisma/enums";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
+import { formatTimeOfDay } from "../../common/time/time-of-day";
+import { toZonedParts } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PortalAppointmentService } from "./portal-appointment.service";
@@ -26,8 +32,8 @@ export class PortalPlaceService {
   ) {}
 
   /**
-   * Entra sozinho num estabelecimento: cria um cadastro NOVO de cliente, com o
-   * nome e o telefone da conta, marcado como não confirmado. Nunca junta com um
+   * Entra sozinho num estabelecimento: cria um cadastro NOVO de cliente, com
+   * Meus dados da conta, marcado como não confirmado. Nunca junta com um
    * cadastro que já existe na clínica, mesmo com o telefone igual: o telefone
    * da conta não foi conferido. Já sendo cliente, não faz nada.
    */
@@ -38,23 +44,73 @@ export class PortalPlaceService {
       return { place, joined: false };
     }
 
-    const { name, phone } = await this.prisma.clientAccount.findUniqueOrThrow({
+    // O cadastro novo nasce com Meus dados da conta (a foto vai quando o
+    // cliente trocar a foto no app).
+    const profile = await this.prisma.clientAccount.findUniqueOrThrow({
       where: { id: account.accountId },
-      select: { name: true, phone: true },
+      select: {
+        name: true,
+        phone: true,
+        email: true,
+        document: true,
+        birthDate: true,
+        profession: true,
+        addressCep: true,
+        addressStreet: true,
+        addressNumber: true,
+        addressComplement: true,
+        addressNeighborhood: true,
+        addressCityId: true,
+      },
     });
+    // O CPF só vai se não estiver em outro cadastro ativo da clínica (lá ele é único).
+    const documentTaken =
+      profile.document !== null &&
+      (await this.prisma.people.count({
+        where: {
+          companyId: company.id,
+          document: profile.document,
+          deletedAt: null,
+        },
+      })) > 0;
     try {
       await this.prisma.people.create({
         data: {
-          name,
-          normalizedName: normalizeForSearch(name),
+          name: profile.name,
+          normalizedName: normalizeForSearch(profile.name),
           type: PeopleType.CLIENT,
           companyId: company.id,
           clientAccountId: account.accountId,
           portalConfirmed: false,
-          // O telefone da conta vira o contato principal, como no cadastro rápido.
+          document: documentTaken ? null : profile.document,
+          birthDate: profile.birthDate,
+          profession: profile.profession,
+          // Telefone e e-mail da conta viram o contato principal.
           contacts: {
-            create: { type: ContactType.MAIN, phone, isPrincipal: true },
+            create: {
+              type: ContactType.MAIN,
+              phone: profile.phone,
+              email: profile.email,
+              isPrincipal: true,
+            },
           },
+          ...(profile.addressCep &&
+            profile.addressStreet &&
+            profile.addressNumber &&
+            profile.addressCityId && {
+              addresses: {
+                create: {
+                  type: AddressType.MAIN,
+                  cep: profile.addressCep,
+                  street: profile.addressStreet,
+                  number: profile.addressNumber,
+                  complement: profile.addressComplement,
+                  neighborhood: profile.addressNeighborhood,
+                  cityId: profile.addressCityId,
+                  isPrincipal: true,
+                },
+              },
+            }),
         },
         select: { id: true },
       });
@@ -119,6 +175,134 @@ export class PortalPlaceService {
     };
   }
 
+  /**
+   * Pacotes contratados em todos os estabelecimentos de portal aberto, só para
+   * ver: plano, período e situação (sem valores). Ativos primeiro, depois os
+   * mais recentes.
+   */
+  async plans(account: PortalAccount) {
+    const places = await this.openPlaces(account.accountId);
+    const lists = await Promise.all(
+      places.map(async ({ person, place, company }) => {
+        const today = dateOnly(company.timezone);
+        const rows = await this.prisma.clientPlan.findMany({
+          where: { clientId: person.id, companyId: company.id },
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            cancelledAt: true,
+            plan: { select: { name: true } },
+          },
+          orderBy: { startDate: "desc" },
+        });
+        return rows.map((row) => ({
+          id: row.id,
+          planName: row.plan.name,
+          startDate: isoDate(row.startDate),
+          endDate: isoDate(row.endDate),
+          // Mesma regra da clínica: cancelada; encerrada (data final passou); ativa.
+          status: row.cancelledAt
+            ? ("cancelled" as const)
+            : row.endDate < today
+              ? ("finished" as const)
+              : ("active" as const),
+          place,
+        }));
+      }),
+    );
+    return lists
+      .flat()
+      .sort(
+        (a, b) =>
+          Number(b.status === "active") - Number(a.status === "active") ||
+          b.startDate.localeCompare(a.startDate),
+      );
+  }
+
+  /**
+   * Recorrências em vigor (horários fixos, de pacote e de turma) em todos os
+   * estabelecimentos de portal aberto, só para ver: serviço, profissional, dias
+   * e horários, período. Quem marca e muda é a clínica.
+   */
+  async recurrences(account: PortalAccount) {
+    const places = await this.openPlaces(account.accountId);
+    const lists = await Promise.all(
+      places.map(async ({ person, place, company }) => {
+        const today = dateOnly(company.timezone);
+        const rows = await this.prisma.recurringAppointment.findMany({
+          where: {
+            clientId: person.id,
+            companyId: company.id,
+            isActive: true,
+            classLeftAt: null,
+            OR: [{ endDate: null }, { endDate: { gte: today } }],
+          },
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            clientPlanId: true,
+            classGroupId: true,
+            service: { select: { name: true } },
+            professional: { select: { name: true } },
+            days: {
+              select: { weekDay: true, startTime: true, endTime: true },
+              orderBy: { startTime: "asc" },
+            },
+          },
+          orderBy: { startDate: "asc" },
+        });
+        return rows.map((row) => ({
+          id: row.id,
+          kind: row.classGroupId
+            ? ("CLASS" as const)
+            : row.clientPlanId
+              ? ("PLAN" as const)
+              : ("RECURRENCE" as const),
+          service: row.service,
+          professional: row.professional,
+          days: row.days.map((day) => ({
+            weekDay: day.weekDay,
+            startTime: formatTimeOfDay(day.startTime),
+            endTime: formatTimeOfDay(day.endTime),
+          })),
+          startDate: isoDate(row.startDate),
+          endDate: row.endDate ? isoDate(row.endDate) : null,
+          place,
+        }));
+      }),
+    );
+    return lists.flat();
+  }
+
+  // Cadastros ativos da conta, só nas clínicas com o portal aberto.
+  private async openPlaces(accountId: string) {
+    const people = await this.prisma.people.findMany({
+      where: {
+        clientAccountId: accountId,
+        type: PeopleType.CLIENT,
+        deletedAt: null,
+      },
+      select: { id: true, company: { select: { subdomain: true } } },
+    });
+    const found = await Promise.all(
+      people.map(async (person) => {
+        const company = await this.portalCompanyService
+          .findBySlug(person.company.subdomain)
+          .catch(() => null);
+        return company
+          ? {
+              person,
+              company,
+              place: toPlace(person.company.subdomain, company),
+            }
+          : null;
+      }),
+    );
+    return found.filter((item) => item !== null);
+  }
+
   private findClient(accountId: string, companyId: string) {
     return this.prisma.people.findFirst({
       where: {
@@ -130,6 +314,17 @@ export class PortalPlaceService {
       select: { id: true },
     });
   }
+}
+
+// Hoje no relógio da clínica, como data pura (as datas de plano e recorrência são DATE).
+function dateOnly(timeZone: string): Date {
+  const { year, month, day } = toZonedParts(new Date(), timeZone);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+// Data pura como "aaaa-mm-dd".
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
 }
 
 // O fuso vai junto: o app mostra cada horário no relógio da clínica.

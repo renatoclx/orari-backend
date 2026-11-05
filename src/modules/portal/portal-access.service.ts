@@ -33,10 +33,14 @@ const linkSelect = {
       name: true,
       deletedAt: true,
       clientAccountId: true,
-      // Telefone que a clínica tem do cliente (o principal primeiro).
+      // A conta criada pelo link nasce com o que a clínica tem do cliente.
+      document: true,
+      birthDate: true,
+      profession: true,
+      // Telefone (e e-mail) que a clínica tem do cliente (o principal primeiro).
       contacts: {
         where: { deletedAt: null, phone: { not: null } },
-        select: { phone: true },
+        select: { phone: true, email: true },
         orderBy: { isPrincipal: "desc" },
       },
     },
@@ -259,7 +263,15 @@ export class PortalAccessService {
         accountId = existing.id;
       } else {
         const created = await tx.clientAccount.create({
-          data: { phone, name: person.name, passwordHash },
+          data: {
+            phone,
+            name: person.name,
+            passwordHash,
+            document: person.document,
+            birthDate: person.birthDate,
+            profession: person.profession,
+            email: person.contacts[0]?.email ?? null,
+          },
           select: { id: true },
         });
         accountId = created.id;
