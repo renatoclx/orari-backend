@@ -6,6 +6,7 @@ import {
   Ip,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -49,6 +50,31 @@ export class PortalAccessLinkController {
     @Ip() ip: string,
   ) {
     return this.portalAccessService.createLink(id, currentUser, ip);
+  }
+}
+
+// A clínica confirma o cliente que entrou sozinho pelo app.
+@ApiTags("Portal do cliente (clínica)")
+@ApiBearerAuth()
+@Controller("people/:id/portal-confirm")
+export class PortalClientConfirmController {
+  constructor(private readonly portalAccessService: PortalAccessService) {}
+
+  @Patch()
+  @HttpCode(204)
+  @Feature("clients")
+  @FeatureAction("edit")
+  @ApiOperation({
+    summary: "Confirma o cliente que entrou sozinho pelo app",
+    description:
+      "Tira a marca de telefone não confirmado e o limite de 2 agendamentos futuros. Já confirmado: 204 sem mudar nada. Fica na auditoria.",
+  })
+  confirm(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
+  ) {
+    return this.portalAccessService.confirm(id, currentUser, ip);
   }
 }
 

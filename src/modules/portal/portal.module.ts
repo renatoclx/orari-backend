@@ -6,6 +6,7 @@ import { MessageSenderService } from "./message-sender.service";
 import {
   PortalAccessLinkController,
   PortalAccessUseController,
+  PortalClientConfirmController,
 } from "./portal-access.controller";
 import { PortalAccountController } from "./portal-account.controller";
 import { PortalAccessService } from "./portal-access.service";
@@ -17,6 +18,7 @@ import { PortalAvailabilityService } from "./portal-availability.service";
 import { PortalCatalogController } from "./portal-catalog.controller";
 import { PortalCatalogService } from "./portal-catalog.service";
 import { PortalCompanyService } from "./portal-company.service";
+import { PortalPlaceService } from "./portal-place.service";
 import { PortalSettingsController } from "./portal-settings.controller";
 import { PortalSettingsService } from "./portal-settings.service";
 
@@ -27,6 +29,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalAppointmentController,
     PortalAccessLinkController,
     PortalAccessUseController,
+    PortalClientConfirmController,
     PortalCatalogController,
     PortalSettingsController,
   ],
@@ -40,6 +43,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalAppointmentService,
     PortalAccessService,
     PortalSettingsService,
+    PortalPlaceService,
   ],
 })
 export class PortalModule {}

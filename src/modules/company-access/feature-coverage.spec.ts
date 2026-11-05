@@ -26,6 +26,7 @@ import { PlanController } from "../plan/plan.controller";
 import {
   PortalAccessLinkController,
   PortalAccessUseController,
+  PortalClientConfirmController,
 } from "../portal/portal-access.controller";
 import { PortalAccountController } from "../portal/portal-account.controller";
 import { PortalAppointmentController } from "../portal/portal-appointment.controller";
@@ -91,6 +92,7 @@ const CONTROLLERS: Controller[] = [
   PortalAppointmentController,
   PortalAccessLinkController,
   PortalAccessUseController,
+  PortalClientConfirmController,
   PortalCatalogController,
   PortalSettingsController,
   PlanController,

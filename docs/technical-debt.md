@@ -205,3 +205,22 @@ cadastro e um "esqueci a senha" pelo próprio app.
 
 **Registrado em:** 2026-11-05.
 
+---
+
+## Limite do cliente não confirmado sem trava
+
+**Onde:** `PortalAppointmentService.ensureUnconfirmedLimit` (etapa 6b).
+
+**O que é:** o limite de 2 agendamentos futuros conta os agendamentos e depois
+grava, em passos separados. A trava da criação é por **profissional**; dois
+pedidos do mesmo cliente, ao mesmo tempo e com profissionais diferentes, podem
+passar os dois e deixar 3 agendamentos.
+
+**Impacto:** pequeno: o limite é uma barreira contra abuso, não uma regra de
+negócio exata, e a clínica vê e cancela o excedente.
+
+**Como resolver:** travar também pelo cliente (`pg_advisory_xact_lock` com a
+chave do cliente) na mesma transação da contagem e da gravação.
+
+**Registrado em:** 2026-11-05.
+

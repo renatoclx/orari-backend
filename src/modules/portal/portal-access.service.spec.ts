@@ -130,6 +130,56 @@ describe("PortalAccessService", () => {
   });
   const ACCOUNT = { sessionId: "s-1", accountId: "acc-1" };
 
+  describe("confirm", () => {
+    it("cliente não confirmado: confirma e audita", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        id: "cli-1",
+        portalConfirmed: false,
+      });
+
+      await service.confirm("cli-1", adminUser, "1.2.3.4");
+
+      expect(prismaMock.people.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: "cli-1",
+          companyId: COMPANY_ID,
+          type: "CLIENT",
+          deletedAt: null,
+        },
+        select: { id: true, portalConfirmed: true },
+      });
+      expect(tx.people.update).toHaveBeenCalledWith({
+        where: { id: "cli-1" },
+        data: { portalConfirmed: true },
+      });
+      expect(auditMock.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "PORTAL_CLIENT_CONFIRMED",
+          entityId: "cli-1",
+          userId: adminUser.id,
+        }),
+        tx,
+      );
+    });
+
+    it("já confirmado: não grava nem audita", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({
+        id: "cli-1",
+        portalConfirmed: true,
+      });
+      await service.confirm("cli-1", adminUser);
+      expect(tx.people.update).not.toHaveBeenCalled();
+      expect(auditMock.record).not.toHaveBeenCalled();
+    });
+
+    it("não é cliente ativo da empresa: 404", async () => {
+      prismaMock.people.findFirst.mockResolvedValue(null);
+      await expect(service.confirm("x", adminUser)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
   describe("check", () => {
     it("cadastro com telefone e sem conta: não pede telefone, senha cria a conta", async () => {
       prismaMock.portalAccessLink.findUnique.mockResolvedValue(link());
@@ -200,7 +250,7 @@ describe("PortalAccessService", () => {
 
       expect(tx.people.update).toHaveBeenCalledWith({
         where: { id: "cli-1" },
-        data: { clientAccountId: "acc-1" },
+        data: { clientAccountId: "acc-1", portalConfirmed: true },
       });
       expect(authMock.openSession).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -246,7 +296,7 @@ describe("PortalAccessService", () => {
       });
       expect(tx.people.update).toHaveBeenCalledWith({
         where: { id: "cli-1" },
-        data: { clientAccountId: "acc-novo" },
+        data: { clientAccountId: "acc-novo", portalConfirmed: true },
       });
       expect(authMock.openSession).toHaveBeenCalledWith(
         "acc-novo",
@@ -259,7 +309,7 @@ describe("PortalAccessService", () => {
       });
     });
 
-    it("cadastro já ligado: o link troca a senha da conta e tira os outros aparelhos", async () => {
+    it("cadastro já ligado: o link troca a senha da conta, tira os outros aparelhos e confirma o cadastro", async () => {
       prismaMock.portalAccessLink.findUnique.mockResolvedValue(
         link({ clientAccountId: "acc-9" }),
       );
@@ -290,7 +340,7 @@ describe("PortalAccessService", () => {
       expect(tx.clientAccount.update).toHaveBeenCalled();
       expect(tx.people.update).toHaveBeenCalledWith({
         where: { id: "cli-1" },
-        data: { clientAccountId: "acc-7" },
+        data: { clientAccountId: "acc-7", portalConfirmed: true },
       });
     });
 

@@ -289,6 +289,7 @@
 | photoUrl   | Caminho da foto (opcional)    |
 | companyId  | Código da empresa             |
 | clientAccountId | Conta do cliente no app ligada a este cadastro (opcional; no máximo um cadastro ativo por conta em cada empresa) |
+| portalConfirmed | `false` quando o cliente entrou sozinho pelo app e a clínica ainda não confirmou (padrão: `true`) |
 
 - Telefone e e-mail da pessoa ficam nos contatos (`Contact`).
 

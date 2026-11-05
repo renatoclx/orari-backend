@@ -124,6 +124,43 @@ export class PortalAccessService {
   }
 
   /**
+   * A clínica confirma o cliente que entrou sozinho pelo app (o limite de
+   * agendamentos futuros deixa de valer). Já confirmado: não faz nada.
+   */
+  async confirm(
+    personId: string,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+  ): Promise<void> {
+    const companyId = currentUser.companyId;
+    const person = await this.prisma.people.findFirst({
+      where: { id: personId, companyId, type: "CLIENT", deletedAt: null },
+      select: { id: true, portalConfirmed: true },
+    });
+    if (!person) throw new NotFoundException("Cliente não encontrado");
+    if (person.portalConfirmed) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.people.update({
+        where: { id: person.id },
+        data: { portalConfirmed: true },
+      });
+      await this.auditService.record(
+        {
+          companyId,
+          userId: currentUser.id,
+          action: AuditAction.PORTAL_CLIENT_CONFIRMED,
+          entityType: "PEOPLE",
+          entityId: person.id,
+          clientId: person.id,
+          ip,
+        },
+        tx,
+      );
+    });
+  }
+
+  /**
    * O que o app precisa para mostrar a tela do link, sem usá-lo: o local, o
    * nome do cliente, se falta o telefone e se a senha vai criar a conta ou
    * trocar a senha de uma que já existe.
@@ -171,7 +208,7 @@ export class PortalAccessService {
         await this.markUsed(tx, link.id);
         await tx.people.update({
           where: { id: person.id },
-          data: { clientAccountId: account.accountId },
+          data: { clientAccountId: account.accountId, portalConfirmed: true },
         });
       });
       return { place };
@@ -191,6 +228,11 @@ export class PortalAccessService {
       // Cadastro já ligado a uma conta: o link serve para trocar a senha dela.
       if (person.clientAccountId) {
         await this.resetPassword(tx, person.clientAccountId, passwordHash);
+        // O link veio da clínica: o cadastro passa a ser confirmado.
+        await tx.people.update({
+          where: { id: person.id },
+          data: { portalConfirmed: true },
+        });
         return this.portalAuthService.openSession(
           person.clientAccountId,
           userAgent,
@@ -224,7 +266,7 @@ export class PortalAccessService {
       }
       await tx.people.update({
         where: { id: person.id },
-        data: { clientAccountId: accountId },
+        data: { clientAccountId: accountId, portalConfirmed: true },
       });
       return this.portalAuthService.openSession(accountId, userAgent, tx);
     });

@@ -95,7 +95,7 @@
   - `POST /portal-account/logout` (204): encerra a sessão deste aparelho.
   - Cadastro, login, troca de senha e link têm limite de tentativas por IP (429).
 - **Sessão:** devolvida uma única vez (`token` e `expiresAt`), vale **90 dias**, é de um aparelho e é **da conta**. Nas rotas de um estabelecimento (`/portal/:slug/...`), a API procura o cadastro ativo da conta naquela clínica; sem cadastro, **403 `NOT_A_CLIENT`** "Você ainda não é cliente deste estabelecimento" (o app oferece entrar nele). Portal fechado: 404.
-- **Link de acesso gerado pela clínica:** `POST /people/:id/portal-access` (funcionalidade `clients`, ação `edit`) gera, para um **cliente ativo** da empresa, um link de **uso único** que vale **24 horas**. A clínica o envia pelo WhatsApp dela ou mostra em QR code. Um link novo invalida o anterior ainda não usado. Com o portal desligado, 409. Só o hash do token é gravado, e a geração fica na **auditoria** (`PORTAL_ACCESS_LINK_CREATED`). A resposta traz `token`, `expiresAt` e `path` (`/app/acesso/<token>`, o caminho no app).
+- **Link de acesso gerado pela clínica:** `POST /people/:id/portal-access` (funcionalidade `clients`, ação `edit`) gera, para um **cliente ativo** da empresa, um link de **uso único** que vale **24 horas**. A clínica o envia pelo WhatsApp dela ou mostra em QR code. Um link novo invalida o anterior ainda não usado. Com o portal desligado, 409. Usar o link **confirma** o cadastro (ver "Entrar sozinho"). Só o hash do token é gravado, e a geração fica na **auditoria** (`PORTAL_ACCESS_LINK_CREATED`). A resposta traz `token`, `expiresAt` e `path` (`/app/acesso/<token>`, o caminho no app).
   - É o **único caminho que liga a conta a um cadastro que já existe**: quem prova a identidade é a clínica, que conhece o cliente.
   - `POST /portal-account/link/check` (`token`) confere o link **sem usá-lo** e devolve o estabelecimento, o nome do cliente, `needsPhone` (o cadastro não tem telefone) e `hasAccount` (a senha será a nova senha de uma conta que já existe).
   - `POST /portal-account/link` (`token`; `password` e `passwordConfirmation`; `phone` só quando `needsPhone`) usa o link uma vez só:
@@ -106,6 +106,11 @@
     - **telefone digitado que já tem conta:** 409 (pode ser de outra pessoa); o cliente entra nela e abre o link de novo.
     - Link inexistente, usado, vencido, de cliente inativo ou de portal fechado: 400. Dois cliques ao mesmo tempo: só um vale.
   - A conta já ter outro cadastro na mesma clínica: 409.
+- **Entrar sozinho num estabelecimento** (`POST /portal-account/places/:subdomain`, com a conta entrada): cria um **cadastro novo** de cliente na clínica, com o nome e o telefone da conta (o telefone vira o contato principal). **Nunca junta** com um cadastro que já existe, mesmo com o telefone igual, porque o telefone da conta não foi conferido. Já sendo cliente: nada muda (`joined: false`). Portal fechado: 404.
+  - Esse cadastro nasce **não confirmado** (`portalConfirmed = false`). Até a clínica confirmar, o cliente pode ter **no máximo 2 agendamentos futuros** (não cancelados, de qualquer origem) naquela clínica; o terceiro pelo app é recusado com **403 `UNCONFIRMED_LIMIT`**. Agendamentos feitos pela clínica não são barrados.
+  - **A clínica confirma** pelo `PATCH /people/:id/portal-confirm` (funcionalidade `clients`, ação `edit`; 204; já confirmado, nada muda; fica na **auditoria**, `PORTAL_CLIENT_CONFIRMED`). O cadastro também passa a confirmado quando é ligado ou recebe senha nova **pelo link da clínica**.
+  - Os cadastros da clínica (inclusive os antigos) nascem confirmados.
+- **Agendamentos de todos os estabelecimentos** (`GET /portal-account/appointments`): `upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes) de todos os cadastros da conta em clínicas de portal aberto. Cada item é o mesmo da lista de um estabelecimento, com `place` (`slug`, nome e logo).
 - **Código pelo WhatsApp:** as peças continuam no backend (cálculo e hash do código, limites, tabela `PortalVerification`, envio), mas **sem rotas** desde a etapa 6a. Voltam quando houver canal de envio, para **confirmar o telefone da conta**.
 
 ## Usuários e acesso

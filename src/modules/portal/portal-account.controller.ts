@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   HttpCode,
+  Param,
   Patch,
   Post,
   UseGuards,
@@ -22,6 +23,7 @@ import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { PortalAuthService, type PortalAccount } from "./portal-auth.service";
+import { PortalPlaceService } from "./portal-place.service";
 
 // Conta do cliente no app, fora do login da clínica (@Public para o
 // JwtAuthGuard). Fica em /portal-account, e não em /portal, para não disputar
@@ -30,7 +32,10 @@ import { PortalAuthService, type PortalAccount } from "./portal-auth.service";
 @Public()
 @Controller("portal-account")
 export class PortalAccountController {
-  constructor(private readonly portalAuthService: PortalAuthService) {}
+  constructor(
+    private readonly portalAuthService: PortalAuthService,
+    private readonly portalPlaceService: PortalPlaceService,
+  ) {}
 
   @Post("register")
   @UseGuards(ThrottlerGuard)
@@ -69,6 +74,34 @@ export class PortalAccountController {
   })
   me(@CurrentAccount() account: PortalAccount) {
     return this.portalAuthService.me(account);
+  }
+
+  @Get("appointments")
+  @UseGuards(PortalAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Agendamentos da conta em todos os estabelecimentos",
+    description:
+      "`upcoming` (do mais perto ao mais longe) e `past` (os 20 mais recentes). Cada item é o da lista de um estabelecimento, com `place` (slug, nome e logo).",
+  })
+  appointments(@CurrentAccount() account: PortalAccount) {
+    return this.portalPlaceService.appointments(account);
+  }
+
+  @Post("places/:subdomain")
+  @HttpCode(200)
+  @UseGuards(PortalAuthGuard, ThrottlerGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Entra sozinho num estabelecimento",
+    description:
+      "Cria um cadastro novo de cliente com o nome e o telefone da conta, marcado como não confirmado (até a clínica confirmar, no máximo 2 agendamentos futuros pelo app). Nunca junta com um cadastro existente. Já sendo cliente: `joined: false`. Portal fechado: 404.",
+  })
+  join(
+    @CurrentAccount() account: PortalAccount,
+    @Param("subdomain") subdomain: string,
+  ) {
+    return this.portalPlaceService.join(account, subdomain);
   }
 
   @Patch("password")

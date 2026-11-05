@@ -183,6 +183,9 @@ model People {
   // Conta do app do cliente ligada a este cadastro (só pelo link da clínica ou
   // pelo cadastro feito no próprio app); no máximo um cadastro por conta em cada clínica.
   clientAccountId String?
+  // false: o cliente entrou sozinho pelo app e a clínica ainda não confirmou o
+  // cadastro (telefone não conferido); até lá, no máximo 2 agendamentos futuros pelo app.
+  portalConfirmed Boolean    @default(true)
 
   company           Company               @relation(fields: [companyId], references: [id])
   clientAccount     ClientAccount?        @relation(fields: [clientAccountId], references: [id])
@@ -644,6 +647,7 @@ enum AuditAction {
   ANAMNESIS_PDF_GENERATED
   COMPANY_ACCESS_CHANGED
   PORTAL_ACCESS_LINK_CREATED
+  PORTAL_CLIENT_CONFIRMED
 }
 
 /**
