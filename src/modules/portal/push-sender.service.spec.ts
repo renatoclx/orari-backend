@@ -30,7 +30,7 @@ const target = {
   p256dh: "p",
   auth: "a",
 };
-const payload = { title: "Orari", body: "Oi", url: "/app/avisos" };
+const payload = { title: "Orari", body: "Oi", url: "/app/menu/avisos" };
 
 describe("isPushServiceEndpoint", () => {
   it.each([

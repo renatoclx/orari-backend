@@ -133,7 +133,7 @@ describe("PortalPushService", () => {
         kind: "TEST",
         title: "Orari",
         body: "Teste",
-        url: "/app/avisos",
+        url: "/app/menu/avisos",
         readAt: createdAt,
         createdAt,
         company: null,

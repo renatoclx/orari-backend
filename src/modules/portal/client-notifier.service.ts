@@ -21,7 +21,8 @@ export interface NoticeResult {
   devices: number;
 }
 
-export const MESSAGES_PATH = "/app/avisos";
+// A tela Avisos do app (Menu → Avisos).
+export const MESSAGES_PATH = "/app/menu/avisos";
 
 // Interruptor do cliente que vale para cada tipo (o teste vale sempre).
 const PREFERENCE: Record<
