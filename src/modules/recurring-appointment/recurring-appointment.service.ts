@@ -4,9 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Appointment, Prisma } from "../../../generated/prisma/client";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { PeopleType, WeekDay } from "../../../generated/prisma/enums";
+import {
+  APPOINTMENT_EVENTS,
+  type AppointmentEvent,
+} from "../../common/events/appointment-events";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import {
   formatTimeOfDay,
@@ -145,7 +150,21 @@ export class RecurringAppointmentService {
     private readonly companyService: CompanyService,
     private readonly paymentService: PaymentService,
     private readonly classSessionService: ClassSessionService,
+    private readonly events: EventEmitter2,
   ) {}
+
+  /**
+   * Anuncia, depois de gravar, a mudança numa sessão só (remanejar, repor,
+   * cancelar). Criar e cancelar a recorrência inteira não são anunciados:
+   * seriam dezenas de avisos de uma vez.
+   */
+  private announce(
+    event: (typeof APPOINTMENT_EVENTS)["rescheduled" | "cancelled"],
+    { id, companyId }: Appointment,
+  ): void {
+    const payload: AppointmentEvent = { appointmentId: id, companyId };
+    this.events.emit(event, payload);
+  }
 
   async create(
     dto: CreateRecurringAppointmentDto,
@@ -403,15 +422,14 @@ export class RecurringAppointmentService {
     const timeZone = await this.companyService.getTimeZone(companyId);
     this.ensureWithinPeriod(startAt, recurring, timeZone);
 
-    return this.prisma.$transaction(async (tx) => {
-      const rescheduled =
-        await this.appointmentService.rescheduleFromRecurrence(
-          tx,
-          appointment,
-          startAt,
-          // Só o pacote tem reposição (falta e aula cancelada pela turma).
-          { allowReplacement: Boolean(recurring.clientPlanId) },
-        );
+    const rescheduled = await this.prisma.$transaction(async (tx) => {
+      const moved = await this.appointmentService.rescheduleFromRecurrence(
+        tx,
+        appointment,
+        startAt,
+        // Só o pacote tem reposição (falta e aula cancelada pela turma).
+        { allowReplacement: Boolean(recurring.clientPlanId) },
+      );
       await this.paymentService.moveDueDate(
         tx,
         appointmentId,
@@ -419,8 +437,10 @@ export class RecurringAppointmentService {
         timeZone,
       );
 
-      return rescheduled;
+      return moved;
     });
+    this.announce(APPOINTMENT_EVENTS.rescheduled, appointment);
+    return rescheduled;
   }
 
   /**
@@ -451,14 +471,14 @@ export class RecurringAppointmentService {
       timeZone,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const replaced = await this.prisma.$transaction(async (tx) => {
       // A vaga fica travada até o fim da transação.
       const classSession = await this.classSessionService.reserveSeat(
         tx,
         slot,
         appointment.clientId,
       );
-      const replaced = await this.appointmentService.rescheduleFromRecurrence(
+      const moved = await this.appointmentService.rescheduleFromRecurrence(
         tx,
         appointment,
         startAt,
@@ -471,8 +491,10 @@ export class RecurringAppointmentService {
         timeZone,
       );
 
-      return replaced;
+      return moved;
     });
+    this.announce(APPOINTMENT_EVENTS.rescheduled, appointment);
+    return replaced;
   }
 
   /**
@@ -563,15 +585,17 @@ export class RecurringAppointmentService {
       companyId,
     );
 
-    return this.prisma.$transaction(async (tx) => {
-      const cancelled = await this.appointmentService.cancelFromRecurrence(
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      const done = await this.appointmentService.cancelFromRecurrence(
         tx,
         appointment,
       );
       await this.paymentService.cancelPendingForAppointment(tx, appointmentId);
 
-      return cancelled;
+      return done;
     });
+    this.announce(APPOINTMENT_EVENTS.cancelled, appointment);
+    return cancelled;
   }
 
   /**

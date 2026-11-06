@@ -9,6 +9,8 @@ import { AnamnesisController } from "../anamnesis/anamnesis.controller";
 import { AnamnesisTemplateController } from "../anamnesis/anamnesis-template.controller";
 import { AppointmentController } from "../appointment/appointment.controller";
 import { AuditController } from "../audit/audit.controller";
+import { AutoMessageController } from "../auto-message/auto-message.controller";
+import { MessageCampaignController } from "../message-campaign/message-campaign.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
 import { CityController } from "../city/city.controller";
@@ -32,6 +34,7 @@ import { PortalAccountController } from "../portal/portal-account.controller";
 import { PortalAppointmentController } from "../portal/portal-appointment.controller";
 import { PortalCatalogController } from "../portal/portal-catalog.controller";
 import { PortalDirectoryController } from "../portal/portal-directory.controller";
+import { PortalPushController } from "../portal/portal-push.controller";
 import { PortalSettingsController } from "../portal/portal-settings.controller";
 import { RecurringAppointmentController } from "../recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../service/service.controller";
@@ -56,6 +59,8 @@ const EXEMPT: Record<string, string> = {
     "vitrine pública do portal (só abre com o portal ligado e no plano)",
   PortalDirectoryController:
     "busca pública de estabelecimentos (só os de portal ligado, no plano e que escolheram aparecer)",
+  PortalPushController:
+    "avisos do app e caixa de Avisos do cliente (PortalAuthGuard, token do portal)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
   NotificationController: "ainda sem uso (ver technical-debt.md)",
@@ -78,6 +83,8 @@ const CONTROLLERS: Controller[] = [
   AnamnesisTemplateController,
   AppointmentController,
   AuditController,
+  AutoMessageController,
+  MessageCampaignController,
   AuthController,
   BusinessHourController,
   CityController,
@@ -98,6 +105,7 @@ const CONTROLLERS: Controller[] = [
   PortalClientConfirmController,
   PortalCatalogController,
   PortalDirectoryController,
+  PortalPushController,
   PortalSettingsController,
   PlanController,
   RecurringAppointmentController,

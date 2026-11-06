@@ -335,18 +335,19 @@ sed -E 's/(PASSWORD|SECRET)=.*/\1=(oculto)/; s#(//orari:)[^@]*#\1(oculto)#' .env
 
 **O que cada linha significa**
 
-| Linha                                       | Para que serve                                                                               |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `NODE_ENV=production`                       | Liga as regras rígidas de segurança (a API se recusa a subir com configuração fraca)         |
-| `API_DOMAIN`                                | Endereço da API. `:80` serve só HTTP (teste por IP); depois vira `api.orariapp.com.br`       |
-| `APP_DOMAIN`                                | Endereço do frontend (`app.orariapp.com.br`). Sem ele, o frontend não fica acessível de fora |
-| `POSTGRES_USER` / `_PASSWORD` / `_DB`       | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                            |
-| `DATABASE_URL`                              | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima     |
-| `JWT_SECRET`                                | Segredo que assina os logins. Precisa ser longo e aleatório                                  |
-| `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN` | Duração do login (15 minutos, renovável por 7 dias)                                          |
-| `ANAMNESIS_ENCRYPTION_KEY`                  | Chave que criptografa as fichas de anamnese (dados de saúde). Ver a etapa 5.1                |
-| `CORS_ORIGIN`                               | Endereço do frontend autorizado a falar com a API (`https://app.orariapp.com.br`)            |
-| `TRUST_PROXY=1`                             | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente      |
+| Linha                                            | Para que serve                                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `NODE_ENV=production`                            | Liga as regras rígidas de segurança (a API se recusa a subir com configuração fraca)         |
+| `API_DOMAIN`                                     | Endereço da API. `:80` serve só HTTP (teste por IP); depois vira `api.orariapp.com.br`       |
+| `APP_DOMAIN`                                     | Endereço do frontend (`app.orariapp.com.br`). Sem ele, o frontend não fica acessível de fora |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB`            | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                            |
+| `DATABASE_URL`                                   | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima     |
+| `JWT_SECRET`                                     | Segredo que assina os logins. Precisa ser longo e aleatório                                  |
+| `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN`      | Duração do login (15 minutos, renovável por 7 dias)                                          |
+| `ANAMNESIS_ENCRYPTION_KEY`                       | Chave que criptografa as fichas de anamnese (dados de saúde). Ver a etapa 5.1                |
+| `CORS_ORIGIN`                                    | Endereço do frontend autorizado a falar com a API (`https://app.orariapp.com.br`)            |
+| `TRUST_PROXY=1`                                  | Há um proxy (o Caddy) na frente da API, para o limite de tentativas ver o IP do cliente      |
+| `VAPID_PUBLIC_KEY` / `_PRIVATE_KEY` / `_SUBJECT` | Avisos do app do cliente (notificações push). Opcionais; ver a etapa 5.2                     |
 
 Se algo estiver fraco ou faltando, a API se recusa a subir e o log diz o quê (ver
 `docs/auth.md`, seção "Configuração de produção").
@@ -431,6 +432,57 @@ SEED_SUPER_ADMIN_PASSWORD=
   gerenciador de senhas.
 
 Na etapa 6 você roda o seed e **apaga essas 6 linhas**.
+
+### 5.2. Chaves dos avisos do app (`VAPID_*`)
+
+Os avisos do app do cliente (lembretes, mensagens da clínica) usam notificações
+push. As chaves VAPID identificam o Orari para os serviços de push (Google,
+Apple). São **opcionais**: sem elas a API sobe normalmente e o app só não oferece
+ativar os avisos.
+
+- **A privada é segredo** (como o `JWT_SECRET`): só no `.env.production` e no
+  gerenciador de senhas. A pública não é segredo (vai para o celular).
+- **Não troque o par depois de usar:** os aparelhos inscritos com a chave antiga
+  deixam de receber, e cada cliente precisaria ativar os avisos de novo.
+
+**Passo a passo (primeira vez):**
+
+1. **No seu computador**, na pasta do backend, gere o par:
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+   Saem duas linhas: `Public Key` (87 caracteres) e `Private Key` (43).
+
+2. **Guarde as duas no gerenciador de senhas**, com um nome como "Orari produção -
+   chaves VAPID".
+
+3. **No servidor**, grave as três linhas no `.env.production`, colando cada chave
+   quando o comando pedir (não aparecem na tela):
+
+   ```bash
+   cd ~/orari-backend
+   read -rs -p "Cole a Public Key: " PUB; echo
+   read -rs -p "Cole a Private Key: " PRIV; echo
+   printf 'VAPID_PUBLIC_KEY=%s\nVAPID_PRIVATE_KEY=%s\nVAPID_SUBJECT=mailto:SEU_EMAIL\n' "$PUB" "$PRIV" >> .env.production
+   unset PUB PRIV
+   ```
+
+   Troque `SEU_EMAIL` pelo e-mail de contato do Orari (é o contato que os serviços
+   de push usam se houver problema com os envios).
+
+4. Confira, **sem mostrar os valores**:
+
+   ```bash
+   grep -c '^VAPID_' .env.production   # deve imprimir 3
+   ```
+
+5. Recrie a API (`dcp up -d --force-recreate api`). Chave malformada ou só parte
+   das três: a API não sobe e o log diz qual.
+
+Para o desenvolvimento local, gere **outro par** no `.env` (ou deixe sem, com os
+avisos desligados).
 
 ### 6. Subir a aplicação
 
@@ -674,6 +726,13 @@ dcp logs -f api
 As migrações novas são aplicadas sozinhas na subida. Quem estava com o site aberto
 durante a atualização do frontend vê erro na próxima ação até recarregar a página
 (cada versão tem as suas chaves internas).
+
+**Versão com o portal do cliente e as mensagens** (branch `feature/mensagens`): a
+migração `20261106100000_client_portal_off` tira o Portal do cliente de **todas** as
+empresas. Depois da subida, o item some do menu de todos; para testar, libere
+**Portal do cliente** (e, se quiser, **Mensagens**) só na empresa de teste, em
+Empresas → Acessos e limites, e ligue o portal na tela Portal do cliente dela. Para os
+avisos no celular, configure antes as chaves VAPID (etapa 5.2).
 
 **Mudou o endereço da API** (`API_URL` no Compose)? O frontend precisa ser
 reconstruído (`dcp build frontend`): o valor fica gravado no build.

@@ -33,6 +33,7 @@ describe("PortalAuthService", () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    pushSubscription: { deleteMany: vi.fn() },
     $transaction: vi.fn(),
   };
   const portalCompanyMock = { findBySlug: vi.fn() };
@@ -219,6 +220,7 @@ describe("PortalAuthService", () => {
         { company: { subdomain: "fechada" } },
         { company: { subdomain: "aurora" } },
       ],
+      _count: { messages: 3 },
     });
     portalCompanyMock.findBySlug.mockImplementation((slug: string) =>
       slug === "fechada"
@@ -232,6 +234,7 @@ describe("PortalAuthService", () => {
 
     await expect(service.me(ACCOUNT)).resolves.toEqual({
       account: { id: "acc-1", name: "Ana", phone: PHONE },
+      unreadMessages: 3,
       places: [
         {
           slug: "aurora",
@@ -279,6 +282,10 @@ describe("PortalAuthService", () => {
         },
         data: { revokedAt: expect.any(Date) as Date },
       });
+      // Os outros aparelhos também param de receber os avisos do app.
+      expect(prismaMock.pushSubscription.deleteMany).toHaveBeenCalledWith({
+        where: { clientAccountId: "acc-1", portalSessionId: { not: "s-1" } },
+      });
       expect(prismaMock.$transaction).toHaveBeenCalled();
     });
 
@@ -290,11 +297,15 @@ describe("PortalAuthService", () => {
     });
   });
 
-  it("logout revoga só a sessão deste aparelho", async () => {
+  it("logout revoga só a sessão deste aparelho e apaga a inscrição dos avisos dele", async () => {
     await service.logout(ACCOUNT);
     expect(prismaMock.portalSession.update).toHaveBeenCalledWith({
       where: { id: "s-1" },
       data: { revokedAt: expect.any(Date) as Date },
     });
+    expect(prismaMock.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { portalSessionId: "s-1" },
+    });
+    expect(prismaMock.$transaction).toHaveBeenCalled();
   });
 });

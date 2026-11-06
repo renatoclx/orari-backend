@@ -3,6 +3,7 @@ import { StorageModule } from "../../common/storage/storage.module";
 import { AppointmentModule } from "../appointment/appointment.module";
 import { CompanyAccessModule } from "../company-access/company-access.module";
 import { PeopleModule } from "../people/people.module";
+import { ClientNotifierService } from "./client-notifier.service";
 import { MessageSenderService } from "./message-sender.service";
 import {
   PortalAccessLinkController,
@@ -23,6 +24,9 @@ import { PortalDirectoryController } from "./portal-directory.controller";
 import { PortalDirectoryService } from "./portal-directory.service";
 import { PortalPlaceService } from "./portal-place.service";
 import { PortalProfileService } from "./portal-profile.service";
+import { PortalPushController } from "./portal-push.controller";
+import { PortalPushService } from "./portal-push.service";
+import { PushSenderService } from "./push-sender.service";
 import { PortalSettingsController } from "./portal-settings.controller";
 import { PortalSettingsService } from "./portal-settings.service";
 
@@ -42,6 +46,7 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalCatalogController,
     PortalDirectoryController,
     PortalSettingsController,
+    PortalPushController,
   ],
   providers: [
     PortalAuthService,
@@ -56,6 +61,12 @@ import { PortalSettingsService } from "./portal-settings.service";
     PortalPlaceService,
     PortalDirectoryService,
     PortalProfileService,
+    PushSenderService,
+    ClientNotifierService,
+    PortalPushService,
   ],
+  // Os avisos automáticos e as mensagens da clínica (módulo Mensagens) usam o
+  // mesmo ponto de envio.
+  exports: [ClientNotifierService],
 })
 export class PortalModule {}

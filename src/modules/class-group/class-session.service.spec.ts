@@ -1,3 +1,4 @@
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +30,9 @@ function nextMondayAt8(): Date {
   date.setUTCHours(11, 0, 0, 0);
   return date;
 }
+
+// Os anúncios dos agendamentos (mensagens automáticas) são só registrados.
+const eventsMock = { emit: vi.fn() };
 
 describe("ClassSessionService", () => {
   let service: ClassSessionService;
@@ -121,6 +125,7 @@ describe("ClassSessionService", () => {
         { provide: BusinessHourService, useValue: businessHourServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
         { provide: PaymentService, useValue: paymentServiceMock },
+        { provide: EventEmitter2, useValue: eventsMock },
       ],
     }).compile();
 
@@ -754,6 +759,11 @@ describe("ClassSessionService", () => {
       expect(
         paymentServiceMock.cancelPendingForClassSession,
       ).toHaveBeenCalledWith(txMock, "session-1");
+      // Cada aluno da sessão recebe o aviso (mensagem automática).
+      expect(eventsMock.emit).toHaveBeenCalledWith("class-session.cancelled", {
+        classSessionId: "session-1",
+        companyId: COMPANY_ID,
+      });
     });
 
     it("sem motivo, grava a observação vazia", async () => {

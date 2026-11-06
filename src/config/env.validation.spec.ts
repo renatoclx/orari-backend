@@ -108,6 +108,39 @@ describe("validateEnv", () => {
     });
   });
 
+  describe("chaves dos avisos do app (VAPID)", () => {
+    // Par só de teste (npx web-push generate-vapid-keys); não é usado em lugar nenhum.
+    const vapid = {
+      VAPID_PUBLIC_KEY:
+        "BKXdATi84x3TVYjFJcfTuRLai29aLuL0ZO0hiZH32k6sOXHEnq0o-W3tolk-i_WqaJEXoj8P1tJ8s3kahXp_tTY",
+      VAPID_PRIVATE_KEY: "9usGQ1GhGlto5PA72tbCoUJCvsVWsR7qDqE6PLoC56U",
+      VAPID_SUBJECT: "mailto:contato@orariapp.com.br",
+    };
+
+    it("deve aceitar sem nenhuma (avisos desligados) e com as três válidas", () => {
+      expect(() => validateEnv(base)).not.toThrow();
+      expect(() => validateEnv({ ...base, ...vapid })).not.toThrow();
+    });
+
+    it("deve recusar só uma parte das três", () => {
+      expect(() =>
+        validateEnv({ ...base, VAPID_PUBLIC_KEY: vapid.VAPID_PUBLIC_KEY }),
+      ).toThrow("vão juntas");
+    });
+
+    it("deve recusar chave e contato fora do formato", () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          ...vapid,
+          VAPID_PUBLIC_KEY: "curta",
+          VAPID_PRIVATE_KEY: vapid.VAPID_PUBLIC_KEY,
+          VAPID_SUBJECT: "contato@orariapp.com.br",
+        }),
+      ).toThrow(/VAPID_PUBLIC_KEY[\s\S]*VAPID_PRIVATE_KEY[\s\S]*VAPID_SUBJECT/);
+    });
+  });
+
   it("deve listar todos os problemas de uma vez", () => {
     expect(() => validateEnv({})).toThrow(
       /DATABASE_URL[\s\S]*JWT_SECRET[\s\S]*JWT_EXPIRES_IN[\s\S]*JWT_REFRESH_EXPIRES_IN/,

@@ -1,3 +1,4 @@
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
   BadRequestException,
   ConflictException,
@@ -18,6 +19,9 @@ import { CreateRecurringAppointmentDto } from "./dto/create-recurring-appointmen
 import { RecurringAppointmentService } from "./recurring-appointment.service";
 
 const anyDate: unknown = expect.any(Date);
+
+// Os anúncios dos agendamentos (mensagens automáticas) são só registrados.
+const eventsMock = { emit: vi.fn() };
 
 describe("RecurringAppointmentService", () => {
   let recurringService: RecurringAppointmentService;
@@ -151,6 +155,7 @@ describe("RecurringAppointmentService", () => {
         { provide: CompanyService, useValue: companyServiceMock },
         { provide: PaymentService, useValue: paymentServiceMock },
         { provide: ClassSessionService, useValue: classSessionServiceMock },
+        { provide: EventEmitter2, useValue: eventsMock },
       ],
     }).compile();
 
@@ -665,6 +670,7 @@ describe("RecurringAppointmentService", () => {
     // Período da recorrência: 2026-10-01 a 2026-11-30.
     const generated = {
       id: "appointment-1",
+      companyId: COMPANY_ID,
       recurringAppointmentId: "recurring-1",
       status: "SCHEDULED",
     };
@@ -696,6 +702,11 @@ describe("RecurringAppointmentService", () => {
         startAt,
         "UTC",
       );
+      // Uma sessão remanejada pela clínica é anunciada (mensagem automática).
+      expect(eventsMock.emit).toHaveBeenCalledWith("appointment.rescheduled", {
+        appointmentId: "appointment-1",
+        companyId: COMPANY_ID,
+      });
     });
 
     it("sessão de pacote: autoriza a reposição (falta e aula cancelada pela turma)", async () => {
@@ -780,6 +791,10 @@ describe("RecurringAppointmentService", () => {
       expect(
         paymentServiceMock.cancelPendingForAppointment,
       ).toHaveBeenCalledWith(prismaMock, "appointment-1");
+      expect(eventsMock.emit).toHaveBeenCalledWith("appointment.cancelled", {
+        appointmentId: "appointment-1",
+        companyId: COMPANY_ID,
+      });
     });
 
     it("deve recusar cancelar agendamento de outra recorrência", async () => {

@@ -15,6 +15,14 @@ const isValidEncryptionKey = (key: string) =>
   /^[A-Za-z0-9+/]{43}=$/.test(key) &&
   Buffer.from(key, "base64").length === ENCRYPTION_KEY_BYTES;
 
+// Chaves VAPID do Web Push (geradas por `npx web-push generate-vapid-keys`), em
+// base64url sem "=": a pública é um ponto da curva P-256 (65 bytes), a privada
+// tem 32 bytes.
+const VAPID_KEYS = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"] as const;
+const isBase64UrlOf = (value: string, bytes: number) =>
+  /^[A-Za-z0-9_-]+$/.test(value) &&
+  Buffer.from(value, "base64url").length === bytes;
+
 /**
  * Confere as variáveis de ambiente na subida da API: ela se recusa a iniciar,
  * com a lista do que está errado, em vez de falhar depois (ou, pior, subir com
@@ -76,6 +84,33 @@ export function validateEnv(config: Env): Env {
 
   if (config.TRUST_PROXY !== undefined && !/^\d+$/.test(config.TRUST_PROXY)) {
     errors.push("TRUST_PROXY deve ser o número de proxies à frente da API");
+  }
+
+  // Avisos do app: opcionais (sem as chaves, o push fica desligado e o resto da
+  // API funciona), mas, se vierem, as três juntas e válidas.
+  const vapidGiven = [...VAPID_KEYS, "VAPID_SUBJECT"].filter((name) =>
+    isText(config[name]),
+  );
+  if (vapidGiven.length > 0 && vapidGiven.length < 3) {
+    errors.push(
+      "VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY e VAPID_SUBJECT vão juntas (ou nenhuma, com os avisos do app desligados)",
+    );
+  } else if (vapidGiven.length === 3) {
+    if (!isBase64UrlOf(config.VAPID_PUBLIC_KEY as string, 65)) {
+      errors.push(
+        "VAPID_PUBLIC_KEY inválida (gere com: npx web-push generate-vapid-keys)",
+      );
+    }
+    if (!isBase64UrlOf(config.VAPID_PRIVATE_KEY as string, 32)) {
+      errors.push(
+        "VAPID_PRIVATE_KEY inválida (gere com: npx web-push generate-vapid-keys)",
+      );
+    }
+    if (!/^(mailto:|https:\/\/)/.test(config.VAPID_SUBJECT as string)) {
+      errors.push(
+        "VAPID_SUBJECT deve ser um contato mailto: ou https:// (ex.: mailto:contato@orariapp.com.br)",
+      );
+    }
   }
 
   if (

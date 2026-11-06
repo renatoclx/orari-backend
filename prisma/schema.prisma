@@ -31,6 +31,7 @@ model User {
   people                    People?                    @relation(fields: [peopleId], references: [id])
   refreshTokens             RefreshToken[]
   auditLogs                 AuditLog[]
+  messageCampaigns          MessageCampaign[]
   anamnesisTemplateVersions AnamnesisTemplateVersion[]
   anamnesisEntries          AnamnesisEntry[]
 
@@ -159,6 +160,10 @@ model Company {
   limit                 CompanyLimit?
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
+  clientMessages        ClientMessage[]
+  autoMessages          AutoMessage[]
+  autoMessageLogs       AutoMessageLog[]
+  messageCampaigns      MessageCampaign[]
   portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
@@ -976,10 +981,65 @@ model PortalSession {
   userAgent       String?
   createdAt       DateTime  @default(now())
 
-  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  clientAccount     ClientAccount      @relation(fields: [clientAccountId], references: [id])
+  pushSubscriptions PushSubscription[]
 
   @@index([clientAccountId])
   @@map("portal_sessions")
+}
+
+// Aparelho com os avisos do app ativados (Web Push). Fica ligado à sessão: ao
+// sair do app a inscrição é apagada, e quem entrar depois no mesmo aparelho não
+// recebe os avisos da conta anterior. Sessão vencida ou revogada não recebe.
+model PushSubscription {
+  id              String   @id @default(uuid())
+  clientAccountId String
+  portalSessionId String
+  // Endereço de entrega do serviço de push do navegador: um por aparelho.
+  endpoint        String   @unique
+  // Chaves do aparelho que cifram o conteúdo do aviso (padrão Web Push).
+  p256dh          String
+  auth            String
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  portalSession PortalSession @relation(fields: [portalSessionId], references: [id], onDelete: Cascade)
+
+  @@index([clientAccountId])
+  @@map("push_subscriptions")
+}
+
+// Tipo do aviso; define qual interruptor do cliente vale (ver ClientNotifierService).
+enum ClientMessageKind {
+  REMINDER
+  APPOINTMENT
+  BIRTHDAY
+  MISS_YOU
+  CAMPAIGN
+  TEST
+}
+
+// Aviso recebido pelo cliente: a caixa de Avisos do app. Gravado mesmo sem
+// aparelho inscrito, para o cliente ver depois.
+model ClientMessage {
+  id              String            @id @default(uuid())
+  clientAccountId String
+  // Clínica que enviou; nulo no aviso de teste (é do Orari).
+  companyId       String?
+  kind            ClientMessageKind
+  title           String            @db.VarChar(100)
+  body            String            @db.VarChar(500)
+  // Caminho do app aberto ao tocar no aviso (ex.: /app/agendamentos).
+  url             String?
+  readAt          DateTime?
+  createdAt       DateTime          @default(now())
+
+  clientAccount ClientAccount @relation(fields: [clientAccountId], references: [id])
+  company       Company?      @relation(fields: [companyId], references: [id])
+
+  @@index([clientAccountId, createdAt])
+  @@map("client_messages")
 }
 
 // Conta do cliente no app (portal), única no Orari e com senha. Cada clínica
@@ -1006,13 +1066,19 @@ model ClientAccount {
   addressComplement   String?
   addressNeighborhood String?
   addressCityId       String?
+  // Interruptores dos avisos do app (Menu): lembretes e agendamentos; novidades
+  // e promoções. Desligado, o aviso daquele tipo nem é gravado nem enviado.
+  notifyAppointments  Boolean   @default(true)
+  notifyPromotions    Boolean   @default(true)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime?
 
   addressCity City? @relation(fields: [addressCityId], references: [id])
 
-  people   People[]
-  sessions PortalSession[]
+  people            People[]
+  sessions          PortalSession[]
+  pushSubscriptions PushSubscription[]
+  messages          ClientMessage[]
 
   @@map("client_accounts")
 }
@@ -1092,4 +1158,74 @@ model PortalAccessLink {
 
   @@index([peopleId])
   @@map("portal_access_links")
+}
+
+// Situação que dispara uma mensagem automática ao cliente do app (ver
+// docs/business-rules.md, "Mensagens automáticas").
+enum AutoMessageKind {
+  REMINDER
+  APPOINTMENT_CREATED
+  APPOINTMENT_RESCHEDULED
+  APPOINTMENT_CANCELLED
+  BIRTHDAY
+  MISS_YOU
+}
+
+// Configuração de uma situação numa clínica. Sem linha, valem os padrões
+// (auto-message.catalog.ts); a linha nasce no primeiro "Salvar".
+model AutoMessage {
+  id              String          @id @default(uuid())
+  companyId       String
+  kind            AutoMessageKind
+  enabled         Boolean
+  // Texto com variáveis ({nome}, {data}…), trocadas no envio.
+  body            String          @db.VarChar(500)
+  // Lembrete: minutos antes do horário (ex.: [1440, 30] = 24h e 30 min).
+  reminderOffsets Int[]
+  // Sentimos sua falta: dias sem vir depois do último atendimento.
+  missYouDays     Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, kind])
+  @@map("auto_messages")
+}
+
+// Uma mensagem automática já enviada. A chave única (ex.: lembrete 1440 do
+// agendamento X) impede o envio repetido quando o job roda de novo.
+model AutoMessageLog {
+  id              String          @id @default(uuid())
+  companyId       String
+  kind            AutoMessageKind
+  dedupKey        String          @unique
+  clientAccountId String
+  createdAt       DateTime        @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("auto_message_logs")
+}
+
+// Mensagem escrita pela clínica e enviada a todos os clientes com o app
+// (Mensagens → Enviar). Uma por dia por clínica (ver docs/business-rules.md).
+model MessageCampaign {
+  id          String   @id @default(uuid())
+  companyId   String
+  // Quem enviou (usuário ADMIN da clínica).
+  createdById String
+  title       String   @db.VarChar(100)
+  // Texto com {nome} e {estabelecimento}, trocados para cada cliente.
+  body        String   @db.VarChar(500)
+  // Clientes que receberam na caixa de Avisos (quem desligou as promoções não conta).
+  recipients  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("message_campaigns")
 }

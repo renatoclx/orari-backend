@@ -143,10 +143,12 @@ export class PortalAppointmentService {
       );
     }
 
+    // O próprio cliente cancelou: sem aviso para ele.
     await this.appointmentService.update(
       id,
       { status: AppointmentStatus.CANCELLED },
       company.id,
+      "client",
     );
   }
 
