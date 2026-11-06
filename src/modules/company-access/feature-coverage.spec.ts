@@ -10,6 +10,7 @@ import { AnamnesisTemplateController } from "../anamnesis/anamnesis-template.con
 import { AppointmentController } from "../appointment/appointment.controller";
 import { AuditController } from "../audit/audit.controller";
 import { AutoMessageController } from "../auto-message/auto-message.controller";
+import { MessageCampaignController } from "../message-campaign/message-campaign.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
 import { CityController } from "../city/city.controller";
@@ -83,6 +84,7 @@ const CONTROLLERS: Controller[] = [
   AppointmentController,
   AuditController,
   AutoMessageController,
+  MessageCampaignController,
   AuthController,
   BusinessHourController,
   CityController,

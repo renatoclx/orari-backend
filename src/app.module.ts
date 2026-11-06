@@ -28,6 +28,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { ScheduleModule } from "@nestjs/schedule";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
+import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
     CompanyAccessModule,
     PortalModule,
     AutoMessageModule,
+    MessageCampaignModule,
     PeopleModule,
     ContactModule,
     AddressModule,

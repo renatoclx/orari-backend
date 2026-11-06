@@ -31,6 +31,7 @@ model User {
   people                    People?                    @relation(fields: [peopleId], references: [id])
   refreshTokens             RefreshToken[]
   auditLogs                 AuditLog[]
+  messageCampaigns          MessageCampaign[]
   anamnesisTemplateVersions AnamnesisTemplateVersion[]
   anamnesisEntries          AnamnesisEntry[]
 
@@ -162,6 +163,7 @@ model Company {
   clientMessages        ClientMessage[]
   autoMessages          AutoMessage[]
   autoMessageLogs       AutoMessageLog[]
+  messageCampaigns      MessageCampaign[]
   portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
@@ -1205,4 +1207,25 @@ model AutoMessageLog {
 
   @@index([companyId, createdAt])
   @@map("auto_message_logs")
+}
+
+// Mensagem escrita pela clínica e enviada a todos os clientes com o app
+// (Mensagens → Enviar). Uma por dia por clínica (ver docs/business-rules.md).
+model MessageCampaign {
+  id          String   @id @default(uuid())
+  companyId   String
+  // Quem enviou (usuário ADMIN da clínica).
+  createdById String
+  title       String   @db.VarChar(100)
+  // Texto com {nome} e {estabelecimento}, trocados para cada cliente.
+  body        String   @db.VarChar(500)
+  // Clientes que receberam na caixa de Avisos (quem desligou as promoções não conta).
+  recipients  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("message_campaigns")
 }

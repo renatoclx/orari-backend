@@ -247,6 +247,24 @@
 
 ---
 
+## MessageCampaign
+
+- Mensagem escrita pela clínica e enviada a todos os clientes com o app (Mensagens → Enviar).
+
+| Nome        | Descrição                                                   |
+| ----------- | ----------------------------------------------------------- |
+| id          | Identificador único                                         |
+| companyId   | Clínica                                                     |
+| createdById | Usuário que enviou                                          |
+| title       | Título da notificação (até 100)                             |
+| body        | Texto com `{nome}` e `{estabelecimento}` (até 500)          |
+| recipients  | Quantos receberam na caixa de Avisos                        |
+| createdAt   | Data do envio (uma por dia por clínica, no fuso dela)       |
+
+- Pertence a uma clínica e a um usuário. Não tem exclusão.
+
+---
+
 ## AutoMessageLog
 
 - Uma mensagem automática já enviada; a chave única impede o envio repetido.

@@ -150,7 +150,7 @@
 
 ## Mensagens automáticas
 
-> **Estado:** desde a etapa 8c (2026-11-05), no backend. A tela da clínica (Mensagens → Automáticas) vem na 8d; as mensagens escritas pela clínica (Enviar), na 8e.
+> **Estado:** backend na 8c (2026-11-05); tela da clínica (Mensagens → Automáticas) na 8d (2026-11-06). As mensagens escritas pela clínica estão em "Mensagens da clínica".
 
 - Avisos que a **clínica** manda ao cliente do app, por push (ver "Avisos do app"), conforme a situação. Funcionalidade **Mensagens** (`messages`) no Acessos e limites: **Visualiza** = ler a configuração; **Edita** = ligar, desligar e mudar os textos. Exige o Visualiza do Portal do cliente. Fica **fora do modelo padrão** de empresa nova, como o Portal do cliente (o SUPER_ADMIN libera).
 - **Quem recebe:** o cliente **ativo** da clínica que tem **conta no app**, e só se a clínica está ativa, com o **portal ligado** e com o Portal do cliente e as Mensagens no **plano**. Os interruptores do cliente valem (lembretes e agendamentos; novidades e promoções). O título da notificação é o nome da clínica; nas situações de agendamento, tocar abre a aba Agendamentos do app.
@@ -171,6 +171,18 @@
 - **Sem repetir:** cada envio grava um registro com chave única antes de sair (`AutoMessageLog`): o lembrete de cada tempo de cada horário, cada mudança de horário, o cancelamento, o aniversário do ano, a falta do dia. O job rodando de novo ou a API reiniciando não repetem; remarcado, o horário ganha lembretes novos.
 - **Como os agendamentos avisam:** o módulo de agendamentos só **anuncia**, depois de gravar, o que a clínica fez (marcou, mudou, cancelou); o módulo de mensagens escuta e envia fora da requisição. Uma falha no aviso nunca impede salvar o agendamento (vai para o log).
 - **Jobs:** lembretes a cada 5 minutos; aniversário e falta a cada 10 minutos, conferindo a hora local de cada clínica (se a API reiniciar às 9h05, o aniversário do dia ainda sai).
+
+## Mensagens da clínica
+
+> **Estado:** desde a etapa 8e (2026-11-06): Mensagens → Enviar.
+
+- A clínica escreve um **título** (até 100; é o título da notificação) e um **texto** (até 500) e envia a **todos os clientes ativos com conta no app** (`POST /message-campaigns`, só ADMIN, funcionalidade `messages` com **Edita**). Mesmas condições das automáticas: clínica ativa, portal ligado, Portal do cliente e Mensagens no plano; senão, **409** e nada sai.
+- **Uma por dia** por clínica, no dia do **fuso da clínica**; a segunda do dia: **409** "Hoje já foi enviada uma mensagem. A próxima pode ser enviada amanhã." As automáticas não contam. O registro nasce numa transação **travada por clínica** (`pg_advisory_xact_lock`): dois envios ao mesmo tempo não passam juntos.
+- **Variáveis:** só `{nome}` (primeiro nome do cadastro) e `{estabelecimento}`, no título e no texto; outra variável: **400**. Cada cliente recebe com o próprio nome.
+- O aviso é do tipo `CAMPAIGN`: quem desligou **novidades e promoções** no app não recebe (nem na caixa de Avisos). Tocar abre a tela Avisos.
+- **Resposta e histórico:** `recipients` = quantos receberam na caixa de Avisos. `GET /message-campaigns` (paginado, mais recentes primeiro) traz título, texto (como foi escrito), `recipients`, data e quem enviou (`createdBy.name`).
+- `GET /message-campaigns/audience`: `clients` (ativos com o app), `promotionsOff` (desses, quantos desligaram as promoções) e `canSendToday`.
+- Envio na hora, em lotes de 10 (ver `technical-debt.md`, "Avisos do app enviados na hora, sem fila").
 
 ## Usuários e acesso
 

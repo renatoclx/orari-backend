@@ -18,5 +18,7 @@ import { AutoMessageService } from "./auto-message.service";
     AutoMessageListener,
     AutoMessageJob,
   ],
+  // As mensagens enviadas pela clínica usam a mesma conferência da clínica.
+  exports: [AutoMessageSender],
 })
 export class AutoMessageModule {}
