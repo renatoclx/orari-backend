@@ -727,6 +727,13 @@ As migrações novas são aplicadas sozinhas na subida. Quem estava com o site a
 durante a atualização do frontend vê erro na próxima ação até recarregar a página
 (cada versão tem as suas chaves internas).
 
+**Versão com o portal do cliente e as mensagens** (branch `feature/mensagens`): a
+migração `20261106100000_client_portal_off` tira o Portal do cliente de **todas** as
+empresas. Depois da subida, o item some do menu de todos; para testar, libere
+**Portal do cliente** (e, se quiser, **Mensagens**) só na empresa de teste, em
+Empresas → Acessos e limites, e ligue o portal na tela Portal do cliente dela. Para os
+avisos no celular, configure antes as chaves VAPID (etapa 5.2).
+
 **Mudou o endereço da API** (`API_URL` no Compose)? O frontend precisa ser
 reconstruído (`dcp build frontend`): o valor fica gravado no build.
 
