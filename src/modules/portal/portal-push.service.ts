@@ -153,6 +153,17 @@ export class PortalPushService {
     });
   }
 
+  /**
+   * Limpa a caixa de Avisos (o "Limpar" do app): apaga os avisos da conta. Não
+   * mexe na clínica: o "Recebida por N" das mensagens enviadas fica gravado na
+   * campanha, e o registro que impede repetir os automáticos é outra tabela.
+   */
+  async clearMessages(account: PortalAccount): Promise<void> {
+    await this.prisma.clientMessage.deleteMany({
+      where: { clientAccountId: account.accountId },
+    });
+  }
+
   unreadCount(accountId: string): Promise<number> {
     return this.prisma.clientMessage.count({
       where: { clientAccountId: accountId, readAt: null },

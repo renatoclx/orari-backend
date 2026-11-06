@@ -147,6 +147,7 @@
   - `POST /portal-account/push/test`: aviso de teste aos aparelhos da conta; devolve `devices` (para quantos saiu). Até 5 a cada 10 minutos por IP (429). Push desligado: 503.
   - `GET /portal-account/messages` (`page`, `limit` até 100): dos mais novos aos mais antigos, com `place` (nome e logo da clínica; nulo no teste), `total` e `unread`.
   - `PATCH /portal-account/messages/read` (204): marca todos como lidos.
+  - `DELETE /portal-account/messages` (204): limpa a caixa (o **Limpar** do app), apagando todos os avisos da conta. Não afeta a clínica: o `recipients` das mensagens enviadas fica gravado na campanha, e os automáticos não saem de novo (o registro que impede repetir é outra tabela).
 
 ## Mensagens automáticas
 

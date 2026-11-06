@@ -125,4 +125,15 @@ export class PortalPushController {
   markRead(@CurrentAccount() account: PortalAccount) {
     return this.portalPushService.markAllRead(account);
   }
+
+  @Delete("messages")
+  @HttpCode(204)
+  @ApiOperation({
+    summary: "Limpa a caixa de Avisos",
+    description:
+      "Apaga todos os avisos da conta. Só a caixa do cliente: as mensagens enviadas pela clínica e os automáticos já enviados não voltam a sair.",
+  })
+  clearMessages(@CurrentAccount() account: PortalAccount) {
+    return this.portalPushService.clearMessages(account);
+  }
 }
