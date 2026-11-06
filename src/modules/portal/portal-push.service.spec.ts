@@ -19,7 +19,12 @@ describe("PortalPushService", () => {
   const prismaMock = {
     clientAccount: { findUniqueOrThrow: vi.fn(), update: vi.fn() },
     pushSubscription: { upsert: vi.fn(), deleteMany: vi.fn() },
-    clientMessage: { findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn() },
+    clientMessage: {
+      findMany: vi.fn(),
+      count: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+    },
   };
   const senderMock = {
     enabled: true,
@@ -165,6 +170,13 @@ describe("PortalPushService", () => {
     expect(prismaMock.clientMessage.updateMany).toHaveBeenCalledWith({
       where: { clientAccountId: "acc-1", readAt: null },
       data: { readAt: expect.any(Date) as Date },
+    });
+  });
+
+  it("clearMessages apaga só os avisos da conta", async () => {
+    await service.clearMessages(ACCOUNT);
+    expect(prismaMock.clientMessage.deleteMany).toHaveBeenCalledWith({
+      where: { clientAccountId: "acc-1" },
     });
   });
 });
