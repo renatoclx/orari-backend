@@ -28,7 +28,7 @@
 > **Etapas 1 a 4:** a API grava e consulta os acessos e os limites, informa os acessos em `GET /auth/me`, **barra as rotas** de todas as funcionalidades da tabela abaixo e **confere os limites** no cadastro e na reativação de profissionais e administradores.
 
 - O SUPER_ADMIN define, por empresa, o que os administradores dela podem fazer em cada funcionalidade e quantos profissionais e administradores ela pode ter. Não há permissão por usuário: vale para a empresa toda.
-- **Funcionalidades** (catálogo no código): `appointments`, `recurrences`, `clients`, `employees`, `professionals`, `users`, `services`, `plans`, `contracts`, `tabs` (comandas), `payments`, `payment-methods`, `anamnesis` (fichas), `anamnesis-templates`, `anamnesis-audit`, `class-groups`, `settings` e `client-portal` (portal do cliente; só `view` e `edit`, liberada em **todos os planos**: a migração a deu a todas as empresas e ela está no modelo padrão).
+- **Funcionalidades** (catálogo no código): `appointments`, `recurrences`, `clients`, `employees`, `professionals`, `users`, `services`, `plans`, `contracts`, `tabs` (comandas), `payments`, `payment-methods`, `anamnesis` (fichas), `anamnesis-templates`, `anamnesis-audit`, `class-groups`, `settings`, `client-portal` (portal do cliente; só `view` e `edit`; a migração a deu às empresas que já existiam) e `messages` (mensagens automáticas; só `view` e `edit`, exige o Visualiza do `client-portal`). Desde 2026-11-05, `client-portal` e `messages` ficam **fora do modelo padrão** de empresa nova: o SUPER_ADMIN libera a quem contratar.
 - **Ações** por funcionalidade: `view` (visualiza), `edit` (edita), `create` (cria) e `remove` (exclui ou inativa). Cada funcionalidade só aceita as ações que fazem sentido: `anamnesis-audit` só tem `view` e `settings` só tem `view` e `edit`.
 - **Sem linha, sem acesso:** uma funcionalidade nova nasce desmarcada em todas as empresas; o SUPER_ADMIN a libera.
 - **Regras da matriz** (400 ao gravar): chave conhecida e sem repetição; `edit`, `create` e `remove` exigem `view`; e algumas funcionalidades exigem ver outras, porque as telas delas listam esses cadastros: `appointments`, `recurrences`, `contracts`, `tabs`, `anamnesis` e `class-groups` exigem `view` em `clients`, `professionals` e `services`.
@@ -36,7 +36,7 @@
 - **Conferência dos limites:** só contam os **ativos** (profissional inativo é o excluído logicamente), e o administrador que atua entra como um dos profissionais. A conferência acontece **dentro da transação da gravação**, com a linha de limites da empresa **travada** (`SELECT ... FOR UPDATE`): dois cadastros simultâneos na última vaga não passam juntos (um é gravado e o outro é recusado). Estourado o limite: **403** com `code: "PLAN_LIMIT_REACHED"`, `resource` (`professionals` ou `admins`), `limit` e `used`. Vale para o SUPER_ADMIN também (ele eleva o limite no `PUT`). Sem registro de limites, valem os do modelo padrão.
   - **Profissionais** (`professionals`): criar uma pessoa do tipo `PROFESSIONAL`, **reativar** (`PATCH /people/:id/restore`) um profissional e **trocar o tipo** de uma pessoa para `PROFESSIONAL` (`PATCH /people/:id`). Criar ou reativar cliente ou funcionário não conta.
   - **Administradores** (`admins`): criar um usuário `ADMIN`, **reativar** um `ADMIN` (`PATCH /users/:id/restore`) e **promover** um usuário a `ADMIN` (`PATCH /users/:id` com `type`).
-- **Modelo padrão** de uma empresa nova: tudo liberado, exceto `anamnesis`, `anamnesis-templates`, `anamnesis-audit` e `class-groups`, com 3 profissionais e 1 administrador.
+- **Modelo padrão** de uma empresa nova: tudo liberado, exceto `anamnesis`, `anamnesis-templates`, `anamnesis-audit`, `class-groups`, `client-portal` e `messages`, com 3 profissionais e 1 administrador.
 - As empresas que já existiam ao implantar este recurso receberam acesso total e limites de 999, para nada mudar para quem já usa; o SUPER_ADMIN ajusta depois.
 - **Barreira nas rotas:** uma rota (ou controller) marcada com `@Feature("chave")` só atende a empresa que tem a ação liberada; o `FeatureAccessGuard` global roda depois do `JwtAuthGuard` e do `RolesGuard`. A ação sai do verbo HTTP (GET = `view`, POST = `create`, PATCH e PUT = `edit`, DELETE = `remove`), e `@FeatureAction` a substitui quando o verbo não a diz. O SUPER_ADMIN não é limitado por plano. Sem a ação liberada: 403 com `code: "FEATURE_NOT_IN_PLAN"`.
 - **Rotas barradas e a ação que exigem** (o verbo HTTP decide, salvo onde a tabela indica outra):
@@ -131,7 +131,7 @@
 
 ## Avisos do app
 
-> **Estado:** desde a etapa 8a (2026-11-05), a base: inscrição dos aparelhos, interruptores do cliente, aviso de teste e a caixa de Avisos. Os avisos automáticos (lembrete, agendamento, aniversário, sentimos sua falta) e as mensagens da clínica vêm nas etapas 8c e 8e.
+> **Estado:** desde a etapa 8a (2026-11-05), a base: inscrição dos aparelhos, interruptores do cliente, aviso de teste e a caixa de Avisos. Os avisos automáticos estão em "Mensagens automáticas" (8c); as mensagens escritas pela clínica vêm na 8e.
 
 - **Canal:** notificação **push** do navegador (padrão Web Push, chaves VAPID), para o app do cliente (`/app`). Não depende do WhatsApp nem tem custo por mensagem. Sem as chaves no ambiente (`VAPID_*`, ver `deploy.md`), o push fica **desligado**: nada é enviado e o app não oferece ativar; o resto da API funciona.
 - **Quem recebe:** a **conta** do cliente, nos aparelhos em que ele **ativou os avisos** (no iPhone, só com o app instalado na tela de início, iOS 16.4+). A inscrição é do aparelho e fica **ligada à sessão**: ao sair do app ela é apagada, e sessão vencida ou revogada (troca de senha) não recebe. Quando o serviço de push responde que o aparelho não existe mais (404/410), a inscrição é apagada.
@@ -147,6 +147,30 @@
   - `POST /portal-account/push/test`: aviso de teste aos aparelhos da conta; devolve `devices` (para quantos saiu). Até 5 a cada 10 minutos por IP (429). Push desligado: 503.
   - `GET /portal-account/messages` (`page`, `limit` até 100): dos mais novos aos mais antigos, com `place` (nome e logo da clínica; nulo no teste), `total` e `unread`.
   - `PATCH /portal-account/messages/read` (204): marca todos como lidos.
+
+## Mensagens automáticas
+
+> **Estado:** desde a etapa 8c (2026-11-05), no backend. A tela da clínica (Mensagens → Automáticas) vem na 8d; as mensagens escritas pela clínica (Enviar), na 8e.
+
+- Avisos que a **clínica** manda ao cliente do app, por push (ver "Avisos do app"), conforme a situação. Funcionalidade **Mensagens** (`messages`) no Acessos e limites: **Visualiza** = ler a configuração; **Edita** = ligar, desligar e mudar os textos. Exige o Visualiza do Portal do cliente. Fica **fora do modelo padrão** de empresa nova, como o Portal do cliente (o SUPER_ADMIN libera).
+- **Quem recebe:** o cliente **ativo** da clínica que tem **conta no app**, e só se a clínica está ativa, com o **portal ligado** e com o Portal do cliente e as Mensagens no **plano**. Os interruptores do cliente valem (lembretes e agendamentos; novidades e promoções). O título da notificação é o nome da clínica; nas situações de agendamento, tocar abre a aba Agendamentos do app.
+- **Situações** (`GET` e `PUT /auto-messages`, só ADMIN). Quem nunca salvou recebe os padrões:
+
+  | Situação (`kind`) | Padrão | Quando sai |
+  | --- | --- | --- |
+  | Lembrete (`REMINDER`) | ligada; 24h e 30 min antes | nos tempos escolhidos (`reminderOffsets`, em minutos: 30, 60, 120, 1440, 2880; vários). Sai até **15 minutos** depois do momento certo; mais tarde, não sai (ex.: o "24h antes" de um horário marcado com 2h de antecedência) |
+  | Agendamento marcado (`APPOINTMENT_CREATED`) | ligada | a clínica marca um **avulso** |
+  | Agendamento alterado (`APPOINTMENT_RESCHEDULED`) | ligada | a clínica muda a **data ou o horário** (alterar o avulso; remanejar ou repor uma sessão de recorrência ou pacote). Só a observação ou o status: sem aviso |
+  | Agendamento cancelado (`APPOINTMENT_CANCELLED`) | ligada | a clínica cancela um avulso, **uma** sessão de recorrência ou uma **sessão de turma** (cada aluno dela) |
+  | Aniversário (`BIRTHDAY`) | desligada | às **9h** do fuso da clínica, no dia do aniversário (data do cadastro na clínica). 29/02 comemora em 28/02 fora dos anos bissextos |
+  | Sentimos sua falta (`MISS_YOU`) | desligada; 30 dias | às **10h**, quem teve o último atendimento concluído **exatamente X dias atrás** (`missYouDays`: 15, 30, 45, 60 ou 90) e não voltou nem tem horário marcado. O dia exato, e não "X ou mais": ligar a opção não manda a mensagem a todos os clientes antigos de uma vez |
+
+- **Sem aviso:** o que o **próprio cliente** faz pelo app (agendar, cancelar); as sessões criadas **em lote** (criar uma recorrência, contratar um pacote, turmas); cancelar uma recorrência, turma ou contratação **inteira**. Os **lembretes valem para todas as sessões**.
+- **Texto** (`body`, até 500 caracteres) com variáveis trocadas no envio: `{nome}` (primeiro nome do cadastro), `{estabelecimento}` (o nome exibido da clínica) e, nas situações de agendamento, `{data}` (dd/mm), `{hora}` (HH:MM, no fuso da clínica), `{servico}` e `{profissional}`. Variável que não existe na situação: **400** "<Situação>: {x} não existe nesta mensagem", sem gravar. Lembrete ligado sem nenhum tempo: 400.
+- O `PUT` grava só as situações enviadas (cada uma no máximo uma vez), tudo ou nada, e devolve as seis.
+- **Sem repetir:** cada envio grava um registro com chave única antes de sair (`AutoMessageLog`): o lembrete de cada tempo de cada horário, cada mudança de horário, o cancelamento, o aniversário do ano, a falta do dia. O job rodando de novo ou a API reiniciando não repetem; remarcado, o horário ganha lembretes novos.
+- **Como os agendamentos avisam:** o módulo de agendamentos só **anuncia**, depois de gravar, o que a clínica fez (marcou, mudou, cancelou); o módulo de mensagens escuta e envia fora da requisição. Uma falha no aviso nunca impede salvar o agendamento (vai para o log).
+- **Jobs:** lembretes a cada 5 minutos; aniversário e falta a cada 10 minutos, conferindo a hora local de cada clínica (se a API reiniciar às 9h05, o aniversário do dia ainda sai).
 
 ## Usuários e acesso
 

@@ -228,6 +228,42 @@
 
 ---
 
+## AutoMessage
+
+- Configuração de uma situação de mensagem automática numa clínica. Sem linha, valem os padrões; a linha nasce no primeiro "Salvar".
+
+| Nome            | Descrição                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| id              | Identificador único                                                                                            |
+| companyId       | Clínica                                                                                                        |
+| kind            | `REMINDER`, `APPOINTMENT_CREATED`, `APPOINTMENT_RESCHEDULED`, `APPOINTMENT_CANCELLED`, `BIRTHDAY` ou `MISS_YOU` |
+| enabled         | Ligada                                                                                                         |
+| body            | Texto com as variáveis (até 500)                                                                               |
+| reminderOffsets | Lembrete: minutos antes do horário (ex.: 1440 e 30)                                                            |
+| missYouDays     | Sentimos sua falta: dias sem vir                                                                               |
+| createdAt, updatedAt | Criação e última alteração                                                                                |
+
+- Uma por situação em cada clínica (único: `companyId` + `kind`).
+
+---
+
+## AutoMessageLog
+
+- Uma mensagem automática já enviada; a chave única impede o envio repetido.
+
+| Nome            | Descrição                                                                      |
+| --------------- | ------------------------------------------------------------------------------ |
+| id              | Identificador único                                                            |
+| companyId       | Clínica                                                                        |
+| kind            | A situação                                                                     |
+| dedupKey        | Chave única do envio (ex.: `reminder:<agendamento>:1440:<início>`, `birthday:<pessoa>:2026`) |
+| clientAccountId | Conta do cliente que recebeu                                                   |
+| createdAt       | Data do envio                                                                  |
+
+- Pertence a uma clínica. Não tem exclusão.
+
+---
+
 ## PortalSettings
 
 - Regras do portal do cliente definidas pela clínica (um registro por empresa, criado na primeira gravação).

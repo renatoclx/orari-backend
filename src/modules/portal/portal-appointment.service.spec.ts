@@ -209,10 +209,12 @@ describe("PortalAppointmentService", () => {
       expect(prismaMock.appointment.findFirst).toHaveBeenCalledWith({
         where: { id: "a-1", companyId: "c-1", clientId: "cli-1" },
       });
+      // "client": o próprio cliente cancelou, sem aviso para ele.
       expect(appointmentMock.update).toHaveBeenCalledWith(
         "a-1",
         { status: "CANCELLED" },
         "c-1",
+        "client",
       );
     });
 

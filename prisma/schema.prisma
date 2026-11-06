@@ -160,6 +160,8 @@ model Company {
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
   clientMessages        ClientMessage[]
+  autoMessages          AutoMessage[]
+  autoMessageLogs       AutoMessageLog[]
   portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
@@ -1154,4 +1156,53 @@ model PortalAccessLink {
 
   @@index([peopleId])
   @@map("portal_access_links")
+}
+
+// Situação que dispara uma mensagem automática ao cliente do app (ver
+// docs/business-rules.md, "Mensagens automáticas").
+enum AutoMessageKind {
+  REMINDER
+  APPOINTMENT_CREATED
+  APPOINTMENT_RESCHEDULED
+  APPOINTMENT_CANCELLED
+  BIRTHDAY
+  MISS_YOU
+}
+
+// Configuração de uma situação numa clínica. Sem linha, valem os padrões
+// (auto-message.catalog.ts); a linha nasce no primeiro "Salvar".
+model AutoMessage {
+  id              String          @id @default(uuid())
+  companyId       String
+  kind            AutoMessageKind
+  enabled         Boolean
+  // Texto com variáveis ({nome}, {data}…), trocadas no envio.
+  body            String          @db.VarChar(500)
+  // Lembrete: minutos antes do horário (ex.: [1440, 30] = 24h e 30 min).
+  reminderOffsets Int[]
+  // Sentimos sua falta: dias sem vir depois do último atendimento.
+  missYouDays     Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, kind])
+  @@map("auto_messages")
+}
+
+// Uma mensagem automática já enviada. A chave única (ex.: lembrete 1440 do
+// agendamento X) impede o envio repetido quando o job roda de novo.
+model AutoMessageLog {
+  id              String          @id @default(uuid())
+  companyId       String
+  kind            AutoMessageKind
+  dedupKey        String          @unique
+  clientAccountId String
+  createdAt       DateTime        @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@map("auto_message_logs")
 }

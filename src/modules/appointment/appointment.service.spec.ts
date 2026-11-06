@@ -1,3 +1,4 @@
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import {
   BadRequestException,
   ConflictException,
@@ -30,6 +31,9 @@ const relations = {
     select: { id: true, classGroupId: true, capacity: true, cancelledAt: true },
   },
 };
+
+// Os anúncios dos agendamentos (mensagens automáticas) são só registrados.
+const eventsMock = { emit: vi.fn() };
 
 describe("AppointmentService", () => {
   let appointmentService: AppointmentService;
@@ -93,6 +97,17 @@ describe("AppointmentService", () => {
     // Padrão: horário dentro do funcionamento (sem encaixe).
     businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(true);
     prismaMock.appointment.findFirst.mockResolvedValue(null);
+    // Padrão: o banco devolve o que gravou (o anúncio usa o id e a situação).
+    prismaMock.appointment.create.mockImplementation(
+      ({ data }: { data: object }) => ({ id: "appointment-1", ...data }),
+    );
+    prismaMock.appointment.update.mockImplementation(
+      ({ where, data }: { where: { id: string }; data: object }) => ({
+        ...appointment,
+        id: where.id,
+        ...data,
+      }),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -101,6 +116,7 @@ describe("AppointmentService", () => {
         { provide: PeopleService, useValue: peopleServiceMock },
         { provide: ServiceService, useValue: serviceServiceMock },
         { provide: BusinessHourService, useValue: businessHourServiceMock },
+        { provide: EventEmitter2, useValue: eventsMock },
       ],
     }).compile();
 
@@ -1180,7 +1196,7 @@ describe("AppointmentService", () => {
           { note: "chegou atrasado" },
           COMPANY_ID,
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ id: "appointment-1" });
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
     });
@@ -1242,7 +1258,7 @@ describe("AppointmentService", () => {
           { note: "ajuste" },
           COMPANY_ID,
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ id: "appointment-1" });
       expect(prismaMock.appointment.update).toHaveBeenCalledTimes(1);
     });
 
@@ -1524,7 +1540,7 @@ describe("AppointmentService", () => {
           { note: "cliente desmarcou por telefone" },
           COMPANY_ID,
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ id: "appointment-1" });
       expect(prismaMock.appointment.update).toHaveBeenCalledTimes(1);
     });
 
@@ -2027,6 +2043,70 @@ describe("AppointmentService", () => {
         ],
         select: { id: true, startAt: true },
       });
+    });
+  });
+
+  describe("anúncios para as mensagens automáticas", () => {
+    const created = { appointmentId: "appointment-1", companyId: COMPANY_ID };
+
+    it("a clínica marca: anuncia depois de gravar", async () => {
+      await appointmentService.create(dto, COMPANY_ID);
+      expect(eventsMock.emit).toHaveBeenCalledWith(
+        "appointment.created",
+        created,
+      );
+    });
+
+    it("o cliente marca pelo app: não anuncia", async () => {
+      await appointmentService.create(dto, COMPANY_ID, "PORTAL");
+      expect(eventsMock.emit).not.toHaveBeenCalled();
+    });
+
+    it("a clínica cancela: anuncia o cancelamento", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      await appointmentService.update(
+        "appointment-1",
+        { status: "CANCELLED" },
+        COMPANY_ID,
+      );
+      expect(eventsMock.emit).toHaveBeenCalledWith(
+        "appointment.cancelled",
+        created,
+      );
+    });
+
+    it("a clínica muda o horário: anuncia a mudança", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      await appointmentService.update(
+        "appointment-1",
+        { startAt: new Date(startAt.getTime() + 60 * 60_000) },
+        COMPANY_ID,
+      );
+      expect(eventsMock.emit).toHaveBeenCalledWith(
+        "appointment.rescheduled",
+        created,
+      );
+    });
+
+    it("só a observação muda: não anuncia", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      await appointmentService.update(
+        "appointment-1",
+        { note: "trazer exame" },
+        COMPANY_ID,
+      );
+      expect(eventsMock.emit).not.toHaveBeenCalled();
+    });
+
+    it("o cliente cancela pelo app: não anuncia", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      await appointmentService.update(
+        "appointment-1",
+        { status: "CANCELLED" },
+        COMPANY_ID,
+        "client",
+      );
+      expect(eventsMock.emit).not.toHaveBeenCalled();
     });
   });
 });

@@ -26,6 +26,8 @@ import { ServiceModule } from "./modules/service/service.module";
 import { StateModule } from "./modules/state/state.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ScheduleModule } from "@nestjs/schedule";
+import { EventEmitterModule } from "@nestjs/event-emitter";
+import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { ScheduleModule } from "@nestjs/schedule";
     CompanyModule,
     CompanyAccessModule,
     PortalModule,
+    AutoMessageModule,
     PeopleModule,
     ContactModule,
     AddressModule,
@@ -52,6 +55,8 @@ import { ScheduleModule } from "@nestjs/schedule";
     // forRoot(0) Inicializa o motor do agendamento uma vez na aplicação quando
     //houver um provider com @Cron()
     ScheduleModule.forRoot(),
+    // Anúncios entre módulos (ex.: agendamento marcado → mensagem automática).
+    EventEmitterModule.forRoot(),
     AppointmentModule,
     RecurringAppointmentModule,
     NotificationModule,

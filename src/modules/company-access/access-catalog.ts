@@ -26,6 +26,7 @@ export const FEATURE_KEYS = [
   "class-groups",
   "settings",
   "client-portal",
+  "messages",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -71,6 +72,13 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "settings", actions: ["view", "edit"] },
   // Portal do cliente: Visualiza = portal disponível à clínica; Edita = mudar as regras dele.
   { key: "client-portal", actions: ["view", "edit"] },
+  // Mensagens automáticas ao cliente do app: Visualiza = ler; Edita = ligar e
+  // mudar os textos. Só fazem sentido com o portal (o cliente recebe pelo app).
+  {
+    key: "messages",
+    actions: ["view", "edit"],
+    requiresView: ["client-portal"],
+  },
 ];
 
 // Funcionalidades que o modelo padrão de uma empresa nova deixa de fora.
@@ -79,6 +87,9 @@ const DEFAULT_OFF: readonly string[] = [
   "anamnesis-templates",
   "anamnesis-audit",
   "class-groups",
+  // O SUPER_ADMIN libera o portal e as mensagens a quem contratar.
+  "client-portal",
+  "messages",
 ];
 
 // Limites do modelo padrão (o "Essencial": administrador + 2 profissionais).

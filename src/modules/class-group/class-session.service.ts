@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Prisma } from "../../../generated/prisma/client";
+import {
+  APPOINTMENT_EVENTS,
+  type ClassSessionCancelledEvent,
+} from "../../common/events/appointment-events";
 import {
   AppointmentStatus,
   PeopleType,
@@ -174,6 +179,7 @@ export class ClassSessionService {
     private readonly businessHourService: BusinessHourService,
     private readonly companyService: CompanyService,
     private readonly paymentService: PaymentService,
+    private readonly events: EventEmitter2,
   ) {}
 
   /**
@@ -533,6 +539,12 @@ export class ClassSessionService {
       await this.appointmentService.cancelForClassSession(tx, id);
       await this.paymentService.cancelPendingForClassSession(tx, id);
     });
+    // Depois de gravado: cada aluno da sessão recebe o aviso de cancelamento.
+    const payload: ClassSessionCancelledEvent = {
+      classSessionId: id,
+      companyId,
+    };
+    this.events.emit(APPOINTMENT_EVENTS.classSessionCancelled, payload);
 
     return this.findOne(id, companyId);
   }

@@ -259,3 +259,19 @@ milhares de clientes (etapa 8e) ocuparia a API por mais tempo.
 das mensagens em massa pedir.
 
 **Registrado em:** 2026-11-05.
+
+## Aniversário filtrado fora do banco
+
+**Onde:** `AutoMessageJob.birthdays` (etapa 8c).
+
+**O que é:** às 9h de cada clínica, o job lê todos os clientes com conta no app e
+data de nascimento e confere o dia e o mês na API (o banco não tem índice por dia e
+mês, e o 29/02 tem regra própria).
+
+**Impacto:** nenhum com centenas de clientes por clínica. Com dezenas de milhares,
+a leitura pesaria uma vez por dia.
+
+**Como resolver:** filtrar no banco por `EXTRACT(MONTH/DAY FROM "birthDate")` (com
+o caso do 29/02) e um índice de expressão, se o volume pedir.
+
+**Registrado em:** 2026-11-05.

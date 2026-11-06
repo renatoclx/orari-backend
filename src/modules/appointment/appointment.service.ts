@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Appointment, Prisma } from "../../../generated/prisma/client";
 import {
   AppointmentCancelReason,
@@ -12,6 +13,10 @@ import {
   PaymentStatus,
   PeopleType,
 } from "../../../generated/prisma/enums";
+import {
+  APPOINTMENT_EVENTS,
+  type AppointmentEvent,
+} from "../../common/events/appointment-events";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { toZonedParts } from "../../common/time/time-zone";
 import { isRecordNotFound } from "../../prisma/prisma-errors";
@@ -166,7 +171,17 @@ export class AppointmentService {
     private readonly peopleService: PeopleService,
     private readonly serviceService: ServiceService,
     private readonly businessHourService: BusinessHourService,
+    private readonly events: EventEmitter2,
   ) {}
+
+  /** Anuncia o que a clínica fez (ver common/events/appointment-events.ts). */
+  private announce(
+    event: (typeof APPOINTMENT_EVENTS)["created" | "rescheduled" | "cancelled"],
+    { id, companyId }: { id: string; companyId: string },
+  ): void {
+    const payload: AppointmentEvent = { appointmentId: id, companyId };
+    this.events.emit(event, payload);
+  }
 
   // Ordem das checagens: primeiro as baratas e sem banco (data no futuro),
   // depois as que dependem de outras entidades, e por último as que batem
@@ -199,7 +214,7 @@ export class AppointmentService {
       endAt,
       dto.overBooking,
     );
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       // Trava por profissional até o fim da transação (advisory lock do Postgres).
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`appointment:${dto.professionalId}`}))`;
       // Autorizado (encaixe), o avulso pode dividir o horário com uma turma.
@@ -215,6 +230,11 @@ export class AppointmentService {
         include: withRelations,
       });
     });
+    // Depois de gravado: o que o cliente marca pelo app não é anunciado.
+    if (source === AppointmentSource.CLINIC) {
+      this.announce(APPOINTMENT_EVENTS.created, created);
+    }
+    return created;
   }
 
   async findAll(
@@ -291,12 +311,38 @@ export class AppointmentService {
     return appointment;
   }
 
+  /**
+   * `actor`: quem pediu a mudança. A da clínica é anunciada (mudou a data ou
+   * cancelou); a do cliente pelo app, não.
+   */
   async update(
     id: string,
     dto: UpdateAppointmentDto,
     companyId: string,
+    actor: "clinic" | "client" = "clinic",
   ): Promise<AppointmentWithRelations> {
     const appointment = await this.findOne(id, companyId);
+    const updated = await this.applyUpdate(appointment, dto, companyId);
+
+    if (actor === "clinic") {
+      if (
+        updated.status === AppointmentStatus.CANCELLED &&
+        appointment.status !== AppointmentStatus.CANCELLED
+      ) {
+        this.announce(APPOINTMENT_EVENTS.cancelled, updated);
+      } else if (updated.startAt.getTime() !== appointment.startAt.getTime()) {
+        this.announce(APPOINTMENT_EVENTS.rescheduled, updated);
+      }
+    }
+    return updated;
+  }
+
+  private async applyUpdate(
+    appointment: Appointment,
+    dto: UpdateAppointmentDto,
+    companyId: string,
+  ): Promise<AppointmentWithRelations> {
+    const { id } = appointment;
 
     // Estados finais (cancelado e falta) não mudam de status.
     this.ensureNotReopened(appointment, dto);
