@@ -62,6 +62,7 @@ describe("AppointmentService", () => {
   const businessHourServiceMock = {
     ensureWithinBusinessHours: vi.fn(),
     isWithinBusinessHours: vi.fn(),
+    isBlocked: vi.fn().mockResolvedValue(false),
   };
 
   // Sempre no futuro: agendar no passado é recusado.
@@ -283,6 +284,16 @@ describe("AppointmentService", () => {
       await expect(
         appointmentService.create({ ...dto, overBooking: false }, COMPANY_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    });
+
+    it("horário bloqueado na agenda: a recusa diz que está bloqueado", async () => {
+      businessHourServiceMock.isWithinBusinessHours.mockResolvedValue(false);
+      businessHourServiceMock.isBlocked.mockResolvedValueOnce(true);
+
+      await expect(appointmentService.create(dto, COMPANY_ID)).rejects.toThrow(
+        "O horário está bloqueado na agenda. Para agendar mesmo assim, envie overBooking: true (encaixe)",
+      );
       expect(prismaMock.appointment.create).not.toHaveBeenCalled();
     });
 

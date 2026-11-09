@@ -857,8 +857,14 @@ export class AppointmentService {
     }
 
     if (!authorized) {
+      // Bloqueado na agenda ou fora das janelas: o encaixe vale para os dois.
+      const blocked = await this.businessHourService.isBlocked(
+        companyId,
+        startAt,
+        endAt,
+      );
       throw new BadRequestException(
-        "O horário está fora do funcionamento da empresa. Para agendar mesmo assim, envie overBooking: true (encaixe)",
+        `${blocked ? "O horário está bloqueado na agenda" : "O horário está fora do funcionamento da empresa"}. Para agendar mesmo assim, envie overBooking: true (encaixe)`,
       );
     }
 

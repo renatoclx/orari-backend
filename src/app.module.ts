@@ -31,6 +31,7 @@ import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
 import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfolio.module";
 import { ReceivablesModule } from "./modules/receivables/receivables.module";
+import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { ReceivablesModule } from "./modules/receivables/receivables.module";
     MessageCampaignModule,
     ClientPortfolioModule,
     ReceivablesModule,
+    AgendaBlockModule,
     PeopleModule,
     ContactModule,
     AddressModule,
