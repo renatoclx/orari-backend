@@ -29,6 +29,7 @@ export const FEATURE_KEYS = [
   "messages",
   "client-portfolio",
   "receivables",
+  "appointments-report",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -92,6 +93,12 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     key: "receivables",
     actions: ["view"],
     requiresView: ["payments", "clients"],
+  },
+  // Relatórios → Agendamentos: só leitura.
+  {
+    key: "appointments-report",
+    actions: ["view"],
+    requiresView: ["appointments"],
   },
 ];
 

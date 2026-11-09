@@ -31,6 +31,7 @@ import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
 import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfolio.module";
 import { ReceivablesModule } from "./modules/receivables/receivables.module";
+import { AppointmentReportModule } from "./modules/appointment-report/appointment-report.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
 @Module({
@@ -53,6 +54,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     MessageCampaignModule,
     ClientPortfolioModule,
     ReceivablesModule,
+    AppointmentReportModule,
     AgendaBlockModule,
     PeopleModule,
     ContactModule,
