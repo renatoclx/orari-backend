@@ -29,6 +29,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
+import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfolio.module";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { MessageCampaignModule } from "./modules/message-campaign/message-campai
     PortalModule,
     AutoMessageModule,
     MessageCampaignModule,
+    ClientPortfolioModule,
     PeopleModule,
     ContactModule,
     AddressModule,
