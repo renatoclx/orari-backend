@@ -32,6 +32,7 @@ model User {
   refreshTokens             RefreshToken[]
   auditLogs                 AuditLog[]
   messageCampaigns          MessageCampaign[]
+  agendaBlocks              AgendaBlock[]
   anamnesisTemplateVersions AnamnesisTemplateVersion[]
   anamnesisEntries          AnamnesisEntry[]
 
@@ -164,6 +165,7 @@ model Company {
   autoMessages          AutoMessage[]
   autoMessageLogs       AutoMessageLog[]
   messageCampaigns      MessageCampaign[]
+  agendaBlocks          AgendaBlock[]
   portalAccessLinks     PortalAccessLink[]
 
   @@map("companies")
@@ -654,6 +656,8 @@ enum AuditAction {
   COMPANY_ACCESS_CHANGED
   PORTAL_ACCESS_LINK_CREATED
   PORTAL_CLIENT_CONFIRMED
+  AGENDA_BLOCK_CREATED
+  AGENDA_BLOCK_REMOVED
 }
 
 /**
@@ -1228,4 +1232,25 @@ model MessageCampaign {
 
   @@index([companyId, createdAt])
   @@map("message_campaigns")
+}
+
+// Horário bloqueado na agenda da empresa (ex.: um treinamento, uma reforma).
+// Conta como fora do funcionamento: só o encaixe entra nele (ver
+// BusinessHourService.isWithinBusinessHours). Desbloquear apaga o registro; a
+// auditoria guarda quem bloqueou e quem desbloqueou.
+model AgendaBlock {
+  id          String   @id @default(uuid())
+  companyId   String
+  // Início e fim em UTC, no mesmo dia do relógio da empresa.
+  startAt     DateTime
+  endAt       DateTime
+  // Quem bloqueou.
+  createdById String
+  createdAt   DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, startAt])
+  @@map("agenda_blocks")
 }

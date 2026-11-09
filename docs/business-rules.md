@@ -318,6 +318,23 @@
   - Enquanto a empresa não cadastrar nenhuma janela, nada é restringido e não há encaixe.
   - **Encaixe sobre uma turma:** com a autorização (`overBooking: true`), o atendimento avulso também pode ser marcado no horário de uma sessão de turma do profissional, dividindo o horário com ela, **sem ocupar vaga**. Vale para qualquer serviço (ex.: uma massagem enquanto a turma de pilates treina). O `overBooking` registrado é `true` quando o horário está fora do funcionamento **ou** sobre uma sessão de turma do profissional. Sem a autorização, a turma continua conflitando com o profissional.
   - Agendamentos de recorrência e de plano, inclusive o remanejamento deles, não têm encaixe: continuam precisando caber em uma janela.
+- **Horário bloqueado** na agenda conta como fora do funcionamento (ver "Bloqueio de horários").
+
+## Bloqueio de horários
+
+> **Estado:** desde 2026-11-09. Bloqueio da empresa toda (não por profissional).
+
+- A clínica bloqueia um intervalo de **um dia** da agenda (ex.: um treinamento, uma reforma). O horário bloqueado **conta como fora do funcionamento**, mesmo na empresa que ainda não cadastrou janelas:
+  - o agendamento avulso é recusado sem a autorização de encaixe (400 "O horário está bloqueado na agenda. Para agendar mesmo assim, envie overBooking: true (encaixe)"); **com o encaixe, entra**, marcado como `overBooking`;
+  - recorrência, plano (criar, remanejar, repor) e turma (encaixe de alunos) não têm encaixe: são recusados ("O horário está bloqueado na agenda"). Como no horário fora do funcionamento, a recorrência que cai num dia bloqueado é recusada **inteira**, com a data do problema;
+  - no **portal**, o horário sai da lista de livres de todos os profissionais;
+  - quem encosta no bloqueio conta: um atendimento das 09:30 às 10:30 encosta num bloqueio das 10:00 às 11:00.
+- **Agendamentos que já existem** no horário continuam marcados. Bloquear um horário com agendamentos pede confirmação: sem `confirmed: true`, a API responde **409** com `code: AGENDA_BLOCK_HAS_APPOINTMENTS`, `appointments` (quantos) e a mensagem "Há N agendamentos neste horário. Eles continuam marcados." (cancelados não contam).
+- Rotas (funcionalidade `appointments`: ler = Visualiza, bloquear = Cria, desbloquear = Exclui):
+  - `GET /agenda-blocks?from=&to=` (AAAA-MM-DD no relógio da empresa, as duas pontas incluídas; sem `from`, de hoje em diante): `id`, `startAt`, `endAt`, `createdAt` e `createdBy.name`, do mais cedo ao mais tarde;
+  - `POST /agenda-blocks` (`date`, `startTime` e `endTime` em HH:MM no relógio da empresa, `confirmed` opcional): fim antes do início, data inexistente ou horário que já começou: 400; sobreposto a outro bloqueio: 409. Devolve o bloqueio e `appointments`;
+  - `DELETE /agenda-blocks/:id` (204): desbloqueia (apaga o registro). Bloqueio que já terminou: 400; de outra empresa: 404.
+- Bloquear e desbloquear ficam na **auditoria** (`AGENDA_BLOCK_CREATED` e `AGENDA_BLOCK_REMOVED`, `entityType` `AGENDA_BLOCK`).
 
 ## Agendamentos recorrentes
 

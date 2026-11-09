@@ -23,6 +23,7 @@ describe("PortalAvailabilityService", () => {
     businessHour: { findMany: vi.fn() },
     appointment: { findMany: vi.fn() },
     classGroupDay: { findMany: vi.fn() },
+    agendaBlock: { findMany: vi.fn() },
   };
   const service = new PortalAvailabilityService(
     prismaMock as unknown as PrismaService,
@@ -40,6 +41,22 @@ describe("PortalAvailabilityService", () => {
     ]);
     prismaMock.appointment.findMany.mockResolvedValue([]);
     prismaMock.classGroupDay.findMany.mockResolvedValue([]);
+    prismaMock.agendaBlock.findMany.mockResolvedValue([]);
+  });
+
+  it("horário bloqueado na agenda da clínica some da lista", async () => {
+    // 10:00 às 11:00 no relógio da clínica (UTC-3).
+    prismaMock.agendaBlock.findMany.mockResolvedValue([
+      {
+        startAt: new Date("2026-11-05T13:00:00.000Z"),
+        endAt: new Date("2026-11-05T14:00:00.000Z"),
+      },
+    ]);
+    const times = (await find("2026-11-05")).map((s) => s.time);
+    expect(times).toContain("09:00");
+    expect(times).toContain("11:00");
+    expect(times).not.toContain("10:00");
+    expect(times).not.toContain("09:30");
   });
 
   it("devolve o horário local e o instante em UTC", async () => {
