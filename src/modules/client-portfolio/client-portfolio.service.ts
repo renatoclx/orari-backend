@@ -82,6 +82,78 @@ export function classifyPortfolioClient(
   return recent || nextAt ? "ACTIVE" : "LAPSED";
 }
 
+// Acima disso, o gráfico agrupa por semana (barras por dia ficariam finas demais).
+export const DAILY_SERIES_MAX_DAYS = 62;
+
+const dayString = ({ year, month, day }: Day) =>
+  `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+// Dias corridos desde 1970, para contar a distância entre dois dias.
+const dayNumber = ({ year, month, day }: Day) =>
+  Math.round(Date.UTC(year, month - 1, day) / DAY_MS);
+
+/**
+ * Série do gráfico do período: um ponto por dia (ou por semana, contada a
+ * partir do início do período), inclusive os vazios. Os dias são do fuso da
+ * empresa.
+ */
+export function buildSeries(
+  completedAt: Date[],
+  payments: { startAt: Date; amount: Decimal; paid: boolean }[],
+  period: Period,
+  timeZone: string,
+): PortfolioSeries {
+  const first = toZonedParts(period.start, timeZone);
+  const last = toZonedParts(new Date(period.end.getTime() - 1), timeZone);
+  const totalDays = dayNumber(last) - dayNumber(first) + 1;
+  const unit = totalDays > DAILY_SERIES_MAX_DAYS ? "week" : "day";
+  const size = unit === "week" ? 7 : 1;
+
+  const points = Array.from(
+    { length: Math.ceil(totalDays / size) },
+    (_, index) => {
+      const date = new Date(
+        Date.UTC(first.year, first.month - 1, first.day + index * size),
+      );
+      return {
+        date: dayString({
+          year: date.getUTCFullYear(),
+          month: date.getUTCMonth() + 1,
+          day: date.getUTCDate(),
+        }),
+        completed: 0,
+        received: new Decimal(0),
+        pending: new Decimal(0),
+      };
+    },
+  );
+  const bucketOf = (instant: Date) =>
+    points[
+      Math.floor(
+        (dayNumber(toZonedParts(instant, timeZone)) - dayNumber(first)) / size,
+      )
+    ];
+
+  for (const at of completedAt) {
+    const point = bucketOf(at);
+    if (point) point.completed += 1;
+  }
+  for (const payment of payments) {
+    const point = bucketOf(payment.startAt);
+    if (!point) continue;
+    if (payment.paid) point.received = point.received.plus(payment.amount);
+    else point.pending = point.pending.plus(payment.amount);
+  }
+
+  return {
+    unit,
+    points: points.map((point) => ({
+      ...point,
+      received: point.received.toFixed(2),
+      pending: point.pending.toFixed(2),
+    })),
+  };
+}
+
 export interface PortfolioClient {
   id: string;
   name: string;
@@ -105,6 +177,21 @@ export interface PortfolioSummary {
   pending: string;
   // Faturado ÷ atendimentos concluídos com pagamento próprio; null sem nenhum.
   averageTicket: string | null;
+  series: PortfolioSeries;
+}
+
+/** Um ponto do gráfico do período: um dia (ou uma semana, em período longo). */
+export interface PortfolioSeriesPoint {
+  /** Primeiro dia do intervalo, AAAA-MM-DD no fuso da empresa. */
+  date: string;
+  completed: number;
+  received: string;
+  pending: string;
+}
+
+export interface PortfolioSeries {
+  unit: "day" | "week";
+  points: PortfolioSeriesPoint[];
 }
 
 /**
@@ -124,7 +211,11 @@ export class ClientPortfolioService {
     companyId: string,
     now = new Date(),
   ): Promise<PortfolioSummary> {
-    const { period, clients } = await this.load(query, companyId, now);
+    const { period, clients, timeZone } = await this.load(
+      query,
+      companyId,
+      now,
+    );
     const { professionalId } = query;
     const completedInPeriod = {
       companyId,
@@ -135,7 +226,10 @@ export class ClientPortfolioService {
     };
 
     const [completed, packageSessions, payments] = await Promise.all([
-      this.prisma.appointment.count({ where: completedInPeriod }),
+      this.prisma.appointment.findMany({
+        where: completedInPeriod,
+        select: { startAt: true },
+      }),
       this.prisma.appointment.count({
         where: {
           ...completedInPeriod,
@@ -149,7 +243,11 @@ export class ClientPortfolioService {
           status: { in: [PaymentStatus.PAID, PaymentStatus.PENDING] },
           appointment: completedInPeriod,
         },
-        select: { amount: true, status: true },
+        select: {
+          amount: true,
+          status: true,
+          appointment: { select: { startAt: true } },
+        },
       }),
     ]);
 
@@ -165,7 +263,7 @@ export class ClientPortfolioService {
       clients: clients.length,
       newClients: clients.filter((c) => c.status === "NEW").length,
       lapsedClients: clients.filter((c) => c.status === "LAPSED").length,
-      completed,
+      completed: completed.length,
       packageSessions,
       received: received.toFixed(2),
       pending: pending.toFixed(2),
@@ -173,6 +271,16 @@ export class ClientPortfolioService {
         payments.length > 0
           ? received.plus(pending).div(payments.length).toFixed(2)
           : null,
+      series: buildSeries(
+        completed.map((appointment) => appointment.startAt),
+        payments.map((payment) => ({
+          startAt: payment.appointment!.startAt,
+          amount: payment.amount,
+          paid: payment.status === PaymentStatus.PAID,
+        })),
+        period,
+        timeZone,
+      ),
     };
   }
 
@@ -335,7 +443,7 @@ export class ClientPortfolioService {
       };
     });
 
-    return { period, clients };
+    return { period, clients, timeZone };
   }
 }
 

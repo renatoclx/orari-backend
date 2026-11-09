@@ -5,6 +5,7 @@ import type { PrismaService } from "../../prisma/prisma.service";
 import type { CompanyService } from "../company/company.service";
 import {
   ClientPortfolioService,
+  buildSeries,
   classifyPortfolioClient,
   periodOf,
 } from "./client-portfolio.service";
@@ -36,6 +37,35 @@ describe("periodOf", () => {
     expect(() => periodOf("2026-11-10", "2026-11-09", TZ, NOW)).toThrow(
       BadRequestException,
     );
+  });
+});
+
+describe("buildSeries", () => {
+  it("período longo: por semana, a partir do início do período", () => {
+    const period = periodOf("2026-08-01", "2026-11-30", TZ, NOW);
+    const series = buildSeries(
+      // 07/08 às 22h em São Paulo já é dia 08 em UTC: conta no dia da empresa.
+      [new Date("2026-08-08T01:00:00Z"), new Date("2026-08-08T03:00:00Z")],
+      [],
+      period,
+      TZ,
+    );
+    expect(series.unit).toBe("week");
+    expect(series.points).toHaveLength(18); // 122 dias
+    expect(series.points[0]).toMatchObject({
+      date: "2026-08-01",
+      completed: 1,
+    });
+    expect(series.points[1]).toMatchObject({
+      date: "2026-08-08",
+      completed: 1,
+    });
+    expect(series.points[17].date).toBe("2026-11-28");
+  });
+
+  it("até 62 dias: por dia", () => {
+    const period = periodOf("2026-10-01", "2026-12-01", TZ, NOW);
+    expect(buildSeries([], [], period, TZ).points).toHaveLength(62);
   });
 });
 
@@ -132,8 +162,16 @@ describe("ClientPortfolioService", () => {
       },
     );
     prismaMock.appointment.findMany.mockImplementation(
-      ({ select }: { select: { service?: object } }) =>
-        select.service
+      ({ select }: { select: { service?: object; clientId?: boolean } }) => {
+        // Concluídos do período (resumo): só o início.
+        if (!select.clientId) {
+          return [
+            new Date("2026-11-03T13:00:00Z"),
+            new Date("2026-11-05T13:00:00Z"),
+            new Date("2026-11-05T18:00:00Z"),
+          ].map((startAt) => ({ startAt }));
+        }
+        return select.service
           ? [
               {
                 clientId: "ana",
@@ -151,11 +189,12 @@ describe("ClientPortfolioService", () => {
                 service: { name: "Pilates" },
               },
             ]
-          : [{ clientId: "caio", startAt: new Date("2026-11-20T13:00:00Z") }],
+          : [{ clientId: "caio", startAt: new Date("2026-11-20T13:00:00Z") }];
+      },
     );
     prismaMock.payment.findMany.mockImplementation(
-      ({ select }: { select: { appointment?: object } }) =>
-        select.appointment
+      ({ select }: { select: { status?: boolean } }) =>
+        !select.status
           ? [
               { amount: new Decimal("80"), appointment: { clientId: "duda" } },
               {
@@ -164,8 +203,16 @@ describe("ClientPortfolioService", () => {
               },
             ]
           : [
-              { amount: new Decimal("100"), status: "PAID" },
-              { amount: new Decimal("50"), status: "PENDING" },
+              {
+                amount: new Decimal("100"),
+                status: "PAID",
+                appointment: { startAt: new Date("2026-11-03T13:00:00Z") },
+              },
+              {
+                amount: new Decimal("50"),
+                status: "PENDING",
+                appointment: { startAt: new Date("2026-11-05T13:00:00Z") },
+              },
             ],
     );
     prismaMock.people.findMany.mockResolvedValue(
@@ -176,9 +223,7 @@ describe("ClientPortfolioService", () => {
         contacts: id === "caio" ? [] : [{ phone: "11999990000" }],
       })),
     );
-    prismaMock.appointment.count
-      .mockResolvedValueOnce(3) // concluídos no período
-      .mockResolvedValueOnce(1); // dos quais, sessões de pacote
+    prismaMock.appointment.count.mockResolvedValue(1); // sessões de pacote
   });
 
   it("profissional de outra empresa (ou que não é profissional): 404", async () => {
@@ -202,7 +247,7 @@ describe("ClientPortfolioService", () => {
   });
 
   it("resumo: contagens, valores dos concluídos e ticket médio", async () => {
-    await expect(service.summary(query, "c-1", NOW)).resolves.toEqual({
+    await expect(service.summary(query, "c-1", NOW)).resolves.toMatchObject({
       clients: 4,
       newClients: 1,
       lapsedClients: 1,
@@ -212,6 +257,25 @@ describe("ClientPortfolioService", () => {
       pending: "50.00",
       averageTicket: "75.00",
     });
+  });
+
+  it("resumo: série por dia do período, com os dias vazios", async () => {
+    const { series } = await service.summary(query, "c-1", NOW);
+    expect(series.unit).toBe("day");
+    expect(series.points).toHaveLength(30);
+    expect(series.points[2]).toEqual({
+      date: "2026-11-03",
+      completed: 1,
+      received: "100.00",
+      pending: "0.00",
+    });
+    expect(series.points[4]).toEqual({
+      date: "2026-11-05",
+      completed: 2,
+      received: "0.00",
+      pending: "50.00",
+    });
+    expect(series.points[0]).toMatchObject({ completed: 0, received: "0.00" });
   });
 
   it("resumo sem pagamento: ticket médio nulo", async () => {
