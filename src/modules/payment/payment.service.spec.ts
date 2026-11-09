@@ -1677,6 +1677,123 @@ describe("PaymentService", () => {
       expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
     });
 
+    describe("atendimento recebido antes da conclusão", () => {
+      const visit = (overrides: Record<string, unknown> = {}) => ({
+        id: "a1",
+        clientId: "c1",
+        startAt: new Date("2026-10-10T15:00:00.000Z"),
+        status: "SCHEDULED",
+        service: { price: new Decimal("80") },
+        recurringAppointment: null,
+        payment: null,
+        ...overrides,
+      });
+      const ahead = { ...body, appointmentIds: ["a1"] };
+
+      beforeEach(() => {
+        prismaMock.appointment.findMany.mockResolvedValue([visit()]);
+        prismaMock.payment.createMany.mockResolvedValue({ count: 1 });
+      });
+
+      it("cria o pagamento já pago, com o preço do serviço e o vencimento no dia", async () => {
+        await expect(paymentService.settle(ahead, COMPANY_ID)).resolves.toEqual(
+          { settled: 3 },
+        );
+        expect(prismaMock.payment.createMany).toHaveBeenCalledWith({
+          data: [
+            {
+              companyId: COMPANY_ID,
+              appointmentId: "a1",
+              amount: new Decimal("80"),
+              dueDate: new Date("2026-10-10T00:00:00.000Z"),
+              status: "PAID",
+              paymentMethodId: "method-1",
+              paidAt: new Date("2026-10-10T12:00:00.000Z"),
+            },
+          ],
+        });
+      });
+
+      it("aceita só atendimentos, sem pagamento pendente junto", async () => {
+        await expect(
+          paymentService.settle(
+            {
+              paymentIds: [],
+              appointmentIds: ["a1"],
+              paymentMethodId: "method-1",
+            },
+            COMPANY_ID,
+          ),
+        ).resolves.toEqual({ settled: 1 });
+        expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+      });
+
+      it("recusa a baixa sem nenhum item", async () => {
+        await expect(
+          paymentService.settle(
+            { paymentIds: [], appointmentIds: [], paymentMethodId: "method-1" },
+            COMPANY_ID,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it.each([
+        ["cancelado", { status: "CANCELLED" }, ConflictException],
+        ["com falta", { status: "NO_SHOW" }, ConflictException],
+        [
+          "sessão de pacote",
+          { recurringAppointment: { clientPlanId: "plan-1" } },
+          ConflictException,
+        ],
+        [
+          "já com pagamento",
+          { payment: { deletedAt: null } },
+          ConflictException,
+        ],
+        [
+          "serviço sem preço",
+          { service: { price: null } },
+          BadRequestException,
+        ],
+      ])(
+        "recusa atendimento %s sem gravar nada",
+        async (_, overrides, error) => {
+          prismaMock.appointment.findMany.mockResolvedValue([visit(overrides)]);
+
+          await expect(
+            paymentService.settle(ahead, COMPANY_ID),
+          ).rejects.toBeInstanceOf(error);
+          expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
+          expect(prismaMock.payment.createMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it("aceita quando o pagamento anterior foi excluído", async () => {
+        prismaMock.appointment.findMany.mockResolvedValue([
+          visit({ payment: { deletedAt: new Date() } }),
+        ]);
+        await expect(paymentService.settle(ahead, COMPANY_ID)).resolves.toEqual(
+          { settled: 3 },
+        );
+      });
+
+      it("404 para atendimento de outra empresa", async () => {
+        prismaMock.appointment.findMany.mockResolvedValue([]);
+        await expect(
+          paymentService.settle(ahead, COMPANY_ID),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      });
+
+      it("recusa atendimento de outro cliente", async () => {
+        prismaMock.appointment.findMany.mockResolvedValue([
+          visit({ clientId: "c2" }),
+        ]);
+        await expect(
+          paymentService.settle(ahead, COMPANY_ID),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
     it("deve lançar ConflictException se uma baixa concorrente tirou algum do PENDING", async () => {
       prismaMock.payment.updateMany.mockResolvedValue({ count: 1 });
 

@@ -141,7 +141,8 @@ const checkoutAppointmentSelect = {
   startAt: true,
   status: true,
   recurringAppointmentId: true,
-  service: { select: { id: true, name: true } },
+  // O preço é o valor de quem recebe antes da conclusão (sem pagamento ainda).
+  service: { select: { id: true, name: true, price: true } },
   professional: { select: { id: true, name: true } },
   recurringAppointment: { select: { clientPlanId: true } },
 } satisfies Prisma.AppointmentSelect;
@@ -873,28 +874,63 @@ export class PaymentService {
   }
 
   /**
-   * Baixa dos pagamentos escolhidos, todos do mesmo cliente, com o mesmo método
-   * e a mesma data. Tudo ou nada: a conferência e a gravação rodam numa só
-   * transação. Erros: 404 (pagamento ou método inexistente na empresa), 409
-   * (algum não está PENDING) e 400 (clientes diferentes).
+   * Baixa dos itens escolhidos, todos do mesmo cliente, com o mesmo método e a
+   * mesma data. Além dos pagamentos pendentes, aceita atendimentos avulsos
+   * ainda sem pagamento (receber antes da conclusão): cada um ganha um
+   * pagamento PAID com o preço do serviço, e o job de conclusão não cobra de
+   * novo (ele só pega atendimento sem pagamento). Tudo ou nada: a conferência e
+   * a gravação rodam numa só transação. Erros: 404 (pagamento, atendimento ou
+   * método inexistente na empresa), 409 (pagamento fora do PENDING; atendimento
+   * cancelado, com falta, de pacote ou já com pagamento), 400 (nenhum item,
+   * clientes diferentes ou serviço sem preço).
    */
   async settle(
-    { paymentIds, paymentMethodId, paidAt }: SettleCheckoutDto,
+    {
+      paymentIds = [],
+      appointmentIds = [],
+      paymentMethodId,
+      paidAt,
+    }: SettleCheckoutDto,
     companyId: string,
   ): Promise<{ settled: number }> {
     this.ensurePaidAtIsNotFuture(paidAt);
+    if (paymentIds.length + appointmentIds.length === 0) {
+      throw new BadRequestException("Escolha ao menos um item para receber");
+    }
+    const timeZone = await this.companyService.getTimeZone(companyId);
 
     return this.prisma.$transaction(async (tx) => {
-      const payments = await tx.payment.findMany({
-        where: { id: { in: paymentIds }, deletedAt: null, companyId },
-        select: {
-          status: true,
-          appointment: { select: { clientId: true } },
-          clientPlan: { select: { clientId: true } },
-        },
-      });
+      const payments =
+        paymentIds.length > 0
+          ? await tx.payment.findMany({
+              where: { id: { in: paymentIds }, deletedAt: null, companyId },
+              select: {
+                status: true,
+                appointment: { select: { clientId: true } },
+                clientPlan: { select: { clientId: true } },
+              },
+            })
+          : [];
       if (payments.length !== paymentIds.length) {
         throw new NotFoundException("Pagamento não encontrado");
+      }
+      const appointments =
+        appointmentIds.length > 0
+          ? await tx.appointment.findMany({
+              where: { id: { in: appointmentIds }, companyId },
+              select: {
+                id: true,
+                clientId: true,
+                startAt: true,
+                status: true,
+                service: { select: { price: true } },
+                recurringAppointment: { select: { clientPlanId: true } },
+                payment: { select: { deletedAt: true } },
+              },
+            })
+          : [];
+      if (appointments.length !== appointmentIds.length) {
+        throw new NotFoundException("Agendamento não encontrado");
       }
       await this.paymentMethodService.findOne(paymentMethodId, companyId);
 
@@ -905,12 +941,14 @@ export class PaymentService {
           "Só é possível dar baixa em pagamentos pendentes",
         );
       }
-      const clients = new Set(
-        payments.map(
+      this.ensureReceivableAhead(appointments);
+      const clients = new Set([
+        ...payments.map(
           (payment) =>
             payment.appointment?.clientId ?? payment.clientPlan?.clientId,
         ),
-      );
+        ...appointments.map((appointment) => appointment.clientId),
+      ]);
       if (clients.size > 1) {
         throw new BadRequestException(
           "Os pagamentos precisam ser do mesmo cliente",
@@ -918,29 +956,93 @@ export class PaymentService {
       }
 
       const now = new Date();
+      const settledAt = paidAt ?? now;
       // O status no filtro protege de uma baixa concorrente entre a leitura e a gravação.
-      const { count } = await tx.payment.updateMany({
-        where: {
-          id: { in: paymentIds },
-          status: PaymentStatus.PENDING,
-          deletedAt: null,
-          companyId,
-        },
-        data: {
-          status: PaymentStatus.PAID,
-          paymentMethodId,
-          paidAt: paidAt ?? now,
-          updatedAt: now,
-        },
-      });
+      const { count } =
+        paymentIds.length > 0
+          ? await tx.payment.updateMany({
+              where: {
+                id: { in: paymentIds },
+                status: PaymentStatus.PENDING,
+                deletedAt: null,
+                companyId,
+              },
+              data: {
+                status: PaymentStatus.PAID,
+                paymentMethodId,
+                paidAt: settledAt,
+                updatedAt: now,
+              },
+            })
+          : { count: 0 };
       if (count !== paymentIds.length) {
         throw new ConflictException(
           "Só é possível dar baixa em pagamentos pendentes",
         );
       }
 
-      return { settled: count };
+      // Vencimento no dia do atendimento, como o pagamento que o job geraria.
+      // Um pagamento criado ao mesmo tempo por outra baixa (ou pelo job) cai na
+      // unicidade por agendamento: 409, e a transação desfaz tudo.
+      let created = 0;
+      if (appointments.length > 0) {
+        try {
+          ({ count: created } = await tx.payment.createMany({
+            data: appointments.map((appointment) => ({
+              companyId,
+              appointmentId: appointment.id,
+              amount: appointment.service.price!,
+              dueDate: this.toLocalDate(appointment.startAt, timeZone),
+              status: PaymentStatus.PAID,
+              paymentMethodId,
+              paidAt: settledAt,
+            })),
+          }));
+        } catch (error) {
+          throw this.mapUniqueViolation(error);
+        }
+      }
+
+      return { settled: count + created };
     });
+  }
+
+  /**
+   * Atendimento que pode ser recebido antes da conclusão: avulso (sessão de
+   * pacote é cobrada pela contratação), não cancelado nem com falta, ainda sem
+   * pagamento ativo e com preço no serviço (é o valor cobrado).
+   */
+  private ensureReceivableAhead(
+    appointments: {
+      status: AppointmentStatus;
+      service: { price: Decimal | null };
+      recurringAppointment: { clientPlanId: string | null } | null;
+      payment: { deletedAt: Date | null } | null;
+    }[],
+  ) {
+    for (const appointment of appointments) {
+      if (
+        appointment.status === AppointmentStatus.CANCELLED ||
+        appointment.status === AppointmentStatus.NO_SHOW
+      ) {
+        throw new ConflictException(
+          "Agendamento cancelado ou com falta não pode ser recebido",
+        );
+      }
+      if (appointment.recurringAppointment?.clientPlanId) {
+        throw new ConflictException(
+          "Sessão de pacote não recebe pagamento próprio: ela é cobrada pela contratação",
+        );
+      }
+      if (appointment.payment && appointment.payment.deletedAt === null) {
+        throw new ConflictException("Este agendamento já possui um pagamento");
+      }
+      if (appointment.service.price === null) {
+        throw new BadRequestException(
+          "Serviço sem preço: o valor é lançado depois da conclusão",
+        );
+      }
+    }
   }
 
   /**
