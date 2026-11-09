@@ -12,6 +12,7 @@ import { AuditController } from "../audit/audit.controller";
 import { AutoMessageController } from "../auto-message/auto-message.controller";
 import { MessageCampaignController } from "../message-campaign/message-campaign.controller";
 import { ClientPortfolioController } from "../client-portfolio/client-portfolio.controller";
+import { ReceivablesController } from "../receivables/receivables.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
 import { CityController } from "../city/city.controller";
@@ -87,6 +88,7 @@ const CONTROLLERS: Controller[] = [
   AutoMessageController,
   MessageCampaignController,
   ClientPortfolioController,
+  ReceivablesController,
   AuthController,
   BusinessHourController,
   CityController,

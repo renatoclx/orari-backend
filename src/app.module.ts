@@ -30,6 +30,7 @@ import { EventEmitterModule } from "@nestjs/event-emitter";
 import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
 import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfolio.module";
+import { ReceivablesModule } from "./modules/receivables/receivables.module";
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfol
     AutoMessageModule,
     MessageCampaignModule,
     ClientPortfolioModule,
+    ReceivablesModule,
     PeopleModule,
     ContactModule,
     AddressModule,

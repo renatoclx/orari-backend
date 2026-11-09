@@ -28,6 +28,7 @@ export const FEATURE_KEYS = [
   "client-portal",
   "messages",
   "client-portfolio",
+  "receivables",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -86,6 +87,12 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     actions: ["view"],
     requiresView: ["clients", "professionals"],
   },
+  // Relatórios → Contas a receber: só leitura, sobre os pagamentos.
+  {
+    key: "receivables",
+    actions: ["view"],
+    requiresView: ["payments", "clients"],
+  },
 ];
 
 // Funcionalidades que o modelo padrão de uma empresa nova deixa de fora.
@@ -97,8 +104,6 @@ const DEFAULT_OFF: readonly string[] = [
   // O SUPER_ADMIN libera o portal e as mensagens a quem contratar.
   "client-portal",
   "messages",
-  // Nasce desmarcada (regra das funcionalidades novas); entra nos planos depois.
-  "client-portfolio",
 ];
 
 // Limites do modelo padrão (o "Essencial": administrador + 2 profissionais).
