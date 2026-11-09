@@ -29,6 +29,8 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { AutoMessageModule } from "./modules/auto-message/auto-message.module";
 import { MessageCampaignModule } from "./modules/message-campaign/message-campaign.module";
+import { ClientPortfolioModule } from "./modules/client-portfolio/client-portfolio.module";
+import { ReceivablesModule } from "./modules/receivables/receivables.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
 @Module({
@@ -49,6 +51,8 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     PortalModule,
     AutoMessageModule,
     MessageCampaignModule,
+    ClientPortfolioModule,
+    ReceivablesModule,
     AgendaBlockModule,
     PeopleModule,
     ContactModule,

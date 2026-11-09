@@ -27,6 +27,8 @@ export const FEATURE_KEYS = [
   "settings",
   "client-portal",
   "messages",
+  "client-portfolio",
+  "receivables",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -78,6 +80,18 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     key: "messages",
     actions: ["view", "edit"],
     requiresView: ["client-portal"],
+  },
+  // Relatórios → Carteira de clientes: só leitura.
+  {
+    key: "client-portfolio",
+    actions: ["view"],
+    requiresView: ["clients", "professionals"],
+  },
+  // Relatórios → Contas a receber: só leitura, sobre os pagamentos.
+  {
+    key: "receivables",
+    actions: ["view"],
+    requiresView: ["payments", "clients"],
   },
 ];
 
