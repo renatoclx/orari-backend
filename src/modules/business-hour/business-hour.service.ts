@@ -203,6 +203,12 @@ export class BusinessHourService {
     startAt: Date,
     endAt: Date,
   ): Promise<boolean> {
+    // Horário bloqueado na agenda conta como fora do funcionamento, mesmo na
+    // empresa sem janelas (ver AgendaBlockService).
+    if (await this.isBlocked(companyId, startAt, endAt)) {
+      return false;
+    }
+
     const total = await this.prisma.businessHour.count({
       where: { companyId, deletedAt: null },
     });
@@ -220,6 +226,18 @@ export class BusinessHourService {
       minutesOfZonedDay(startAt, timeZone),
       minutesOfZonedDay(endAt, timeZone),
     );
+  }
+
+  /** O intervalo encosta em algum horário bloqueado da agenda. */
+  async isBlocked(
+    companyId: string,
+    startAt: Date,
+    endAt: Date,
+  ): Promise<boolean> {
+    const blocks = await this.prisma.agendaBlock.count({
+      where: { companyId, startAt: { lt: endAt }, endAt: { gt: startAt } },
+    });
+    return blocks > 0;
   }
 
   /**
@@ -278,8 +296,11 @@ export class BusinessHourService {
     endAt: Date,
   ): Promise<void> {
     if (!(await this.isWithinBusinessHours(companyId, startAt, endAt))) {
+      // A mensagem diz o motivo: bloqueio ou fora das janelas.
       throw new BadRequestException(
-        "O horário está fora do funcionamento da empresa",
+        (await this.isBlocked(companyId, startAt, endAt))
+          ? "O horário está bloqueado na agenda"
+          : "O horário está fora do funcionamento da empresa",
       );
     }
   }

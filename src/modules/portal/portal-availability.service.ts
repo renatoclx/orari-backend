@@ -152,8 +152,9 @@ export class PortalAvailabilityService {
 
   /**
    * Compromissos do profissional no dia: agendamentos não cancelados (inclusive
-   * os de turma) e os horários das turmas fixas dele, mesmo sem alunos (o
-   * cliente do portal não ocupa o horário de uma turma).
+   * os de turma), os horários das turmas fixas dele, mesmo sem alunos (o
+   * cliente do portal não ocupa o horário de uma turma), e os horários
+   * bloqueados na agenda da clínica.
    */
   private async busyOf(
     company: PortalCompany,
@@ -162,7 +163,7 @@ export class PortalAvailabilityService {
     dayStart: Date,
     dayEnd: Date,
   ): Promise<Interval[]> {
-    const [appointments, classDays] = await Promise.all([
+    const [appointments, classDays, blocks] = await Promise.all([
       this.prisma.appointment.findMany({
         where: {
           companyId: company.id,
@@ -183,10 +184,19 @@ export class PortalAvailabilityService {
           classGroup: { select: { service: { select: { duration: true } } } },
         },
       }),
+      // Horários bloqueados na agenda da clínica (de todos os profissionais).
+      this.prisma.agendaBlock.findMany({
+        where: {
+          companyId: company.id,
+          startAt: { lt: dayEnd },
+          endAt: { gt: dayStart },
+        },
+        select: { startAt: true, endAt: true },
+      }),
     ]);
 
     return [
-      ...appointments.map(({ startAt, endAt }) => ({
+      ...[...appointments, ...blocks].map(({ startAt, endAt }) => ({
         start: startAt <= dayStart ? 0 : this.minutesInDay(startAt, dayStart),
         end: endAt >= dayEnd ? DAY_MINUTES : this.minutesInDay(endAt, dayStart),
       })),

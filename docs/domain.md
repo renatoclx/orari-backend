@@ -512,6 +512,28 @@ O tipo indica a finalidade do endereço; qual deles é exibido é definido por `
 
 ---
 
+## AgendaBlock
+
+- Representa um horário bloqueado na agenda da empresa, num único dia. Conta como fora do funcionamento (ver `business-rules.md`, "Bloqueio de horários").
+- Desbloquear apaga o registro; a auditoria guarda quem bloqueou e quem desbloqueou.
+
+### Atributos
+
+| Nome        | Descrição                              |
+| ----------- | -------------------------------------- |
+| id          | Identificador único                    |
+| companyId   | Código da empresa                      |
+| startAt     | Início do bloqueio (UTC)               |
+| endAt       | Fim do bloqueio (UTC), no mesmo dia    |
+| createdById | Código do usuário que bloqueou         |
+| createdAt   | Data e hora do bloqueio                |
+
+### Relacionamentos
+
+- Uma empresa pode ter vários bloqueios, sem sobreposição entre eles.
+
+---
+
 ## Appointments
 
 - Representa os agendamentos realizados na aplicação.

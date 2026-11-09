@@ -27,6 +27,7 @@ describe("BusinessHourService", () => {
       count: vi.fn(),
       update: vi.fn(),
     },
+    agendaBlock: { count: vi.fn() },
   };
 
   const companyServiceMock = { getTimeZone: vi.fn() };
@@ -46,6 +47,8 @@ describe("BusinessHourService", () => {
     vi.clearAllMocks();
     prismaMock.businessHour.create.mockResolvedValue(stored);
     prismaMock.businessHour.update.mockResolvedValue(stored);
+    // Sem bloqueios na agenda, salvo nos testes do bloqueio.
+    prismaMock.agendaBlock.count.mockResolvedValue(0);
     // Por padrão os testes usam UTC; o caso do fuso é explícito abaixo.
     companyServiceMock.getTimeZone.mockResolvedValue("UTC");
 
@@ -296,6 +299,39 @@ describe("BusinessHourService", () => {
           end,
         ),
       ).resolves.toBe(false);
+    });
+  });
+
+  describe("horário bloqueado na agenda", () => {
+    const startAt = new Date("2026-11-10T10:00:00.000Z");
+    const endAt = new Date("2026-11-10T11:00:00.000Z");
+
+    it("conta como fora do funcionamento, mesmo sem nenhuma janela cadastrada", async () => {
+      prismaMock.agendaBlock.count.mockResolvedValue(1);
+      prismaMock.businessHour.count.mockResolvedValue(0);
+
+      await expect(
+        businessHourService.isWithinBusinessHours(COMPANY_ID, startAt, endAt),
+      ).resolves.toBe(false);
+      expect(prismaMock.agendaBlock.count).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+      });
+    });
+
+    it("a recusa sem encaixe diz que está bloqueado", async () => {
+      prismaMock.agendaBlock.count.mockResolvedValue(1);
+
+      await expect(
+        businessHourService.ensureWithinBusinessHours(
+          COMPANY_ID,
+          startAt,
+          endAt,
+        ),
+      ).rejects.toThrow("O horário está bloqueado na agenda");
     });
   });
 
