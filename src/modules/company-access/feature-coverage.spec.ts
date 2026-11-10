@@ -14,6 +14,7 @@ import { MessageCampaignController } from "../message-campaign/message-campaign.
 import { ClientPortfolioController } from "../client-portfolio/client-portfolio.controller";
 import { ReceivablesController } from "../receivables/receivables.controller";
 import { AppointmentReportController } from "../appointment-report/appointment-report.controller";
+import { RankingsController } from "../rankings/rankings.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
@@ -92,6 +93,7 @@ const CONTROLLERS: Controller[] = [
   ClientPortfolioController,
   ReceivablesController,
   AppointmentReportController,
+  RankingsController,
   AgendaBlockController,
   AuthController,
   BusinessHourController,
