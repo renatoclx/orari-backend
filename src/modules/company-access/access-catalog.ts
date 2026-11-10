@@ -33,6 +33,7 @@ export const FEATURE_KEYS = [
   "rankings",
   "financial-report",
   "packages-report",
+  "clients-report",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -120,6 +121,12 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     key: "packages-report",
     actions: ["view"],
     requiresView: ["contracts"],
+  },
+  // Relatórios → Perfil do cliente: só leitura, sobre clientes e agendamentos.
+  {
+    key: "clients-report",
+    actions: ["view"],
+    requiresView: ["clients", "appointments"],
   },
 ];
 

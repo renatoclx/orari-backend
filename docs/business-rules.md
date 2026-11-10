@@ -578,6 +578,19 @@
 - `GET /packages-report?from=&to=`: `created` (quantidade e valor), `active`, `cancelled`, `ending` e `byPlan` (os mesmos números por pacote, só os pacotes com algum deles, do maior valor contratado para o menor).
 - `GET /packages-report/ending` (paginado): as contratações terminando, do fim mais próximo ao mais distante (empate pelo nome do cliente), com o cliente (e o celular principal), o pacote, a data final e as **sessões**: concluídas de quantas a contratação tem (os agendamentos das recorrências dela, sem os cancelados).
 
+## Perfil do cliente
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Perfil do cliente). Funcionalidade `clients-report`, só Visualiza, exige ver Clientes e Agendamentos; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda. A base são os clientes **ativos no cadastro** (não inativados); os inativados ficam fora de tudo.
+- Hoje: **ativo** (atendimento `COMPLETED` nos últimos **60 dias** ou agendamento futuro `SCHEDULED`/`CONFIRMED`; a mesma regra da Carteira de clientes) e **sem retorno** (o resto, inclusive quem nunca foi atendido); **com o app** (cadastro ligado a uma conta do app).
+- No período (padrão: o mês atual, no fuso da empresa): **novos** (o primeiro atendimento concluído na empresa caiu no período); **atendidos** (com concluído no período) e **frequência** (concluídos ÷ atendidos).
+- **Tipo de atendimento**, sobre os atendidos: avulso, recorrência, pacote (recorrência de uma contratação) e turma (sessão de turma). Não são exclusivos: o pacote numa turma conta nos dois, e um cliente pode ter vários tipos.
+- **Por onde agendam:** os concluídos do período pela origem (clínica ou app).
+- **Cadastro:** faixas de idade (até 17, 18 a 29, 30 a 44, 45 a 59, 60 ou mais, em anos completos hoje) e cidades (pelo endereço principal: as 5 mais comuns, "Outras" e sem endereço). Sem o dado, conta como não informado.
+- `GET /clients-report?from=&to=`: os números acima, cada um com a quantidade e a parte da base (`share`, de 0 a 1).
+- `GET /clients-report/birthdays` (paginado, mesmo período): **aniversariantes**, pela data do aniversário (empate pelo nome), com a data de nascimento, a idade que completa e o celular principal. Quem nasceu em 29/02 comemora em 28/02 nos anos que não são bissextos.
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
