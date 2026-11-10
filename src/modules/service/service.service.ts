@@ -67,6 +67,21 @@ export function resolveCommission(
 }
 
 /**
+ * Quando a comissão passa a valer (função pura): ganha a data ao sair de "sem
+ * comissão"; perde ao ser tirada; trocar tipo ou valor mantém a data. Só os
+ * atendimentos que terminam depois dela geram comissão (sem retroativo).
+ */
+export function commissionSinceFor(
+  next: { commissionType?: CommissionType | null },
+  currentType: CommissionType | null | undefined,
+  now: Date,
+): { commissionSince?: Date | null } {
+  if (next.commissionType === undefined) return {};
+  if (next.commissionType === null) return { commissionSince: null };
+  return currentType ? {} : { commissionSince: now };
+}
+
+/**
  * Serviços pertencem à empresa do usuário autenticado; os de outras empresas se
  * comportam como inexistentes (404). O nome é único entre os serviços não
  * excluídos da mesma empresa.
@@ -85,6 +100,7 @@ export class ServiceService {
         data: {
           ...dto,
           ...commission,
+          ...commissionSinceFor(commission, null, new Date()),
           normalizedName: normalizeForSearch(dto.name),
           companyId,
         },
@@ -164,6 +180,7 @@ export class ServiceService {
         data: {
           ...dto,
           ...commission,
+          ...commissionSinceFor(commission, current.commissionType, new Date()),
           // Mantém a coluna de busca em sincronia sempre que o nome muda.
           ...(dto.name !== undefined && {
             normalizedName: normalizeForSearch(dto.name),

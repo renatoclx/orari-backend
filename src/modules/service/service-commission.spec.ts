@@ -5,6 +5,7 @@ import type { PrismaService } from "../../prisma/prisma.service";
 import { ensureCanSetCommission, forUser } from "./service.controller";
 import {
   ServiceService,
+  commissionSinceFor,
   resolveCommission,
   type PublicService,
 } from "./service.service";
@@ -126,8 +127,31 @@ describe("só o ADMIN define e vê a comissão", () => {
       name: "Pilates",
       commissionType: "PERCENT",
       commissionValue: "40",
+      commissionSince: new Date(),
     } as unknown as PublicService;
     expect(forUser(row, admin)).toBe(row);
     expect(forUser(row, user)).toEqual({ id: "s-1", name: "Pilates" });
+  });
+});
+
+describe("commissionSinceFor", () => {
+  const now = new Date("2026-11-10T15:00:00Z");
+
+  it("ganha a data ao sair de sem comissão; troca de tipo mantém", () => {
+    expect(
+      commissionSinceFor({ commissionType: "PERCENT" }, null, now),
+    ).toEqual({
+      commissionSince: now,
+    });
+    expect(
+      commissionSinceFor({ commissionType: "FIXED" }, "PERCENT", now),
+    ).toEqual({});
+  });
+
+  it("tirar a comissão tira a data; sem mudança, nada", () => {
+    expect(commissionSinceFor({ commissionType: null }, "FIXED", now)).toEqual({
+      commissionSince: null,
+    });
+    expect(commissionSinceFor({}, "FIXED", now)).toEqual({});
   });
 });

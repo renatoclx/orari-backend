@@ -154,6 +154,7 @@ model Company {
   recurringAppointments RecurringAppointment[]
   plans                 Plan[]
   payments              Payment[]
+  commissions           Commission[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
@@ -206,6 +207,7 @@ model People {
   // Uma pessoa participa dos agendamentos ora como cliente, ora como profissional.
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
   appointmentsAsProfessional  Appointment[]          @relation("AppointmentProfessional")
+  commissionsAsProfessional   Commission[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
@@ -342,6 +344,9 @@ model Service {
   // comissão. PERCENT: percentual do valor cobrado; FIXED: valor por atendimento.
   commissionType  CommissionType?
   commissionValue Decimal?        @db.Decimal(10, 2)
+  // Quando a comissão passou a valer (definida sem haver antes): só os
+  // atendimentos que terminam daí em diante geram comissão.
+  commissionSince DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime?
   deletedAt       DateTime?
@@ -354,6 +359,7 @@ model Service {
   classSessions         ClassSession[]
   // Profissionais que atendem o serviço (o portal só mostra serviço com ao menos um).
   professionals         ServiceProfessional[]
+  commissions           Commission[]
 
   @@unique([companyId, name], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
@@ -392,6 +398,7 @@ model Appointment {
   professional         People                @relation("AppointmentProfessional", fields: [professionalId], references: [id])
   service              Service               @relation(fields: [serviceId], references: [id])
   payment              Payment?
+  commission           Commission?
   anamnesisEntries     AnamnesisEntry[]
   recurringAppointment RecurringAppointment? @relation(fields: [recurringAppointmentId], references: [id])
   classSession         ClassSession?         @relation(fields: [classSessionId], references: [id])
@@ -1263,4 +1270,31 @@ model AgendaBlock {
 
   @@index([companyId, startAt])
   @@map("agenda_blocks")
+}
+
+// Comissão do profissional por atendimento concluído (uma por atendimento),
+// gerada pelo CommissionJob. Base, regra e valor ficam congelados: mudar a
+// comissão do serviço depois não mexe no que já foi gerado.
+model Commission {
+  id             String         @id @default(uuid())
+  companyId      String
+  appointmentId  String         @unique
+  professionalId String
+  serviceId      String
+  // Valor sobre o qual a comissão foi calculada (pagamento, preço ou sessão de pacote).
+  baseAmount     Decimal        @db.Decimal(10, 2)
+  type           CommissionType
+  // Percentual ou valor fixo da regra no momento da geração.
+  rate           Decimal        @db.Decimal(10, 2)
+  amount         Decimal        @db.Decimal(10, 2)
+  createdAt      DateTime       @default(now())
+
+  company      Company     @relation(fields: [companyId], references: [id])
+  appointment  Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  professional People      @relation(fields: [professionalId], references: [id])
+  service      Service     @relation(fields: [serviceId], references: [id])
+
+  @@index([companyId, professionalId])
+  @@index([serviceId])
+  @@map("commissions")
 }

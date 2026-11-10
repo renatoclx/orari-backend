@@ -53,7 +53,9 @@ export function ensureCanSetCommission(
 export function forUser(service: PublicService, user: AuthenticatedUser) {
   if (isAdmin(user)) return service;
   const rest: Partial<PublicService> = { ...service };
-  for (const field of COMMISSION_FIELDS) delete rest[field];
+  for (const field of [...COMMISSION_FIELDS, "commissionSince"] as const) {
+    delete rest[field];
+  }
   return rest;
 }
 

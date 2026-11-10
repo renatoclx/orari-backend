@@ -600,6 +600,19 @@
 - Cada bloco só aparece quando a empresa tem a funcionalidade do relatório de origem; a API de cada relatório continua conferindo a sua.
 - As métricas do período comparam com o **período anterior**: um mês inteiro com o mês anterior inteiro (ex.: novembro com outubro); qualquer outro período com os dias imediatamente antes, do mesmo tamanho. A tela consulta as mesmas rotas com as datas anteriores.
 
+## Comissão
+
+> **Estado:** 2026-11-10, etapas 1 (regra no serviço) e 2 (geração na conclusão). Tela, adiantamentos e fechamento nas próximas etapas.
+
+- A regra fica no **serviço** (ver "Serviços"): percentual do valor cobrado ou valor fixo por atendimento. `commissionSince` marca quando a comissão passou a valer (ao sair de "sem comissão"; tirar a comissão limpa a data; trocar tipo ou valor mantém). Só os atendimentos que **terminam depois** dessa data geram comissão: **nada retroativo**.
+- **Uma comissão por atendimento concluído** (`Commission`, única por agendamento), do profissional do atendimento. **Cancelado não gera** (nunca chega a concluído). Na turma, cada aluno é um atendimento, com a sua comissão.
+- Gerada pelo `CommissionJob` a cada 5 minutos, para os concluídos ainda sem comissão; uma rodada que falhar é coberta pela seguinte, e rodar de novo não duplica.
+- **Base** (congelada na geração):
+  - **sessão de pacote**: o total contratado ÷ as sessões geradas na contratação (todas, inclusive as canceladas depois), em duas casas (decisão de 2026-11-10: o cancelamento do pacote não muda o valor por sessão; as sessões canceladas simplesmente não geram);
+  - **demais** (avulso, recorrência, turma avulsa): o valor do pagamento do atendimento, se não estiver cancelado nem excluído; sem ele, o **preço do serviço** (o avulso que ainda vai ser cobrado na comanda).
+- **Valor**: percentual × base (duas casas, metade para cima) ou o valor fixo. Base, tipo, taxa e valor ficam gravados: mudar a regra do serviço depois não mexe no que já foi gerado.
+- A comissão nasce **mesmo que o cliente ainda não tenha pago**; o quanto o cliente já pagou aparece na tela de comissões (próxima etapa).
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
