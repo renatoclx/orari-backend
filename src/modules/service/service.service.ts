@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, Service } from "../../../generated/prisma/client";
+import { CommissionType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
@@ -17,6 +18,53 @@ export type PublicService = Omit<Service, "normalizedName">;
 
 // A coluna normalizedName existe só para a busca e não faz parte das respostas.
 const omitSearchColumn = { normalizedName: true } as const;
+
+/** Os campos da comissão; só o ADMIN os define e vê (ver o controller). */
+export const COMMISSION_FIELDS = ["commissionType", "commissionValue"] as const;
+
+type CommissionInput = {
+  commissionType?: CommissionType | null;
+  commissionValue?: number | null;
+};
+
+/**
+ * A comissão que fica gravada depois da mudança (função pura). Sem nenhum dos
+ * dois campos, nada muda (`{}`). Os dois andam juntos: tipo sem valor ou
+ * valor sem tipo é 400; tirar o tipo tira o valor. Percentual vai até 100.
+ */
+export function resolveCommission(
+  dto: CommissionInput,
+  current?: { commissionType: CommissionType | null; commissionValue: unknown },
+): { commissionType?: CommissionType | null; commissionValue?: number | null } {
+  if (dto.commissionType === undefined && dto.commissionValue === undefined) {
+    return {};
+  }
+  const type =
+    dto.commissionType !== undefined
+      ? dto.commissionType
+      : (current?.commissionType ?? null);
+  if (type === null) {
+    // Valor sem tipo: não há como saber se é percentual ou fixo.
+    if (dto.commissionValue != null) {
+      throw new BadRequestException("Informe o tipo da comissão");
+    }
+    return { commissionType: null, commissionValue: null };
+  }
+
+  const value =
+    dto.commissionValue !== undefined
+      ? dto.commissionValue
+      : current?.commissionValue != null
+        ? Number(current.commissionValue)
+        : null;
+  if (value === null) {
+    throw new BadRequestException("Informe o valor da comissão");
+  }
+  if (type === CommissionType.PERCENT && value > 100) {
+    throw new BadRequestException("O percentual da comissão vai até 100");
+  }
+  return { commissionType: type, commissionValue: value };
+}
 
 /**
  * Serviços pertencem à empresa do usuário autenticado; os de outras empresas se
@@ -31,10 +79,12 @@ export class ServiceService {
     dto: CreateServiceDto,
     companyId: string,
   ): Promise<PublicService> {
+    const commission = resolveCommission(dto);
     try {
       return await this.prisma.service.create({
         data: {
           ...dto,
+          ...commission,
           normalizedName: normalizeForSearch(dto.name),
           companyId,
         },
@@ -107,11 +157,13 @@ export class ServiceService {
       await this.ensureHasNoActiveClassGroups(id);
     }
 
+    const commission = resolveCommission(dto, current);
     try {
       return await this.prisma.service.update({
         where: { id },
         data: {
           ...dto,
+          ...commission,
           // Mantém a coluna de busca em sincronia sempre que o nome muda.
           ...(dto.name !== undefined && {
             normalizedName: normalizeForSearch(dto.name),

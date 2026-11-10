@@ -302,6 +302,12 @@ enum PlanBillingType {
   MONTHLY
 }
 
+// Forma da comissão do serviço (ver Service.commissionType).
+enum CommissionType {
+  PERCENT
+  FIXED
+}
+
 enum PaymentStatus {
   PAID
   PENDING
@@ -319,22 +325,26 @@ enum WeekDay {
 }
 
 model Service {
-  id             String    @id @default(uuid())
-  name           String
+  id              String          @id @default(uuid())
+  name            String
   // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
-  normalizedName String
-  description    String?
-  price          Decimal?  @db.Decimal(10, 2)
-  color          String?
+  normalizedName  String
+  description     String?
+  price           Decimal?        @db.Decimal(10, 2)
+  color           String?
   // Duração em minutos, usada para calcular o fim do agendamento.
-  duration       Int
-  companyId      String
-  isActive       Boolean   @default(true)
+  duration        Int
+  companyId       String
+  isActive        Boolean         @default(true)
   // Aceita atendimento em turma (ver ClassGroup).
-  allowsClasses  Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime?
-  deletedAt      DateTime?
+  allowsClasses   Boolean         @default(false)
+  // Comissão do profissional por atendimento concluído: os dois vazios = sem
+  // comissão. PERCENT: percentual do valor cobrado; FIXED: valor por atendimento.
+  commissionType  CommissionType?
+  commissionValue Decimal?        @db.Decimal(10, 2)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime?
+  deletedAt       DateTime?
 
   company               Company                @relation(fields: [companyId], references: [id])
   appointments          Appointment[]

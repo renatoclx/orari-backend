@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -19,6 +20,7 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
+import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Feature } from "../../common/decorators/feature.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
@@ -26,7 +28,34 @@ import { CreateServiceDto } from "./dto/create-service.dto";
 import { FindServicesQueryDto } from "./dto/find-services-query.dto";
 import { SetServiceProfessionalsDto } from "./dto/set-service-professionals.dto";
 import { UpdateServiceDto } from "./dto/update-service.dto";
-import { ServiceService } from "./service.service";
+import {
+  COMMISSION_FIELDS,
+  ServiceService,
+  type PublicService,
+} from "./service.service";
+
+const isAdmin = (user: AuthenticatedUser) => user.type === UserType.ADMIN;
+
+// Comissão é remuneração do profissional: só o ADMIN define (403 para os demais).
+export function ensureCanSetCommission(
+  dto: Partial<Record<(typeof COMMISSION_FIELDS)[number], unknown>>,
+  user: AuthenticatedUser,
+) {
+  if (
+    !isAdmin(user) &&
+    COMMISSION_FIELDS.some((field) => dto[field] !== undefined)
+  ) {
+    throw new ForbiddenException("Só o administrador define a comissão");
+  }
+}
+
+// ...e só o ADMIN a vê: para os demais, os campos saem da resposta.
+export function forUser(service: PublicService, user: AuthenticatedUser) {
+  if (isAdmin(user)) return service;
+  const rest: Partial<PublicService> = { ...service };
+  for (const field of COMMISSION_FIELDS) delete rest[field];
+  return rest;
+}
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
 @ApiTags("Serviços")
@@ -37,36 +66,54 @@ export class ServiceController {
   constructor(private readonly serviceService: ServiceService) {}
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateServiceDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.serviceService.create(dto, currentUser.companyId);
+    ensureCanSetCommission(dto, currentUser);
+    return forUser(
+      await this.serviceService.create(dto, currentUser.companyId),
+      currentUser,
+    );
   }
 
   @Get()
-  findAll(
+  async findAll(
     @Query() query: FindServicesQueryDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.serviceService.findAll(query, currentUser.companyId);
+    const result = await this.serviceService.findAll(
+      query,
+      currentUser.companyId,
+    );
+    return {
+      ...result,
+      items: result.items.map((item) => forUser(item, currentUser)),
+    };
   }
 
   @Get(":id")
-  findOne(
+  async findOne(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.serviceService.findOne(id, currentUser.companyId);
+    return forUser(
+      await this.serviceService.findOne(id, currentUser.companyId),
+      currentUser,
+    );
   }
 
   @Patch(":id")
-  update(
+  async update(
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdateServiceDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.serviceService.update(id, dto, currentUser.companyId);
+    ensureCanSetCommission(dto, currentUser);
+    return forUser(
+      await this.serviceService.update(id, dto, currentUser.companyId),
+      currentUser,
+    );
   }
 
   @Get(":id/professionals")

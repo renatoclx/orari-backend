@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -9,6 +10,7 @@ import {
   Matches,
   Min,
 } from "class-validator";
+import { CommissionType } from "../../../../generated/prisma/enums";
 
 // A empresa não é informada: o serviço pertence à empresa do usuário autenticado.
 export class CreateServiceDto {
@@ -41,6 +43,24 @@ export class CreateServiceDto {
   @IsOptional()
   @IsBoolean()
   allowsClasses?: boolean;
+
+  /**
+   * Comissão do profissional (só o ADMIN define): PERCENT (do valor cobrado) ou
+   * FIXED (valor por atendimento). `null` tira a comissão.
+   */
+  @IsOptional()
+  @IsEnum(CommissionType, { message: "Tipo de comissão inválido" })
+  commissionType?: CommissionType | null;
+
+  /** Percentual (0,01 a 100) ou valor fixo (maior que zero); `null` tira. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber(
+    { maxDecimalPlaces: 2 },
+    { message: "Informe a comissão com até duas casas decimais" },
+  )
+  @Min(0.01, { message: "A comissão precisa ser maior que zero" })
+  commissionValue?: number | null;
 
   @IsOptional()
   @Matches(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {

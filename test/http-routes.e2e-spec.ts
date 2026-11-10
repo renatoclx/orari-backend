@@ -522,8 +522,10 @@ describe("Rotas HTTP", () => {
       expect(people.create).not.toHaveBeenCalled();
     });
 
+    // "Lista vazia" saiu daqui: desde o receber antes da conclusão, as duas
+    // listas são opcionais e "ao menos um item" é conferido no serviço
+    // (payment.service.spec: "recusa a baixa sem nenhum item").
     it.each([
-      ["lista vazia", { paymentIds: [], paymentMethodId: ANY_UUID }],
       [
         "ids repetidos",
         { paymentIds: [ANY_UUID, ANY_UUID], paymentMethodId: ANY_UUID },
