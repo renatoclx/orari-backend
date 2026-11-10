@@ -61,6 +61,7 @@ describe("CommissionService.generatePending", () => {
   const since = new Date("2026-11-10T12:00:00Z");
   const prismaMock = {
     service: { findMany: vi.fn() },
+    people: { findMany: vi.fn() },
     appointment: { findMany: vi.fn(), count: vi.fn() },
     commission: { createMany: vi.fn() },
   };
@@ -74,6 +75,7 @@ describe("CommissionService.generatePending", () => {
     prismaMock.service.findMany.mockResolvedValue([
       {
         id: "s-1",
+        companyId: "c-1",
         price: d(80),
         commissionType: "PERCENT",
         commissionValue: d(40),
@@ -81,6 +83,9 @@ describe("CommissionService.generatePending", () => {
       },
     ]);
     prismaMock.appointment.count.mockResolvedValue(24);
+    prismaMock.people.findMany.mockResolvedValue([
+      { id: "p-1", commissionSince: null },
+    ]);
     prismaMock.commission.createMany.mockImplementation(
       (args: { data: unknown[] }) =>
         Promise.resolve({ count: args.data.length }),
@@ -95,11 +100,36 @@ describe("CommissionService.generatePending", () => {
         .where,
     ).toEqual({
       serviceId: "s-1",
+      professionalId: "p-1",
       status: "COMPLETED",
       endAt: { gte: since },
       commission: { is: null },
     });
+    // Só os profissionais da empresa que recebem comissão.
+    expect(prismaMock.people.findMany.mock.calls[0][0]).toMatchObject({
+      where: {
+        companyId: "c-1",
+        type: "PROFESSIONAL",
+        receivesCommission: true,
+      },
+    });
     expect(prismaMock.commission.createMany).not.toHaveBeenCalled();
+  });
+
+  it("profissional que religou depois: vale a data dele", async () => {
+    const later = new Date("2026-11-20T12:00:00Z");
+    prismaMock.people.findMany.mockResolvedValue([
+      { id: "p-1", commissionSince: later },
+    ]);
+    prismaMock.appointment.findMany.mockResolvedValue([]);
+    await service.generatePending();
+    expect(
+      (
+        prismaMock.appointment.findMany.mock.calls[0][0] as {
+          where: { endAt: object };
+        }
+      ).where.endAt,
+    ).toEqual({ gte: later });
   });
 
   it("grava base, regra e valor de avulso e de sessão de pacote", async () => {

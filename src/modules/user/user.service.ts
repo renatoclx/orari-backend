@@ -151,6 +151,7 @@ export class UserService {
             ip,
             tx,
           );
+          await this.withoutCommissionIfAdmin(created, tx);
         }
         // Nascer ADMIN já dá acesso aos dados de saúde (anamnese).
         if (dto.type === UserType.ADMIN) {
@@ -262,6 +263,7 @@ export class UserService {
             ip,
             tx,
           );
+          await this.withoutCommissionIfAdmin(updated, tx);
         }
         // Toda mudança de tipo, inclusive a retirada do ADMIN (quem revogou também importa).
         if (typeChanged) {
@@ -482,6 +484,22 @@ export class UserService {
         ? "Já existe um usuário com este e-mail ou com esta pessoa vinculada"
         : "Já existe um usuário com este e-mail",
     );
+  }
+
+  /**
+   * O profissional vinculado a um usuário ADMIN (o dono que atende) nasce sem
+   * comissão. Vale só no momento do vínculo: depois, quem administra liga ou
+   * desliga no cadastro do profissional, e mudar o tipo do usuário não mexe.
+   */
+  private async withoutCommissionIfAdmin(
+    user: { type: UserType; peopleId: string | null },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (user.type !== UserType.ADMIN || !user.peopleId) return;
+    await tx.people.updateMany({
+      where: { id: user.peopleId, type: PeopleType.PROFESSIONAL },
+      data: { receivesCommission: false, commissionSince: null },
+    });
   }
 
   /**

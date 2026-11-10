@@ -484,6 +484,35 @@ describe("PeopleService", () => {
   });
 
   describe("update", () => {
+    it("religar a comissão do profissional grava a data; cliente recusa", async () => {
+      const professional = {
+        ...people,
+        type: "PROFESSIONAL",
+        receivesCommission: false,
+      };
+      prismaMock.people.findFirst.mockResolvedValue(professional);
+      prismaMock.people.update.mockResolvedValue(professional);
+
+      await peopleService.update("1", { receivesCommission: true }, COMPANY_ID);
+      expect(prismaMock.people.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            receivesCommission: true,
+            commissionSince: anyDate,
+            updatedAt: anyDate,
+          },
+        }),
+      );
+
+      prismaMock.people.findFirst.mockResolvedValue({
+        ...people,
+        type: "CLIENT",
+      });
+      await expect(
+        peopleService.update("1", { receivesCommission: false }, COMPANY_ID),
+      ).rejects.toThrow("Só o profissional recebe comissão");
+    });
+
     it("deve atualizar registrando o updatedAt", async () => {
       prismaMock.people.findFirst.mockResolvedValue(people);
       prismaMock.people.update.mockResolvedValue(people);

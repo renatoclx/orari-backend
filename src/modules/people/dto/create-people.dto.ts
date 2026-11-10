@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsDate,
   IsEnum,
   IsNotEmpty,
@@ -54,6 +55,14 @@ export class CreatePeopleDto {
   @IsString()
   @MaxLength(NOTE_MAX_LENGTH)
   note?: string;
+
+  /**
+   * Só para profissional e só o ADMIN envia: recebe comissão (padrão: sim).
+   * Religar vale dali em diante.
+   */
+  @IsOptional()
+  @IsBoolean()
+  receivesCommission?: boolean;
 
   /**
    * Telefone principal (DDD + número, só dígitos). Gravado como o contato

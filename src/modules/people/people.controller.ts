@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -15,6 +16,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
+import { UserType } from "../../../generated/prisma/enums";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import {
   FeatureAction,
@@ -25,6 +27,16 @@ import { CreatePeopleDto } from "./dto/create-people.dto";
 import { FindPeopleQueryDto } from "./dto/find-people-query.dto";
 import { UpdatePeopleDto } from "./dto/update-people.dto";
 import { PeopleService } from "./people.service";
+
+// "Recebe comissão" é remuneração do profissional: só o ADMIN define.
+export function ensureCanSetCommission(
+  dto: { receivesCommission?: boolean },
+  user: AuthenticatedUser,
+): void {
+  if (dto.receivesCommission !== undefined && user.type !== UserType.ADMIN) {
+    throw new ForbiddenException("Só o administrador define a comissão");
+  }
+}
 
 // Tamanho máximo da foto: acima disso o upload é recusado com 413.
 const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
@@ -42,6 +54,7 @@ export class PeopleController {
     @Body() dto: CreatePeopleDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
+    ensureCanSetCommission(dto, currentUser);
     return this.peopleService.create(dto, currentUser.companyId);
   }
 
@@ -67,6 +80,7 @@ export class PeopleController {
     @Body() dto: UpdatePeopleDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
+    ensureCanSetCommission(dto, currentUser);
     return this.peopleService.update(id, dto, currentUser.companyId);
   }
 

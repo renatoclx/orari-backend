@@ -66,7 +66,7 @@ describe("UserService", () => {
       update: vi.fn(),
     },
     refreshToken: { updateMany: vi.fn() },
-    people: { findFirst: vi.fn() },
+    people: { findFirst: vi.fn(), updateMany: vi.fn() },
   };
   const auditServiceMock = { record: vi.fn() };
   const planLimitMock = { assertWithinLimit: vi.fn() };
@@ -216,6 +216,33 @@ describe("UserService", () => {
           },
           prismaMock,
         );
+      });
+
+      it("ADMIN vinculado a um profissional: ele nasce sem comissão", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.create.mockResolvedValue({
+          ...storedUser,
+          type: "ADMIN",
+          peopleId,
+        });
+
+        await userService.create({ ...linkedDto, type: "ADMIN" }, adminUser);
+
+        expect(prismaMock.people.updateMany).toHaveBeenCalledWith({
+          where: { id: peopleId, type: "PROFESSIONAL" },
+          data: { receivesCommission: false, commissionSince: null },
+        });
+      });
+
+      it("usuário comum vinculado: a comissão do profissional não muda", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.create.mockResolvedValue({ ...storedUser, peopleId });
+
+        await userService.create(linkedDto, adminUser);
+
+        expect(prismaMock.people.updateMany).not.toHaveBeenCalled();
       });
 
       it("recusa pessoa que não é profissional ou funcionário ativo da empresa (400)", async () => {

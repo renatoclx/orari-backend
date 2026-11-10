@@ -70,6 +70,29 @@ export type PeopleDetail = PeopleListItem & {
  * ele: pessoas de outra empresa se comportam como inexistentes (404). A empresa
  * está sempre ativa aqui, pois o JwtStrategy recusa usuários de empresa inativa.
  */
+// "Recebe comissão" só existe para profissional (400 nos demais tipos).
+function ensureCommissionFitsType(
+  receivesCommission: boolean | undefined,
+  type: PeopleType,
+): void {
+  if (receivesCommission !== undefined && type !== PeopleType.PROFESSIONAL) {
+    throw new BadRequestException("Só o profissional recebe comissão");
+  }
+}
+
+/**
+ * Religar a comissão vale dali em diante (sem retroativo pelo tempo
+ * desligado); desligar limpa a data; sem mudança, nada.
+ */
+export function commissionSinceOf(
+  next: boolean | undefined,
+  current: boolean,
+  now: Date,
+): { commissionSince?: Date | null } {
+  if (next === undefined || next === current) return {};
+  return { commissionSince: next ? now : null };
+}
+
 @Injectable()
 export class PeopleService {
   constructor(
@@ -108,6 +131,7 @@ export class PeopleService {
    */
   async create(dto: CreatePeopleDto, companyId: string): Promise<PublicPeople> {
     const { phone, contacts = [], addresses = [], ...person } = dto;
+    ensureCommissionFitsType(dto.receivesCommission, person.type);
 
     this.ensureAtMostOnePrincipal(phone, contacts, addresses);
     // Antes de gravar: cidade inexistente é 404 e a pessoa não chega a ser criada.
@@ -225,6 +249,7 @@ export class PeopleService {
     companyId: string,
   ): Promise<PublicPeople> {
     const current = await this.findOne(id, companyId);
+    ensureCommissionFitsType(dto.receivesCommission, dto.type ?? current.type);
     // Virar profissional (ex.: de cliente) ocupa uma vaga do limite.
     const becomesProfessional =
       dto.type === PeopleType.PROFESSIONAL &&
@@ -239,6 +264,11 @@ export class PeopleService {
             where: { id },
             data: {
               ...dto,
+              ...commissionSinceOf(
+                dto.receivesCommission,
+                current.receivesCommission,
+                new Date(),
+              ),
               // Mantém a coluna de busca em sincronia sempre que o nome muda.
               ...(dto.name !== undefined && {
                 normalizedName: normalizeForSearch(dto.name),

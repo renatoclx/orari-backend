@@ -217,6 +217,7 @@ export class CommissionService {
       },
       select: {
         id: true,
+        companyId: true,
         price: true,
         commissionType: true,
         commissionValue: true,
@@ -224,79 +225,124 @@ export class CommissionService {
       },
     });
 
+    // Profissionais que recebem comissão, por empresa (o dono vinculado a um
+    // ADMIN nasce sem). Lidos uma vez por rodada.
+    const receiversByCompany = new Map<
+      string,
+      { id: string; commissionSince: Date | null }[]
+    >();
+    const receiversOf = async (companyId: string) => {
+      const cached = receiversByCompany.get(companyId);
+      if (cached) return cached;
+      const people = await this.prisma.people.findMany({
+        where: {
+          companyId,
+          type: PeopleType.PROFESSIONAL,
+          receivesCommission: true,
+        },
+        select: { id: true, commissionSince: true },
+      });
+      receiversByCompany.set(companyId, people);
+      return people;
+    };
+
     // Sessões geradas por contratação, contadas uma vez por rodada.
     const sessionValues = new Map<string, Decimal>();
     let created = 0;
 
     for (const service of services) {
-      const rows = await this.prisma.appointment.findMany({
-        where: {
-          serviceId: service.id,
-          // Cancelado nunca chega a concluído: não gera comissão.
-          status: AppointmentStatus.COMPLETED,
-          endAt: { gte: service.commissionSince! },
-          commission: { is: null },
-        },
-        orderBy: { endAt: "asc" },
-        take: BATCH,
-        select: {
-          id: true,
-          companyId: true,
-          professionalId: true,
-          payment: { select: { amount: true, status: true, deletedAt: true } },
-          recurringAppointment: {
-            select: {
-              clientPlanId: true,
-              clientPlan: { select: { totalAmount: true } },
-            },
-          },
-        },
-      });
-      if (rows.length === 0) continue;
-
-      for (const row of rows) {
-        const plan = row.recurringAppointment;
-        if (plan?.clientPlanId && !sessionValues.has(plan.clientPlanId)) {
-          const sessions = await this.prisma.appointment.count({
-            where: {
-              recurringAppointment: { clientPlanId: plan.clientPlanId },
-            },
-          });
-          sessionValues.set(
-            plan.clientPlanId,
-            packageSessionValue(plan.clientPlan!.totalAmount, sessions),
-          );
-        }
+      for (const professional of await receiversOf(service.companyId)) {
+        created += await this.generateFor(service, professional, sessionValues);
       }
-
-      const rate = service.commissionValue!;
-      const data = rows.map((row) => {
-        const clientPlanId = row.recurringAppointment?.clientPlanId ?? null;
-        const base = commissionBase(
-          { payment: row.payment, clientPlanId },
-          service.price,
-          clientPlanId ? (sessionValues.get(clientPlanId) ?? null) : null,
-        );
-        return {
-          companyId: row.companyId,
-          appointmentId: row.id,
-          professionalId: row.professionalId,
-          serviceId: service.id,
-          baseAmount: base,
-          type: service.commissionType!,
-          rate,
-          amount: commissionAmount(service.commissionType!, rate, base),
-        };
-      });
-
-      // A unicidade por atendimento protege duas rodadas ao mesmo tempo.
-      const result = await this.prisma.commission.createMany({
-        data,
-        skipDuplicates: true,
-      });
-      created += result.count;
     }
     return created;
+  }
+
+  // Comissões de um serviço e um profissional: a partir da data mais recente
+  // entre as duas (sem retroativo pelo tempo em que um deles estava sem).
+  private async generateFor(
+    service: {
+      id: string;
+      price: Decimal | null;
+      commissionType: CommissionType | null;
+      commissionValue: Decimal | null;
+      commissionSince: Date | null;
+    },
+    professional: { id: string; commissionSince: Date | null },
+    sessionValues: Map<string, Decimal>,
+  ): Promise<number> {
+    const since =
+      professional.commissionSince &&
+      professional.commissionSince > service.commissionSince!
+        ? professional.commissionSince
+        : service.commissionSince!;
+    const rows = await this.prisma.appointment.findMany({
+      where: {
+        serviceId: service.id,
+        professionalId: professional.id,
+        // Cancelado nunca chega a concluído: não gera comissão.
+        status: AppointmentStatus.COMPLETED,
+        endAt: { gte: since },
+        commission: { is: null },
+      },
+      orderBy: { endAt: "asc" },
+      take: BATCH,
+      select: {
+        id: true,
+        companyId: true,
+        professionalId: true,
+        payment: { select: { amount: true, status: true, deletedAt: true } },
+        recurringAppointment: {
+          select: {
+            clientPlanId: true,
+            clientPlan: { select: { totalAmount: true } },
+          },
+        },
+      },
+    });
+    if (rows.length === 0) return 0;
+
+    for (const row of rows) {
+      const plan = row.recurringAppointment;
+      if (plan?.clientPlanId && !sessionValues.has(plan.clientPlanId)) {
+        const sessions = await this.prisma.appointment.count({
+          where: {
+            recurringAppointment: { clientPlanId: plan.clientPlanId },
+          },
+        });
+        sessionValues.set(
+          plan.clientPlanId,
+          packageSessionValue(plan.clientPlan!.totalAmount, sessions),
+        );
+      }
+    }
+
+    const rate = service.commissionValue!;
+    const data = rows.map((row) => {
+      const clientPlanId = row.recurringAppointment?.clientPlanId ?? null;
+      const base = commissionBase(
+        { payment: row.payment, clientPlanId },
+        service.price,
+        clientPlanId ? (sessionValues.get(clientPlanId) ?? null) : null,
+      );
+      return {
+        companyId: row.companyId,
+        appointmentId: row.id,
+        professionalId: row.professionalId,
+        serviceId: service.id,
+        baseAmount: base,
+        type: service.commissionType!,
+        rate,
+        amount: commissionAmount(service.commissionType!, rate, base),
+      };
+    });
+
+    // A unicidade por atendimento protege duas rodadas ao mesmo tempo.
+    const result = await this.prisma.commission.createMany({
+      data,
+      skipDuplicates: true,
+    });
+    return result.count;
   }
 }
 

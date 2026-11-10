@@ -173,28 +173,32 @@ model Company {
 }
 
 model People {
-  id              String     @id @default(uuid())
-  name            String
+  id                 String     @id @default(uuid())
+  name               String
   // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
-  normalizedName  String
+  normalizedName     String
   // Opcionais: o cliente poderá se cadastrar só com nome e telefone (contato).
-  document        String?    @db.Char(11)
-  birthDate       DateTime?  @db.Date
-  profession      String?
-  type            PeopleType
-  companyId       String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime?
-  deletedAt       DateTime?
-  note            String?
+  document           String?    @db.Char(11)
+  birthDate          DateTime?  @db.Date
+  profession         String?
+  type               PeopleType
+  companyId          String
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime?
+  deletedAt          DateTime?
+  note               String?
   // Caminho público da foto (ex.: /uploads/people/<arquivo>.jpg), preenchido pelo upload.
-  photoUrl        String?
+  photoUrl           String?
   // Conta do app do cliente ligada a este cadastro (só pelo link da clínica ou
   // pelo cadastro feito no próprio app); no máximo um cadastro por conta em cada clínica.
-  clientAccountId String?
+  clientAccountId    String?
   // false: o cliente entrou sozinho pelo app e a clínica ainda não confirmou o
   // cadastro (telefone não conferido); até lá, no máximo 2 agendamentos futuros pelo app.
-  portalConfirmed Boolean    @default(true)
+  portalConfirmed    Boolean    @default(true)
+  // Só para profissional: recebe comissão (padrão sim; o vinculado a um usuário
+  // ADMIN nasce sem). Religar vale dali em diante (commissionSince).
+  receivesCommission Boolean    @default(true)
+  commissionSince    DateTime?
 
   company           Company               @relation(fields: [companyId], references: [id])
   clientAccount     ClientAccount?        @relation(fields: [clientAccountId], references: [id])
