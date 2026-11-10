@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -48,7 +49,8 @@ export class CommissionAdvanceService {
     companyId: string,
     professionalId?: string,
   ): Promise<Map<string, OpenBalance>> {
-    const where = { companyId, professionalId };
+    // Em aberto = sem fechamento.
+    const where = { companyId, professionalId, closingId: null };
     const [commissions, advances] = await Promise.all([
       this.prisma.commission.groupBy({
         by: ["professionalId"],
@@ -98,7 +100,8 @@ export class CommissionAdvanceService {
   ): Promise<CommissionAdvanceItem[]> {
     await this.ensureProfessional(professionalId, companyId);
     const rows = await this.prisma.commissionAdvance.findMany({
-      where: { companyId, professionalId },
+      // Só os em aberto: os fechados aparecem no recibo do fechamento.
+      where: { companyId, professionalId, closingId: null },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       select: {
         id: true,
@@ -138,11 +141,19 @@ export class CommissionAdvanceService {
       await tx.$queryRaw`SELECT id FROM people WHERE id = ${dto.professionalId} FOR UPDATE`;
       const [commission, advanced] = await Promise.all([
         tx.commission.aggregate({
-          where: { companyId, professionalId: dto.professionalId },
+          where: {
+            companyId,
+            professionalId: dto.professionalId,
+            closingId: null,
+          },
           _sum: { amount: true },
         }),
         tx.commissionAdvance.aggregate({
-          where: { companyId, professionalId: dto.professionalId },
+          where: {
+            companyId,
+            professionalId: dto.professionalId,
+            closingId: null,
+          },
           _sum: { amount: true },
         }),
       ]);
@@ -181,14 +192,20 @@ export class CommissionAdvanceService {
     };
   }
 
-  /** Exclui um lançamento errado (enquanto não houver fechamento). */
+  /** Exclui um lançamento errado (só enquanto não foi fechado: 409). */
   async remove(id: string, companyId: string): Promise<void> {
     const advance = await this.prisma.commissionAdvance.findFirst({
       where: { id, companyId },
-      select: { id: true },
+      select: { id: true, closingId: true },
     });
     if (!advance) {
       throw new NotFoundException("Adiantamento não encontrado");
+    }
+    // Fechado: já foi abatido e está no recibo.
+    if (advance.closingId) {
+      throw new ConflictException(
+        "O adiantamento já foi fechado e não pode ser excluído",
+      );
     }
     await this.prisma.commissionAdvance.delete({ where: { id } });
   }

@@ -20,6 +20,7 @@ import { PackagesReportController } from "../packages-report/packages-report.con
 import { ClientsReportController } from "../clients-report/clients-report.controller";
 import { CommissionController } from "../commission/commission.controller";
 import { CommissionAdvanceController } from "../commission/commission-advance.controller";
+import { CommissionClosingController } from "../commission/commission-closing.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
@@ -104,6 +105,7 @@ const CONTROLLERS: Controller[] = [
   ClientsReportController,
   CommissionController,
   CommissionAdvanceController,
+  CommissionClosingController,
   AgendaBlockController,
   AuthController,
   BusinessHourController,

@@ -88,6 +88,17 @@ describe("CommissionAdvanceService.create", () => {
     );
   });
 
+  it("excluir adiantamento já fechado: 409", async () => {
+    prismaMock.commissionAdvance.findFirst.mockResolvedValue({
+      id: "a-1",
+      closingId: "f-1",
+    });
+    await expect(service.remove("a-1", "co-1")).rejects.toThrow(
+      "já foi fechado",
+    );
+    expect(prismaMock.commissionAdvance.delete).not.toHaveBeenCalled();
+  });
+
   it("excluir de outra empresa: 404", async () => {
     prismaMock.commissionAdvance.findFirst.mockResolvedValue(null);
     await expect(service.remove("a-x", "co-1")).rejects.toThrow(

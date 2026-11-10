@@ -37,6 +37,9 @@ model User {
   anamnesisEntries          AnamnesisEntry[]
   // Adiantamentos de comissão que este usuário lançou.
   commissionAdvances        CommissionAdvance[]
+  // Fechamentos de comissão que este usuário fez e os que desfez.
+  closingsCreated           CommissionClosing[]        @relation("CommissionClosingCreatedBy")
+  closingsCancelled         CommissionClosing[]        @relation("CommissionClosingCancelledBy")
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -158,6 +161,7 @@ model Company {
   payments              Payment[]
   commissions           Commission[]
   commissionAdvances    CommissionAdvance[]
+  commissionClosings    CommissionClosing[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
@@ -216,6 +220,7 @@ model People {
   appointmentsAsProfessional  Appointment[]          @relation("AppointmentProfessional")
   commissionsAsProfessional   Commission[]
   commissionAdvances          CommissionAdvance[]
+  commissionClosings          CommissionClosing[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
@@ -586,8 +591,9 @@ model PaymentMethod {
   updatedAt      DateTime?
   deletedAt      DateTime?
 
-  company  Company   @relation(fields: [companyId], references: [id])
-  payments Payment[]
+  company            Company             @relation(fields: [companyId], references: [id])
+  payments           Payment[]
+  commissionClosings CommissionClosing[]
 
   // Único pelo nome normalizado: "PIX", "Pix" e "pix" são o mesmo método.
   @@unique([companyId, normalizedName], where: raw("\"deletedAt\" IS NULL"))
@@ -1295,12 +1301,15 @@ model Commission {
   // Percentual ou valor fixo da regra no momento da geração.
   rate           Decimal        @db.Decimal(10, 2)
   amount         Decimal        @db.Decimal(10, 2)
+  // Fechamento que a quitou; vazio = em aberto.
+  closingId      String?
   createdAt      DateTime       @default(now())
 
-  company      Company     @relation(fields: [companyId], references: [id])
-  appointment  Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
-  professional People      @relation(fields: [professionalId], references: [id])
-  service      Service     @relation(fields: [serviceId], references: [id])
+  company      Company            @relation(fields: [companyId], references: [id])
+  closing      CommissionClosing? @relation(fields: [closingId], references: [id])
+  appointment  Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  professional People             @relation(fields: [professionalId], references: [id])
+  service      Service            @relation(fields: [serviceId], references: [id])
 
   @@index([companyId, professionalId])
   @@index([serviceId])
@@ -1319,12 +1328,54 @@ model CommissionAdvance {
   note           String?
   // Usuário que lançou ("Lançado por").
   createdById    String
+  // Fechamento que o abateu; vazio = em aberto (pode ser excluído).
+  closingId      String?
   createdAt      DateTime @default(now())
 
-  company      Company @relation(fields: [companyId], references: [id])
-  professional People  @relation(fields: [professionalId], references: [id])
-  createdBy    User    @relation(fields: [createdById], references: [id])
+  company      Company            @relation(fields: [companyId], references: [id])
+  closing      CommissionClosing? @relation(fields: [closingId], references: [id])
+  professional People             @relation(fields: [professionalId], references: [id])
+  createdBy    User               @relation(fields: [createdById], references: [id])
 
   @@index([companyId, professionalId])
   @@map("commission_advances")
+}
+
+// Fechamento da comissão de um profissional: quita as comissões e os
+// adiantamentos em aberto até a data de corte e gera o recibo (número
+// sequencial por empresa). Desfazer (só o último do profissional) marca como
+// cancelado e devolve tudo ao "em aberto"; o número não é reaproveitado.
+model CommissionClosing {
+  id                String    @id @default(uuid())
+  companyId         String
+  number            Int
+  professionalId    String
+  // Data de corte (calendário da empresa): atendimentos e adiantamentos até ela.
+  cutoffDate        DateTime  @db.Date
+  // Pagamento ao profissional: data (calendário) e método.
+  paidAt            DateTime  @db.Date
+  paymentMethodId   String
+  commissionTotal   Decimal   @db.Decimal(10, 2)
+  advanceTotal      Decimal   @db.Decimal(10, 2)
+  paidAmount        Decimal   @db.Decimal(10, 2)
+  appointmentsCount Int
+  // Cópia do detalhamento no fechamento (atendimentos e adiantamentos): o
+  // recibo, inclusive o cancelado, sai sempre igual ao que foi assinado.
+  details           Json
+  createdById       String
+  createdAt         DateTime  @default(now())
+  cancelledAt       DateTime?
+  cancelledById     String?
+
+  company       Company             @relation(fields: [companyId], references: [id])
+  professional  People              @relation(fields: [professionalId], references: [id])
+  paymentMethod PaymentMethod       @relation(fields: [paymentMethodId], references: [id])
+  createdBy     User                @relation("CommissionClosingCreatedBy", fields: [createdById], references: [id])
+  cancelledBy   User?               @relation("CommissionClosingCancelledBy", fields: [cancelledById], references: [id])
+  commissions   Commission[]
+  advances      CommissionAdvance[]
+
+  @@unique([companyId, number])
+  @@index([companyId, professionalId])
+  @@map("commission_closings")
 }

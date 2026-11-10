@@ -63,6 +63,8 @@ export interface CommissionItem {
   rate: string;
   amount: string;
   clientPaid: string;
+  /** Fechamento que a quitou; null = em aberto. */
+  closing: { id: string; number: number } | null;
 }
 
 const person = { select: { id: true, name: true } } as const;
@@ -74,6 +76,7 @@ const commissionSelect = {
   type: true,
   rate: true,
   amount: true,
+  closing: { select: { id: true, number: true } },
   professional: person,
   appointment: {
     select: {
@@ -222,6 +225,7 @@ export class CommissionService {
         rate: row.rate.toFixed(2),
         amount: row.amount.toFixed(2),
         clientPaid: paidOf(row).toFixed(2),
+        closing: row.closing,
       })),
       total,
       page,

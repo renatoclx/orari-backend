@@ -296,3 +296,23 @@ começando pelo relatório que ficar lento; uma rota de resumo própria para o
 Dashboard, se ele pesar.
 
 **Registrado em:** 2026-11-10.
+
+## Comissão: job por serviço e profissional, e resumo na API
+
+**Onde:** `CommissionJob` / `CommissionService.generatePending` e
+`CommissionService.summary` (Comissão, 2026-11-10).
+
+**O que é:** a cada 5 minutos o job consulta, para cada serviço com comissão e
+cada profissional que recebe, os atendimentos concluídos ainda sem comissão
+(até 500 por rodada). O resumo da tela lê as comissões do período e soma na API.
+O número do recibo é o maior + 1, com a empresa travada (`FOR UPDATE`) durante o
+fechamento.
+
+**Impacto:** nenhum com o volume de uma clínica. Com muitos serviços e
+profissionais, o job faz muitas consultas pequenas por rodada.
+
+**Como resolver:** uma consulta só por empresa (juntando serviço e profissional
+no `where`) e somas no banco (`groupBy`), se o volume pedir; uma sequência no
+banco para o número do recibo.
+
+**Registrado em:** 2026-11-10.
