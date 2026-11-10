@@ -22,6 +22,7 @@ export const FEATURE_KEYS = [
   "payments",
   "payment-methods",
   "expense-categories",
+  "payables",
   "anamnesis",
   "anamnesis-templates",
   "anamnesis-audit",
@@ -81,6 +82,8 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "payment-methods", actions: ALL },
   // Categorias de despesa (contas a pagar): só o ADMIN usa.
   { key: "expense-categories", actions: ALL },
+  // Contas a pagar: só o ADMIN usa. Pagar = Edita; cancelar e excluir = Exclui.
+  { key: "payables", actions: ALL },
   { key: "anamnesis", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "anamnesis-templates", actions: ALL },
   { key: "anamnesis-audit", actions: ["view"] },

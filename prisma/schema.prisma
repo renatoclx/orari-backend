@@ -40,6 +40,8 @@ model User {
   // Fechamentos de comissão que este usuário fez e os que desfez.
   closingsCreated           CommissionClosing[]        @relation("CommissionClosingCreatedBy")
   closingsCancelled         CommissionClosing[]        @relation("CommissionClosingCancelledBy")
+  // Contas a pagar que este usuário lançou.
+  payablesCreated           Payable[]                  @relation("PayableCreatedBy")
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -165,6 +167,7 @@ model Company {
   commissionAdvances    CommissionAdvance[]
   commissionClosings    CommissionClosing[]
   expenseCategories     ExpenseCategory[]
+  payables              Payable[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
@@ -228,6 +231,7 @@ model People {
   commissionsAsProfessional   Commission[]
   commissionAdvances          CommissionAdvance[]
   commissionClosings          CommissionClosing[]
+  payablesAsPayee             Payable[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
@@ -328,6 +332,13 @@ enum PlanBillingType {
 enum CommissionType {
   PERCENT
   FIXED
+}
+
+// Situação gravada da conta a pagar ("atrasada" é derivada: pendente vencida).
+enum PayableStatus {
+  PENDING
+  PAID
+  CANCELLED
 }
 
 enum PaymentStatus {
@@ -601,6 +612,7 @@ model PaymentMethod {
   company            Company             @relation(fields: [companyId], references: [id])
   payments           Payment[]
   commissionClosings CommissionClosing[]
+  payables           Payable[]
 
   // Único pelo nome normalizado: "PIX", "Pix" e "pix" são o mesmo método.
   @@unique([companyId, normalizedName], where: raw("\"deletedAt\" IS NULL"))
@@ -1402,9 +1414,47 @@ model ExpenseCategory {
   company   Company   @relation(fields: [companyId], references: [id])
   // Fornecedores que têm esta como categoria principal.
   suppliers People[]
+  payables  Payable[]
 
   // Único pelo nome normalizado entre os ativos: "Aluguel" e "aluguel" são a mesma.
   @@unique([companyId, normalizedName], where: raw("\"deletedAt\" IS NULL"))
   @@index([companyId])
   @@map("expense_categories")
+}
+
+// Conta a pagar da empresa (só o ADMIN). Repetida ou parcelada, cada mês é uma
+// conta com o mesmo seriesId e o número da parcela. "Atrasada" não é gravada:
+// é a pendente com vencimento antes de hoje (no fuso da empresa).
+model Payable {
+  id              String        @id @default(uuid())
+  companyId       String
+  description     String
+  // Fornecedor ou profissional; vazio quando não há (ex.: imposto).
+  payeeId         String?
+  categoryId      String
+  amount          Decimal       @db.Decimal(10, 2)
+  dueDate         DateTime      @db.Date
+  note            String?
+  status          PayableStatus @default(PENDING)
+  // Preenchidos quando paga: data (calendário) e método.
+  paidAt          DateTime?     @db.Date
+  paymentMethodId String?
+  // Repetição: as contas geradas juntas; "parcela installment de installments".
+  seriesId        String?
+  installment     Int?
+  installments    Int?
+  createdById     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime?
+  cancelledAt     DateTime?
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  payee         People?         @relation(fields: [payeeId], references: [id])
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
+  paymentMethod PaymentMethod?  @relation(fields: [paymentMethodId], references: [id])
+  createdBy     User            @relation("PayableCreatedBy", fields: [createdById], references: [id])
+
+  @@index([companyId, status, dueDate])
+  @@index([seriesId])
+  @@map("payables")
 }

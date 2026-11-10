@@ -636,6 +636,18 @@
 - Cadastro das categorias das contas a pagar (ex.: Aluguel, Energia), com as mesmas regras dos métodos de pagamento: nome obrigatório, único entre as ativas da empresa sem diferenciar maiúsculas nem acentos (409); não há exclusão física, a categoria é inativada e pode ser reativada (409 se outra ativa já tiver o nome). Só o **ADMIN** (contas a pagar são da administração).
 - Toda empresa nasce com as categorias **Aluguel, Energia, Água, Internet e telefone, Produtos, Comissões, Salários, Impostos e Outros**; a migração deu as mesmas às empresas que já existiam. Todas são editáveis.
 
+## Contas a pagar
+
+> **Estado:** 2026-11-10 (etapa 4). Funcionalidade `payables` (Visualiza; Cria = lançar; Edita = alterar e pagar; Exclui/Inativa = cancelar e excluir), só o **ADMIN**; marcada no modelo padrão, fora do modelo Agenda. A ligação com a comissão é a etapa 5.
+
+- Conta: descrição (até 120), **favorecido** opcional (fornecedor ou profissional **ativo** da empresa; outro tipo: 400), **categoria** de despesa ativa da empresa (400), valor maior que zero, vencimento (data de calendário) e observação (até 500). Guarda quem lançou.
+- **Situações**: pendente, paga e cancelada. **Atrasada** não é gravada: é a pendente com vencimento antes de hoje (no fuso da empresa).
+- **Repetição** (`repeat`, de 2 a 60, uma conta por mês a partir do vencimento; o dia que não existe no mês cai no último dia, sem puxar os seguintes): **parcelar** (`installments`) divide o valor (as primeiras com o valor arredondado para baixo em centavos, a última com o resto, para a soma fechar) ou **repetir** (`monthly`) o mesmo valor. As contas da série têm o mesmo `seriesId` e "parcela i de n".
+- **Já está paga** (`paid`: data até hoje e método de pagamento ativo): a conta nasce paga; só sem repetição (400).
+- **Pagar** (`PATCH /payables/settle`): uma ou várias pendentes da empresa, com a mesma data (até hoje) e o mesmo método ativo; se alguma não estiver pendente: 409, nada muda. Valor pago diferente (juros, desconto): altera-se o valor antes de pagar.
+- **Alterar** e **cancelar** valem só para **aquela conta** e só pendente (409). Cancelada fica no histórico. **Excluir** apaga um lançamento errado, pendente ou cancelado (paga: 409).
+- Lista e resumo filtram por favorecido, categoria e período de vencimento (pontas incluídas). Lista: `status` pending (padrão), overdue, upcoming, paid, cancelled ou all; pendentes do vencimento mais próximo, pagas da mais recente. Resumo: atrasado, a vencer e pago (quantidade e valor).
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
