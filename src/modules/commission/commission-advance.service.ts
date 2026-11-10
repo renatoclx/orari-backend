@@ -6,10 +6,14 @@ import {
 } from "@nestjs/common";
 import { PeopleType } from "../../../generated/prisma/enums";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
+import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { localToday } from "../receivables/receivables.service";
-import type { CreateCommissionAdvanceDto } from "./dto/create-commission-advance.dto";
+import type {
+  CommissionAdvanceListQueryDto,
+  CreateCommissionAdvanceDto,
+} from "./dto/create-commission-advance.dto";
 
 /** Saldo em aberto de um profissional (ainda não fechado). */
 export interface OpenBalance {
@@ -31,7 +35,18 @@ export interface CommissionAdvanceItem {
   note: string | null;
   createdBy: { id: string; name: string };
   createdAt: Date;
+  /** Fechamento que o abateu; null = em aberto. */
+  closing: { id: string; number: number } | null;
 }
+
+const advanceSelect = {
+  id: true,
+  amount: true,
+  date: true,
+  note: true,
+  createdAt: true,
+  createdBy: { select: { id: true, name: true } },
+} as const;
 
 /**
  * Adiantamentos de comissão (ver "Comissão" nas regras). Até o fechamento,
@@ -94,22 +109,31 @@ export class CommissionAdvanceService {
     };
   }
 
+  /**
+   * Os do período (em aberto ou fechados) e os em aberto de qualquer data,
+   * para nenhum abatimento pendente ficar fora da lista.
+   */
   async list(
-    professionalId: string,
+    { professionalId, from, to }: CommissionAdvanceListQueryDto,
     companyId: string,
+    now = new Date(),
   ): Promise<CommissionAdvanceItem[]> {
     await this.ensureProfessional(professionalId, companyId);
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const period = periodOf(from, to, timeZone, now);
+    // A data do adiantamento é de calendário: compara com os dias do período.
+    const first = localToday(period.start, timeZone);
+    const last = localToday(new Date(period.end.getTime() - 1), timeZone);
     const rows = await this.prisma.commissionAdvance.findMany({
-      // Só os em aberto: os fechados aparecem no recibo do fechamento.
-      where: { companyId, professionalId, closingId: null },
+      where: {
+        companyId,
+        professionalId,
+        OR: [{ closingId: null }, { date: { gte: first, lte: last } }],
+      },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       select: {
-        id: true,
-        amount: true,
-        date: true,
-        note: true,
-        createdAt: true,
-        createdBy: { select: { id: true, name: true } },
+        ...advanceSelect,
+        closing: { select: { id: true, number: true } },
       },
     });
     return rows.map((row) => ({
@@ -189,6 +213,8 @@ export class CommissionAdvanceService {
       ...created,
       amount: created.amount.toFixed(2),
       date: created.date.toISOString().slice(0, 10),
+      // Acabou de ser lançado: está em aberto.
+      closing: null,
     };
   }
 

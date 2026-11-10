@@ -17,6 +17,7 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CommissionAdvanceService } from "./commission-advance.service";
 import {
+  CommissionAdvanceListQueryDto,
   CommissionAdvanceQueryDto,
   CreateCommissionAdvanceDto,
 } from "./dto/create-commission-advance.dto";
@@ -33,18 +34,15 @@ export class CommissionAdvanceController {
 
   @Get()
   @ApiOperation({
-    summary: "Adiantamentos em aberto de um profissional",
+    summary: "Adiantamentos do profissional",
     description:
-      "Do mais recente para o mais antigo, com quem lançou. Profissional de outra empresa: 404.",
+      "Os com data no período (`from`, `to`, AAAA-MM-DD; padrão: mês atual), em aberto ou fechados, mais os em aberto de qualquer data; do mais recente para o mais antigo, com quem lançou e o fechamento (`closing`, null = em aberto). Profissional de outra empresa: 404.",
   })
   list(
     @CurrentUser() currentUser: AuthenticatedUser,
-    @Query() query: CommissionAdvanceQueryDto,
+    @Query() query: CommissionAdvanceListQueryDto,
   ) {
-    return this.advanceService.list(
-      query.professionalId,
-      currentUser.companyId,
-    );
+    return this.advanceService.list(query, currentUser.companyId);
   }
 
   @Get("available")

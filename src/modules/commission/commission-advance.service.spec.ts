@@ -28,7 +28,11 @@ describe("CommissionAdvanceService.create", () => {
   };
   const prismaMock = {
     people: { findFirst: vi.fn() },
-    commissionAdvance: { findFirst: vi.fn(), delete: vi.fn() },
+    commissionAdvance: {
+      findFirst: vi.fn(),
+      delete: vi.fn(),
+      findMany: vi.fn(),
+    },
     $transaction: vi.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
   };
   const service = new CommissionAdvanceService(
@@ -86,6 +90,44 @@ describe("CommissionAdvanceService.create", () => {
     await expect(service.create(dto, "co-1", "u-1", NOW)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it("lista os do período (abertos ou fechados) e os abertos de qualquer data", async () => {
+    prismaMock.commissionAdvance.findMany.mockResolvedValue([
+      {
+        id: "a-1",
+        amount: d(30),
+        date: new Date("2026-11-10T00:00:00Z"),
+        note: "Vale",
+        createdAt: NOW,
+        createdBy: { id: "u-1", name: "Marina" },
+        closing: { id: "f-1", number: 1 },
+      },
+    ]);
+    const result = await service.list({ professionalId: "p-1" }, "co-1", NOW);
+    expect(
+      (
+        prismaMock.commissionAdvance.findMany.mock.calls[0][0] as {
+          where: object;
+        }
+      ).where,
+    ).toEqual({
+      companyId: "co-1",
+      professionalId: "p-1",
+      OR: [
+        { closingId: null },
+        {
+          date: {
+            gte: new Date("2026-11-01T00:00:00Z"),
+            lte: new Date("2026-11-30T00:00:00Z"),
+          },
+        },
+      ],
+    });
+    expect(result[0]).toMatchObject({
+      date: "2026-11-10",
+      closing: { id: "f-1", number: 1 },
+    });
   });
 
   it("excluir adiantamento já fechado: 409", async () => {
