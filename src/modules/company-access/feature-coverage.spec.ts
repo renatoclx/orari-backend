@@ -15,6 +15,7 @@ import { ClientPortfolioController } from "../client-portfolio/client-portfolio.
 import { ReceivablesController } from "../receivables/receivables.controller";
 import { AppointmentReportController } from "../appointment-report/appointment-report.controller";
 import { RankingsController } from "../rankings/rankings.controller";
+import { FinancialReportController } from "../financial-report/financial-report.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
@@ -94,6 +95,7 @@ const CONTROLLERS: Controller[] = [
   ReceivablesController,
   AppointmentReportController,
   RankingsController,
+  FinancialReportController,
   AgendaBlockController,
   AuthController,
   BusinessHourController,

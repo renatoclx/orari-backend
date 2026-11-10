@@ -559,6 +559,15 @@
 - **Clientes** somam ao faturado os **pacotes contratados no período** (pela data da contratação; o valor é a soma dos pagamentos `PAID` ou `PENDING` não excluídos da contratação, então a parte cancelada não conta). O ticket médio do cliente continua só dos atendimentos.
 - Listas inteiras, ordenadas por `sort`: `amount` (padrão: faturado, depois quantidade) ou `count` (quantidade, depois faturado); empate pelo nome. A tela mostra os 10 primeiros; a impressão, todos. `sort` inválido: 400.
 
+## Relatório financeiro
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Financeiro). Funcionalidade `financial-report`, só Visualiza, exige ver Pagamentos; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda: o que **entrou no caixa**. Complementa o Contas a receber (o que falta receber) e os Rankings (o faturado pelos atendimentos).
+- Base: pagamentos `PAID`, não excluídos, pela **data do pagamento** (`paidAt`) no período, no fuso da empresa (padrão: o mês atual). Filtro opcional por método de pagamento (`paymentMethodId`; de outra empresa: 404).
+- `GET /financial-report?from=&to=&paymentMethodId=`: `received` (total), `appointments` e `packages` (pela origem: pagamento de atendimento ou de contratação), `series` (por dia até 62 dias, senão por semana, separando atendimentos e pacotes) e `byMethod` (valor, quantidade e `share`, do maior para o menor; pagamento sem método fica numa linha com `id` null).
+- `GET /financial-report/payments` (paginado, mesmos filtros): o extrato, do pagamento mais recente para o mais antigo, com data, valor, origem, descrição (serviço do atendimento ou nome do pacote), cliente e método.
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
