@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import {
   AppointmentStatus,
   PaymentStatus,
@@ -11,7 +7,11 @@ import {
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import type { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
-import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
+import {
+  periodOf,
+  seriesFrame,
+  type Period,
+} from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import type {
@@ -29,30 +29,6 @@ const UPCOMING_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.SCHEDULED,
   AppointmentStatus.CONFIRMED,
 ];
-
-type Day = { year: number; month: number; day: number };
-
-const parseDay = (value: string): Day => {
-  const [year, month, day] = value.split("-").map(Number);
-  return { year, month, day };
-};
-
-const nextDay = ({ year, month, day }: Day): Day => {
-  const date = new Date(Date.UTC(year, month - 1, day + 1));
-  return {
-    year: date.getUTCFullYear(),
-    month: date.getUTCMonth() + 1,
-    day: date.getUTCDate(),
-  };
-};
-
-const dayKey = ({ year, month, day }: Day) => year * 10000 + month * 100 + day;
-
-/** Período em instantes: início incluído, fim excluído. */
-export interface Period {
-  start: Date;
-  end: Date;
-}
 
 /**
  * Situação do cliente na carteira de um profissional. Novo vale para o
@@ -82,19 +58,9 @@ export function classifyPortfolioClient(
   return recent || nextAt ? "ACTIVE" : "LAPSED";
 }
 
-// Acima disso, o gráfico agrupa por semana (barras por dia ficariam finas demais).
-export const DAILY_SERIES_MAX_DAYS = 62;
-
-const dayString = ({ year, month, day }: Day) =>
-  `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-// Dias corridos desde 1970, para contar a distância entre dois dias.
-const dayNumber = ({ year, month, day }: Day) =>
-  Math.round(Date.UTC(year, month - 1, day) / DAY_MS);
-
 /**
- * Série do gráfico do período: um ponto por dia (ou por semana, contada a
- * partir do início do período), inclusive os vazios. Os dias são do fuso da
- * empresa.
+ * Série do gráfico do período: um ponto por dia (ou por semana), inclusive os
+ * vazios, com concluídos, recebido e pendente pelo dia do atendimento.
  */
 export function buildSeries(
   completedAt: Date[],
@@ -102,36 +68,14 @@ export function buildSeries(
   period: Period,
   timeZone: string,
 ): PortfolioSeries {
-  const first = toZonedParts(period.start, timeZone);
-  const last = toZonedParts(new Date(period.end.getTime() - 1), timeZone);
-  const totalDays = dayNumber(last) - dayNumber(first) + 1;
-  const unit = totalDays > DAILY_SERIES_MAX_DAYS ? "week" : "day";
-  const size = unit === "week" ? 7 : 1;
-
-  const points = Array.from(
-    { length: Math.ceil(totalDays / size) },
-    (_, index) => {
-      const date = new Date(
-        Date.UTC(first.year, first.month - 1, first.day + index * size),
-      );
-      return {
-        date: dayString({
-          year: date.getUTCFullYear(),
-          month: date.getUTCMonth() + 1,
-          day: date.getUTCDate(),
-        }),
-        completed: 0,
-        received: new Decimal(0),
-        pending: new Decimal(0),
-      };
-    },
-  );
-  const bucketOf = (instant: Date) =>
-    points[
-      Math.floor(
-        (dayNumber(toZonedParts(instant, timeZone)) - dayNumber(first)) / size,
-      )
-    ];
+  const frame = seriesFrame(period, timeZone);
+  const points = frame.dates.map((date) => ({
+    date,
+    completed: 0,
+    received: new Decimal(0),
+    pending: new Decimal(0),
+  }));
+  const bucketOf = (instant: Date) => points[frame.indexOf(instant)];
 
   for (const at of completedAt) {
     const point = bucketOf(at);
@@ -145,7 +89,7 @@ export function buildSeries(
   }
 
   return {
-    unit,
+    unit: frame.unit,
     points: points.map((point) => ({
       ...point,
       received: point.received.toFixed(2),
@@ -451,34 +395,4 @@ export class ClientPortfolioService {
 function sortKey(client: PortfolioClient): number {
   if (client.lastCompleted) return client.lastCompleted.startAt.getTime();
   return client.nextAt ? Number.MAX_SAFE_INTEGER : Number.MIN_SAFE_INTEGER;
-}
-
-/** Período do filtro no fuso da empresa; sem datas, o mês atual. */
-export function periodOf(
-  from: string | undefined,
-  to: string | undefined,
-  timeZone: string,
-  now: Date,
-): Period {
-  const today = toZonedParts(now, timeZone);
-  const firstDay = from
-    ? parseDay(from)
-    : { year: today.year, month: today.month, day: 1 };
-  // Último dia do mês: o dia 0 do mês seguinte.
-  const lastDay = to
-    ? parseDay(to)
-    : {
-        year: firstDay.year,
-        month: firstDay.month,
-        day: new Date(Date.UTC(firstDay.year, firstDay.month, 0)).getUTCDate(),
-      };
-  if (dayKey(lastDay) < dayKey(firstDay)) {
-    throw new BadRequestException(
-      "A data final precisa ser igual ou depois da inicial",
-    );
-  }
-  return {
-    start: zonedToUtc({ ...firstDay, hours: 0, minutes: 0 }, timeZone),
-    end: zonedToUtc({ ...nextDay(lastDay), hours: 0, minutes: 0 }, timeZone),
-  };
 }

@@ -1,13 +1,13 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import type { PrismaService } from "../../prisma/prisma.service";
 import type { CompanyService } from "../company/company.service";
+import { periodOf } from "../../common/time/report-period";
 import {
   ClientPortfolioService,
   buildSeries,
   classifyPortfolioClient,
-  periodOf,
 } from "./client-portfolio.service";
 
 const TZ = "America/Sao_Paulo"; // UTC-3
@@ -20,25 +20,6 @@ const NOVEMBER = {
 };
 const daysAgo = (days: number) =>
   new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000);
-
-describe("periodOf", () => {
-  it("sem datas, usa o mês atual no fuso da empresa", () => {
-    expect(periodOf(undefined, undefined, TZ, NOW)).toEqual(NOVEMBER);
-  });
-
-  it("inclui as duas pontas (fim = começo do dia seguinte)", () => {
-    expect(periodOf("2026-11-10", "2026-11-10", TZ, NOW)).toEqual({
-      start: new Date("2026-11-10T03:00:00.000Z"),
-      end: new Date("2026-11-11T03:00:00.000Z"),
-    });
-  });
-
-  it("recusa fim antes do início", () => {
-    expect(() => periodOf("2026-11-10", "2026-11-09", TZ, NOW)).toThrow(
-      BadRequestException,
-    );
-  });
-});
 
 describe("buildSeries", () => {
   it("período longo: por semana, a partir do início do período", () => {

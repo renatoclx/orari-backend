@@ -29,6 +29,12 @@ export const FEATURE_KEYS = [
   "messages",
   "client-portfolio",
   "receivables",
+  "appointments-report",
+  "rankings",
+  "financial-report",
+  "packages-report",
+  "clients-report",
+  "dashboard",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -93,6 +99,39 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     actions: ["view"],
     requiresView: ["payments", "clients"],
   },
+  // Relatórios → Agendamentos: só leitura.
+  {
+    key: "appointments-report",
+    actions: ["view"],
+    requiresView: ["appointments"],
+  },
+  // Relatórios → Rankings: só leitura, sobre atendimentos e pagamentos.
+  {
+    key: "rankings",
+    actions: ["view"],
+    requiresView: ["appointments", "payments"],
+  },
+  // Relatórios → Financeiro: só leitura, sobre os pagamentos recebidos.
+  {
+    key: "financial-report",
+    actions: ["view"],
+    requiresView: ["payments"],
+  },
+  // Relatórios → Pacotes: só leitura, sobre as contratações.
+  {
+    key: "packages-report",
+    actions: ["view"],
+    requiresView: ["contracts"],
+  },
+  // Relatórios → Perfil do cliente: só leitura, sobre clientes e agendamentos.
+  {
+    key: "clients-report",
+    actions: ["view"],
+    requiresView: ["clients", "appointments"],
+  },
+  // Dashboard: só a tela (sem rota própria na API); cada bloco usa a rota do
+  // relatório de origem e segue a funcionalidade dele.
+  { key: "dashboard", actions: ["view"] },
 ];
 
 // Funcionalidades que o modelo padrão de uma empresa nova deixa de fora.

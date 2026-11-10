@@ -28,7 +28,7 @@
 > **Etapas 1 a 4:** a API grava e consulta os acessos e os limites, informa os acessos em `GET /auth/me`, **barra as rotas** de todas as funcionalidades da tabela abaixo e **confere os limites** no cadastro e na reativação de profissionais e administradores.
 
 - O SUPER_ADMIN define, por empresa, o que os administradores dela podem fazer em cada funcionalidade e quantos profissionais e administradores ela pode ter. Não há permissão por usuário: vale para a empresa toda.
-- **Funcionalidades** (catálogo no código): `appointments`, `recurrences`, `clients`, `employees`, `professionals`, `users`, `services`, `plans`, `contracts`, `tabs` (comandas), `payments`, `payment-methods`, `anamnesis` (fichas), `anamnesis-templates`, `anamnesis-audit`, `class-groups`, `settings`, `client-portal` (portal do cliente; só `view` e `edit`) `messages` (mensagens automáticas; só `view` e `edit`, exige o Visualiza do `client-portal`) `client-portfolio` (carteira de clientes; só `view`, exige o Visualiza de `clients` e `professionals`) e `receivables` (contas a receber; só `view`, exige o Visualiza de `payments` e `clients`). Os dois são **liberados empresa por empresa** pelo SUPER_ADMIN: ficam **fora do modelo padrão** de empresa nova (desde 2026-11-05) e a migração `20261106100000_client_portal_off` **tirou o `client-portal` de todas as empresas** que o tinham (a `20261104192412_portal_rules` o dera a todas, e o item aparecia no menu de todo ADMIN). Só a liberação foi apagada: as regras do portal de cada clínica, as contas dos clientes e os vínculos ficam, e voltam a valer quando o portal é liberado de novo.
+- **Funcionalidades** (catálogo no código): `appointments`, `recurrences`, `clients`, `employees`, `professionals`, `users`, `services`, `plans`, `contracts`, `tabs` (comandas), `payments`, `payment-methods`, `anamnesis` (fichas), `anamnesis-templates`, `anamnesis-audit`, `class-groups`, `settings`, `client-portal` (portal do cliente; só `view` e `edit`) `messages` (mensagens automáticas; só `view` e `edit`, exige o Visualiza do `client-portal`) `client-portfolio` (carteira de clientes; só `view`, exige o Visualiza de `clients` e `professionals`) `receivables` (contas a receber; só `view`, exige o Visualiza de `payments` e `clients`) `appointments-report` (relatório de agendamentos; só `view`, exige o Visualiza de `appointments`) e `rankings` (só `view`, exige o Visualiza de `appointments` e `payments`). Os dois são **liberados empresa por empresa** pelo SUPER_ADMIN: ficam **fora do modelo padrão** de empresa nova (desde 2026-11-05) e a migração `20261106100000_client_portal_off` **tirou o `client-portal` de todas as empresas** que o tinham (a `20261104192412_portal_rules` o dera a todas, e o item aparecia no menu de todo ADMIN). Só a liberação foi apagada: as regras do portal de cada clínica, as contas dos clientes e os vínculos ficam, e voltam a valer quando o portal é liberado de novo.
 - **Ações** por funcionalidade: `view` (visualiza), `edit` (edita), `create` (cria) e `remove` (exclui ou inativa). Cada funcionalidade só aceita as ações que fazem sentido: `anamnesis-audit` só tem `view` e `settings` só tem `view` e `edit`.
 - **Sem linha, sem acesso:** uma funcionalidade nova nasce desmarcada em todas as empresas; o SUPER_ADMIN a libera.
 - **Regras da matriz** (400 ao gravar): chave conhecida e sem repetição; `edit`, `create` e `remove` exigem `view`; e algumas funcionalidades exigem ver outras, porque as telas delas listam esses cadastros: `appointments`, `recurrences`, `contracts`, `tabs`, `anamnesis` e `class-groups` exigem `view` em `clients`, `professionals` e `services`.
@@ -534,6 +534,70 @@
   - `months`: gráfico fixo de 9 meses (os 5 anteriores, o atual e os 3 seguintes), pelo **vencimento**: `month` (AAAA-MM), `paid`, `overdue` e `upcoming`. Sem vencimento não entra no gráfico.
   - Totais com `total` (texto com duas casas) e `count`.
 - `GET /receivables/debtors` (`search` pelo nome sem acentos nem caixa, `page`, `limit` até 100): um item por cliente com atraso, também cliente inativado (a dívida continua): `id`, `name`, `photoUrl`, `phone` (contato principal), `overdue` (soma em atraso), `count` e `oldestDueDate` (vencimento mais antigo em atraso). Ordem: maior valor em atraso primeiro; empate pelo nome.
+
+## Relatório de agendamentos
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Agendamentos). Funcionalidade `appointments-report`, só Visualiza, marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda ou de um profissional (`professionalId` opcional; inexistente, de outra empresa ou que não é profissional: 404). Período como nos demais relatórios (`from`/`to`, AAAA-MM-DD no fuso da empresa, pontas incluídas; padrão: o mês atual; fim antes do início: 400), pelo **início** do agendamento.
+- `GET /appointment-report`:
+  - `total`: agendamentos **não cancelados** (concluídos, faltas e os ainda sem desfecho); `open`: agendado, confirmado ou em andamento; `fromPortal`: dos não cancelados, os marcados pelo cliente no app.
+  - `completed`, `noShow` e `cancelled`. O cancelamento de aula pela clínica (sessão cancelada, saída da turma) também conta como cancelado. Na turma, cada aluno é um agendamento.
+  - `noShowRate` = faltas ÷ (concluídos + faltas), só o que já deveria ter acontecido; `cancelRate` = cancelados ÷ todos (com os cancelados). De 0 a 1; `null` sem base.
+  - `series`: `unit` `day` (até 62 dias) ou `week`, com todos os intervalos: `date`, `completed`, `noShow`, `cancelled` e `open`.
+  - `peak`: os não cancelados por dia da semana (`weekDay`, 0 = domingo) e hora de início no fuso da empresa (`hour`), só as células com algum agendamento.
+  - `byProfessional` e `byService`: `id`, `name`, `total` (não cancelados), `completed`, `noShow`, `cancelled`; no serviço, também `minutes` (duração somada dos não cancelados). Ordem: maior total; empate pelo nome.
+- **Ocupação** (horas marcadas ÷ horas disponíveis) fica de fora: o horário de funcionamento é da empresa, não de cada profissional, e a conta sairia errada.
+
+## Rankings
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Rankings). Funcionalidade `rankings`, só Visualiza, marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda. Período como nos demais relatórios (padrão: o mês atual).
+- Base: atendimentos `COMPLETED` no período (pelo início) e o **pagamento próprio** de cada um, quando `PAID` ou `PENDING` e não excluído. **Faturado** é a soma desses pagamentos (a mesma conta da Carteira de clientes). A sessão de pacote conta na quantidade, **sem valor** (o pagamento é da contratação; o rateio fica para a comissão).
+- `GET /rankings?from=&to=&sort=`: `summary` (`amount`, `completed`, `average` = faturado ÷ concluídos com pagamento, e `packages`: quantidade e valor dos pacotes contratados no período); `services` (com `share`, a parte do faturado, de 0 a 1), `professionals` (com `clients`, clientes distintos atendidos) e `clients` (com `packages` e `lastVisit`, o último concluído no período).
+- **Clientes** somam ao faturado os **pacotes contratados no período** (pela data da contratação; o valor é a soma dos pagamentos `PAID` ou `PENDING` não excluídos da contratação, então a parte cancelada não conta). O ticket médio do cliente continua só dos atendimentos.
+- Listas inteiras, ordenadas por `sort`: `amount` (padrão: faturado, depois quantidade) ou `count` (quantidade, depois faturado); empate pelo nome. A tela mostra os 10 primeiros; a impressão, todos. `sort` inválido: 400.
+
+## Relatório financeiro
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Financeiro). Funcionalidade `financial-report`, só Visualiza, exige ver Pagamentos; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda: o que **entrou no caixa**. Complementa o Contas a receber (o que falta receber) e os Rankings (o faturado pelos atendimentos).
+- Base: pagamentos `PAID`, não excluídos, pela **data do pagamento** (`paidAt`) no período, no fuso da empresa (padrão: o mês atual). Filtro opcional por método de pagamento (`paymentMethodId`; de outra empresa: 404).
+- `GET /financial-report?from=&to=&paymentMethodId=`: `received` (total), `appointments` e `packages` (pela origem: pagamento de atendimento ou de contratação), `series` (por dia até 62 dias, senão por semana, separando atendimentos e pacotes) e `byMethod` (valor, quantidade e `share`, do maior para o menor; pagamento sem método fica numa linha com `id` null).
+- `GET /financial-report/payments` (paginado, mesmos filtros): o extrato, do pagamento mais recente para o mais antigo, com data, valor, origem, descrição (serviço do atendimento ou nome do pacote), cliente e método.
+
+## Relatório de pacotes
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Pacotes). Funcionalidade `packages-report`, só Visualiza, exige ver Contratações; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda: a vida das contratações de pacote. Os valores recebidos e em atraso ficam no Financeiro e no Contas a receber.
+- No período (padrão: o mês atual, no fuso da empresa): **novas** (pela data da contratação, com o valor contratado, `totalAmount`) e **canceladas** (pela data do cancelamento).
+- Hoje: **ativas** (não canceladas e com data final de hoje em diante, inclusive as que ainda vão começar; vale o período contratado, mesmo sem sessões restantes) e **terminando em breve** (ativas com data final até hoje + 30 dias, quando o cliente não tem outra contratação ativa terminando depois, ou seja, ainda não renovou).
+- `GET /packages-report?from=&to=`: `created` (quantidade e valor), `active`, `cancelled`, `ending` e `byPlan` (os mesmos números por pacote, só os pacotes com algum deles, do maior valor contratado para o menor).
+- `GET /packages-report/ending` (paginado): as contratações terminando, do fim mais próximo ao mais distante (empate pelo nome do cliente), com o cliente (e o celular principal), o pacote, a data final e as **sessões**: concluídas de quantas a contratação tem (os agendamentos das recorrências dela, sem os cancelados).
+
+## Perfil do cliente
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Perfil do cliente). Funcionalidade `clients-report`, só Visualiza, exige ver Clientes e Agendamentos; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda. A base são os clientes **ativos no cadastro** (não inativados); os inativados ficam fora de tudo.
+- Hoje: **ativo** (atendimento `COMPLETED` nos últimos **60 dias** ou agendamento futuro `SCHEDULED`/`CONFIRMED`; a mesma regra da Carteira de clientes) e **sem retorno** (o resto, inclusive quem nunca foi atendido); **com o app** (cadastro ligado a uma conta do app).
+- No período (padrão: o mês atual, no fuso da empresa): **novos** (o primeiro atendimento concluído na empresa caiu no período); **atendidos** (com concluído no período) e **frequência** (concluídos ÷ atendidos).
+- **Tipo de atendimento**, sobre os atendidos: avulso, recorrência, pacote (recorrência de uma contratação) e turma (sessão de turma). Não são exclusivos: o pacote numa turma conta nos dois, e um cliente pode ter vários tipos.
+- **Por onde agendam:** os concluídos do período pela origem (clínica ou app).
+- **Cadastro:** faixas de idade (até 17, 18 a 29, 30 a 44, 45 a 59, 60 ou mais, em anos completos hoje) e cidades (pelo endereço principal: as 5 mais comuns, "Outras" e sem endereço). Sem o dado, conta como não informado.
+- `GET /clients-report?from=&to=`: os números acima, cada um com a quantidade e a parte da base (`share`, de 0 a 1).
+- `GET /clients-report/birthdays` (paginado, mesmo período): **aniversariantes**, pela data do aniversário (empate pelo nome), com a data de nascimento, a idade que completa e o celular principal. Quem nasceu em 29/02 comemora em 28/02 nos anos que não são bissextos.
+
+## Dashboard
+
+> **Estado:** 2026-11-10. Funcionalidade `dashboard`, só Visualiza, marcada no modelo padrão de empresa nova. Não tem rota própria na API.
+
+- Tela do **ADMIN** que junta os números dos relatórios, só com métricas e gráficos. Os dados vêm das rotas dos relatórios (Financeiro, Contas a receber, Agendamentos, Rankings, Pacotes, Perfil do cliente), então os números são sempre os mesmos dos relatórios.
+- Cada bloco só aparece quando a empresa tem a funcionalidade do relatório de origem; a API de cada relatório continua conferindo a sua.
+- As métricas do período comparam com o **período anterior**: um mês inteiro com o mês anterior inteiro (ex.: novembro com outubro); qualquer outro período com os dias imediatamente antes, do mesmo tamanho. A tela consulta as mesmas rotas com as datas anteriores.
 
 ## Turmas
 
