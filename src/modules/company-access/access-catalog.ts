@@ -34,6 +34,7 @@ export const FEATURE_KEYS = [
   "financial-report",
   "packages-report",
   "clients-report",
+  "dashboard",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
@@ -128,6 +129,9 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     actions: ["view"],
     requiresView: ["clients", "appointments"],
   },
+  // Dashboard: só a tela (sem rota própria na API); cada bloco usa a rota do
+  // relatório de origem e segue a funcionalidade dele.
+  { key: "dashboard", actions: ["view"] },
 ];
 
 // Funcionalidades que o modelo padrão de uma empresa nova deixa de fora.

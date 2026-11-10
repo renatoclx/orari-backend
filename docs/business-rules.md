@@ -591,6 +591,14 @@
 - `GET /clients-report?from=&to=`: os números acima, cada um com a quantidade e a parte da base (`share`, de 0 a 1).
 - `GET /clients-report/birthdays` (paginado, mesmo período): **aniversariantes**, pela data do aniversário (empate pelo nome), com a data de nascimento, a idade que completa e o celular principal. Quem nasceu em 29/02 comemora em 28/02 nos anos que não são bissextos.
 
+## Dashboard
+
+> **Estado:** 2026-11-10. Funcionalidade `dashboard`, só Visualiza, marcada no modelo padrão de empresa nova. Não tem rota própria na API.
+
+- Tela do **ADMIN** que junta os números dos relatórios, só com métricas e gráficos. Os dados vêm das rotas dos relatórios (Financeiro, Contas a receber, Agendamentos, Rankings, Pacotes, Perfil do cliente), então os números são sempre os mesmos dos relatórios.
+- Cada bloco só aparece quando a empresa tem a funcionalidade do relatório de origem; a API de cada relatório continua conferindo a sua.
+- As métricas do período comparam com o **período anterior**: um mês inteiro com o mês anterior inteiro (ex.: novembro com outubro); qualquer outro período com os dias imediatamente antes, do mesmo tamanho. A tela consulta as mesmas rotas com as datas anteriores.
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).
