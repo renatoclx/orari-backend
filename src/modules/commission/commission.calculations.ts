@@ -60,3 +60,27 @@ export function commissionAmount(
     ? rate
     : roundMoney(base.times(rate).dividedBy(100));
 }
+
+/** O que a conta do "pago pelo cliente" lê de uma comissão. */
+export interface PaidSource {
+  base: Decimal;
+  payment: { status: PaymentStatus; deletedAt: Date | null } | null;
+  /** Contratação da sessão de pacote: total e o já recebido (PAID). */
+  plan: { total: Decimal; paid: Decimal } | null;
+}
+
+/**
+ * Quanto da base o cliente já pagou: avulso, a base inteira com o pagamento
+ * PAID (senão zero); sessão de pacote, a base na proporção do que a
+ * contratação já recebeu.
+ */
+export function clientPaidFor({ base, payment, plan }: PaidSource): Decimal {
+  if (plan) {
+    if (plan.total.isZero()) return new Decimal(0);
+    const ratio = Decimal.min(1, plan.paid.dividedBy(plan.total));
+    return roundMoney(base.times(ratio));
+  }
+  return payment?.status === PaymentStatus.PAID && payment.deletedAt === null
+    ? base
+    : new Decimal(0);
+}

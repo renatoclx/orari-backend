@@ -1,12 +1,91 @@
-import { Injectable } from "@nestjs/common";
-import { AppointmentStatus } from "../../../generated/prisma/enums";
-import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
-import { PrismaService } from "../../prisma/prisma.service";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import {
+  AppointmentStatus,
+  CommissionType,
+  PaymentStatus,
+  PeopleType,
+} from "../../../generated/prisma/enums";
+import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
+import type { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
+import { periodOf } from "../../common/time/report-period";
+import { PrismaService } from "../../prisma/prisma.service";
+import { CompanyService } from "../company/company.service";
+import {
+  clientPaidFor,
   commissionAmount,
   commissionBase,
   packageSessionValue,
 } from "./commission.calculations";
+import type {
+  CommissionListQueryDto,
+  CommissionSummaryQueryDto,
+} from "./dto/commission-query.dto";
+
+/** Totais de um grupo de comissões (valores em texto, duas casas). */
+export interface CommissionTotals {
+  count: number;
+  base: string;
+  amount: string;
+  /** Quanto da base os clientes já pagaram. */
+  clientPaid: string;
+}
+
+export interface CommissionSummary extends CommissionTotals {
+  /** Do maior valor de comissão para o menor; empate pelo nome. */
+  byProfessional: (CommissionTotals & { id: string; name: string })[];
+}
+
+export interface CommissionItem {
+  id: string;
+  appointment: {
+    id: string;
+    startAt: Date;
+    client: { id: string; name: string };
+    service: { id: string; name: string };
+    /** Sessão de pacote (a base é a parte da contratação). */
+    fromPackage: boolean;
+  };
+  professional: { id: string; name: string };
+  baseAmount: string;
+  type: CommissionType;
+  rate: string;
+  amount: string;
+  clientPaid: string;
+}
+
+const person = { select: { id: true, name: true } } as const;
+
+// O que a tela lê de cada comissão, com o necessário para o "pago pelo cliente".
+const commissionSelect = {
+  id: true,
+  baseAmount: true,
+  type: true,
+  rate: true,
+  amount: true,
+  professional: person,
+  appointment: {
+    select: {
+      id: true,
+      startAt: true,
+      client: person,
+      service: person,
+      payment: { select: { status: true, deletedAt: true } },
+      recurringAppointment: {
+        select: {
+          clientPlan: {
+            select: {
+              totalAmount: true,
+              payments: {
+                where: { status: PaymentStatus.PAID, deletedAt: null },
+                select: { amount: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 // Quantos atendimentos de um serviço por rodada: o resto fica para a próxima.
 const BATCH = 500;
@@ -18,7 +97,115 @@ const BATCH = 500;
  */
 @Injectable()
 export class CommissionService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly companyService: CompanyService,
+  ) {}
+
+  /** Totais do período e por profissional (ver "Comissão" nas regras). */
+  async summary(
+    query: CommissionSummaryQueryDto,
+    companyId: string,
+    now = new Date(),
+  ): Promise<CommissionSummary> {
+    const where = await this.listWhere(query, companyId, now);
+    const rows = await this.prisma.commission.findMany({
+      where,
+      select: commissionSelect,
+    });
+
+    const total = newTotals();
+    const byProfessional = new Map<
+      string,
+      Totals & { id: string; name: string }
+    >();
+    for (const row of rows) {
+      const paid = paidOf(row);
+      addTo(total, row.baseAmount, row.amount, paid);
+      const current = byProfessional.get(row.professional.id) ?? {
+        ...row.professional,
+        ...newTotals(),
+      };
+      addTo(current, row.baseAmount, row.amount, paid);
+      byProfessional.set(row.professional.id, current);
+    }
+
+    return {
+      ...totalsOut(total),
+      byProfessional: [...byProfessional.values()]
+        .sort(
+          (a, b) =>
+            b.amount.comparedTo(a.amount) || a.name.localeCompare(b.name),
+        )
+        .map(({ id, name, ...totals }) => ({ id, name, ...totalsOut(totals) })),
+    };
+  }
+
+  /** Atendimento a atendimento, do mais recente para o mais antigo. */
+  async list(
+    { page, limit, ...query }: CommissionListQueryDto,
+    companyId: string,
+    now = new Date(),
+  ): Promise<PaginatedResult<CommissionItem>> {
+    const where = await this.listWhere(query, companyId, now);
+    const [rows, total] = await Promise.all([
+      this.prisma.commission.findMany({
+        where,
+        select: commissionSelect,
+        orderBy: [{ appointment: { startAt: "desc" } }, { id: "asc" }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.commission.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        appointment: {
+          id: row.appointment.id,
+          startAt: row.appointment.startAt,
+          client: row.appointment.client,
+          service: row.appointment.service,
+          fromPackage: row.appointment.recurringAppointment?.clientPlan != null,
+        },
+        professional: row.professional,
+        baseAmount: row.baseAmount.toFixed(2),
+        type: row.type,
+        rate: row.rate.toFixed(2),
+        amount: row.amount.toFixed(2),
+        clientPaid: paidOf(row).toFixed(2),
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  // Filtro comum: empresa, atendimento no período e o profissional (404 se não
+  // for profissional da empresa).
+  private async listWhere(
+    { from, to, professionalId }: CommissionSummaryQueryDto,
+    companyId: string,
+    now: Date,
+  ) {
+    const timeZone = await this.companyService.getTimeZone(companyId);
+    const period = periodOf(from, to, timeZone, now);
+    if (professionalId) {
+      const professional = await this.prisma.people.findFirst({
+        where: { id: professionalId, companyId, type: PeopleType.PROFESSIONAL },
+        select: { id: true },
+      });
+      if (!professional) {
+        throw new NotFoundException("Profissional não encontrado");
+      }
+    }
+    return {
+      companyId,
+      professionalId,
+      appointment: { startAt: { gte: period.start, lt: period.end } },
+    };
+  }
 
   /** Gera as comissões que faltam; devolve quantas foram gravadas. */
   async generatePending(): Promise<number> {
@@ -111,4 +298,61 @@ export class CommissionService {
     }
     return created;
   }
+}
+
+type Totals = {
+  count: number;
+  base: Decimal;
+  amount: Decimal;
+  clientPaid: Decimal;
+};
+
+const newTotals = (): Totals => ({
+  count: 0,
+  base: new Decimal(0),
+  amount: new Decimal(0),
+  clientPaid: new Decimal(0),
+});
+
+function addTo(totals: Totals, base: Decimal, amount: Decimal, paid: Decimal) {
+  totals.count += 1;
+  totals.base = totals.base.plus(base);
+  totals.amount = totals.amount.plus(amount);
+  totals.clientPaid = totals.clientPaid.plus(paid);
+}
+
+const totalsOut = (totals: Totals): CommissionTotals => ({
+  count: totals.count,
+  base: totals.base.toFixed(2),
+  amount: totals.amount.toFixed(2),
+  clientPaid: totals.clientPaid.toFixed(2),
+});
+
+// "Pago pelo cliente" de uma comissão lida com o commissionSelect.
+function paidOf(row: {
+  baseAmount: Decimal;
+  appointment: {
+    payment: { status: PaymentStatus; deletedAt: Date | null } | null;
+    recurringAppointment: {
+      clientPlan: {
+        totalAmount: Decimal;
+        payments: { amount: Decimal }[];
+      } | null;
+    } | null;
+  };
+}): Decimal {
+  const plan = row.appointment.recurringAppointment?.clientPlan;
+  return clientPaidFor({
+    base: row.baseAmount,
+    payment: row.appointment.payment,
+    plan: plan
+      ? {
+          total: plan.totalAmount,
+          paid: plan.payments.reduce(
+            (sum, payment) => sum.plus(payment.amount),
+            new Decimal(0),
+          ),
+        }
+      : null,
+  });
 }

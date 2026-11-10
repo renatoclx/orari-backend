@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
+import { NotFoundException } from "@nestjs/common";
+import { periodOf } from "../../common/time/report-period";
 import type { PrismaService } from "../../prisma/prisma.service";
+import type { CompanyService } from "../company/company.service";
 import {
+  clientPaidFor,
   commissionAmount,
   commissionBase,
   packageSessionValue,
@@ -60,7 +64,10 @@ describe("CommissionService.generatePending", () => {
     appointment: { findMany: vi.fn(), count: vi.fn() },
     commission: { createMany: vi.fn() },
   };
-  const service = new CommissionService(prismaMock as unknown as PrismaService);
+  const service = new CommissionService(
+    prismaMock as unknown as PrismaService,
+    {} as CompanyService,
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -134,5 +141,128 @@ describe("CommissionService.generatePending", () => {
     ]);
     // A contratação é contada uma vez só.
     expect(prismaMock.appointment.count).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("clientPaidFor", () => {
+  it("avulso: a base inteira só com o pagamento PAID", () => {
+    const base = d(10);
+    expect(
+      clientPaidFor({ base, payment: paid(10, "PAID"), plan: null }),
+    ).toEqual(base);
+    expect(
+      clientPaidFor({ base, payment: paid(10, "PENDING"), plan: null }).toFixed(
+        2,
+      ),
+    ).toBe("0.00");
+    expect(clientPaidFor({ base, payment: null, plan: null }).toFixed(2)).toBe(
+      "0.00",
+    );
+  });
+
+  it("sessão de pacote: na proporção do que a contratação recebeu", () => {
+    const base = d(20);
+    expect(
+      clientPaidFor({
+        base,
+        payment: null,
+        plan: { total: d(480), paid: d(240) },
+      }).toFixed(2),
+    ).toBe("10.00");
+    // Pago a mais (ou tudo) não passa da base.
+    expect(
+      clientPaidFor({
+        base,
+        payment: null,
+        plan: { total: d(480), paid: d(500) },
+      }).toFixed(2),
+    ).toBe("20.00");
+  });
+});
+
+describe("CommissionService: consulta", () => {
+  const TZ = "America/Sao_Paulo";
+  const NOW = new Date("2026-11-15T15:00:00Z");
+  const november = periodOf(undefined, undefined, TZ, NOW);
+  const prismaMock = {
+    commission: { findMany: vi.fn(), count: vi.fn() },
+    people: { findFirst: vi.fn() },
+  };
+  const service = new CommissionService(
+    prismaMock as unknown as PrismaService,
+    { getTimeZone: vi.fn().mockResolvedValue(TZ) } as unknown as CompanyService,
+  );
+  const camila = { id: "p-1", name: "Camila" };
+  const davi = { id: "p-2", name: "Davi" };
+  const row = (
+    professional: { id: string; name: string },
+    amount: number,
+    payment: unknown,
+  ) => ({
+    id: `c-${amount}`,
+    baseAmount: d(10),
+    type: "PERCENT",
+    rate: d(40),
+    amount: d(amount),
+    professional,
+    appointment: {
+      id: "a",
+      startAt: NOW,
+      client: { id: "cl", name: "Ana" },
+      service: { id: "s", name: "Pilates" },
+      payment,
+      recurringAppointment: null,
+    },
+  });
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("totais e por profissional, só a empresa e o período", async () => {
+    prismaMock.commission.findMany.mockResolvedValue([
+      row(camila, 4, paid(10, "PAID")),
+      row(camila, 4, paid(10, "PENDING")),
+      row(davi, 6, paid(10, "PAID")),
+    ]);
+    const result = await service.summary({}, "co-1", NOW);
+    expect(
+      (prismaMock.commission.findMany.mock.calls[0][0] as { where: object })
+        .where,
+    ).toEqual({
+      companyId: "co-1",
+      professionalId: undefined,
+      appointment: { startAt: { gte: november.start, lt: november.end } },
+    });
+    expect(result).toEqual({
+      count: 3,
+      base: "30.00",
+      amount: "14.00",
+      clientPaid: "20.00",
+      byProfessional: [
+        {
+          id: "p-1",
+          name: "Camila",
+          count: 2,
+          base: "20.00",
+          amount: "8.00",
+          clientPaid: "10.00",
+        },
+        {
+          id: "p-2",
+          name: "Davi",
+          count: 1,
+          base: "10.00",
+          amount: "6.00",
+          clientPaid: "10.00",
+        },
+      ],
+    });
+  });
+
+  it("profissional de outra empresa: 404", async () => {
+    prismaMock.people.findFirst.mockResolvedValue(null);
+    await expect(
+      service.list({ professionalId: "p-x", page: 1, limit: 10 }, "co-1", NOW),
+    ).rejects.toThrow(NotFoundException);
+    expect(prismaMock.commission.findMany).not.toHaveBeenCalled();
   });
 });

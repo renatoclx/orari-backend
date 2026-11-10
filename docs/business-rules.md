@@ -602,7 +602,7 @@
 
 ## Comissão
 
-> **Estado:** 2026-11-10, etapas 1 (regra no serviço) e 2 (geração na conclusão). Tela, adiantamentos e fechamento nas próximas etapas.
+> **Estado:** 2026-11-10, etapas 1 (regra no serviço), 2 (geração na conclusão) e 3 (consulta). Adiantamentos e fechamento nas próximas etapas. Funcionalidade `commissions` (por ora só Visualiza), exige ver Profissionais e Pagamentos; marcada no modelo padrão.
 
 - A regra fica no **serviço** (ver "Serviços"): percentual do valor cobrado ou valor fixo por atendimento. `commissionSince` marca quando a comissão passou a valer (ao sair de "sem comissão"; tirar a comissão limpa a data; trocar tipo ou valor mantém). Só os atendimentos que **terminam depois** dessa data geram comissão: **nada retroativo**.
 - **Uma comissão por atendimento concluído** (`Commission`, única por agendamento), do profissional do atendimento. **Cancelado não gera** (nunca chega a concluído). Na turma, cada aluno é um atendimento, com a sua comissão.
@@ -611,7 +611,11 @@
   - **sessão de pacote**: o total contratado ÷ as sessões geradas na contratação (todas, inclusive as canceladas depois), em duas casas (decisão de 2026-11-10: o cancelamento do pacote não muda o valor por sessão; as sessões canceladas simplesmente não geram);
   - **demais** (avulso, recorrência, turma avulsa): o valor do pagamento do atendimento, se não estiver cancelado nem excluído; sem ele, o **preço do serviço** (o avulso que ainda vai ser cobrado na comanda).
 - **Valor**: percentual × base (duas casas, metade para cima) ou o valor fixo. Base, tipo, taxa e valor ficam gravados: mudar a regra do serviço depois não mexe no que já foi gerado.
-- A comissão nasce **mesmo que o cliente ainda não tenha pago**; o quanto o cliente já pagou aparece na tela de comissões (próxima etapa).
+- A comissão nasce **mesmo que o cliente ainda não tenha pago**; o quanto o cliente já pagou aparece na consulta.
+- **Consulta** (só o **ADMIN**): pela **data do atendimento** no período (padrão: o mês atual, no fuso da empresa), com profissional opcional (de outra empresa: 404).
+  - `GET /commissions/summary`: quantidade, base, comissão e **pago pelo cliente**, no total e por profissional (do maior valor de comissão para o menor).
+  - `GET /commissions` (paginado): atendimento a atendimento, do mais recente para o mais antigo, com data, cliente, serviço, se é sessão de pacote, base, regra, valor e o pago pelo cliente.
+  - **Pago pelo cliente**: avulso com o pagamento `PAID` = a base inteira (senão zero); sessão de pacote = a base na proporção do que a contratação já recebeu (`PAID` ÷ total), sem passar da base.
 
 ## Turmas
 
