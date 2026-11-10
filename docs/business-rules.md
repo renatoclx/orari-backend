@@ -568,6 +568,16 @@
 - `GET /financial-report?from=&to=&paymentMethodId=`: `received` (total), `appointments` e `packages` (pela origem: pagamento de atendimento ou de contratação), `series` (por dia até 62 dias, senão por semana, separando atendimentos e pacotes) e `byMethod` (valor, quantidade e `share`, do maior para o menor; pagamento sem método fica numa linha com `id` null).
 - `GET /financial-report/payments` (paginado, mesmos filtros): o extrato, do pagamento mais recente para o mais antigo, com data, valor, origem, descrição (serviço do atendimento ou nome do pacote), cliente e método.
 
+## Relatório de pacotes
+
+> **Estado:** backend em 2026-11-10 (Relatórios → Pacotes). Funcionalidade `packages-report`, só Visualiza, exige ver Contratações; marcada no modelo padrão de empresa nova.
+
+- Relatório só de leitura, só do **ADMIN**, da empresa toda: a vida das contratações de pacote. Os valores recebidos e em atraso ficam no Financeiro e no Contas a receber.
+- No período (padrão: o mês atual, no fuso da empresa): **novas** (pela data da contratação, com o valor contratado, `totalAmount`) e **canceladas** (pela data do cancelamento).
+- Hoje: **ativas** (não canceladas e com data final de hoje em diante, inclusive as que ainda vão começar; vale o período contratado, mesmo sem sessões restantes) e **terminando em breve** (ativas com data final até hoje + 30 dias, quando o cliente não tem outra contratação ativa terminando depois, ou seja, ainda não renovou).
+- `GET /packages-report?from=&to=`: `created` (quantidade e valor), `active`, `cancelled`, `ending` e `byPlan` (os mesmos números por pacote, só os pacotes com algum deles, do maior valor contratado para o menor).
+- `GET /packages-report/ending` (paginado): as contratações terminando, do fim mais próximo ao mais distante (empate pelo nome do cliente), com o cliente (e o celular principal), o pacote, a data final e as **sessões**: concluídas de quantas a contratação tem (os agendamentos das recorrências dela, sem os cancelados).
+
 ## Turmas
 
 > O desenho completo e as decisões estão em `turmas.md`. As regras abaixo valem na API (etapa 1: cadastro de turmas fixas; etapa 2: sessões e encaixe avulso; etapa 3: recorrência e plano na turma; etapa 4: cancelamento da sessão, saída da turma e reposição; etapa 5: agenda por sessão; etapa 6: encaixe em lote e alunos fixos).

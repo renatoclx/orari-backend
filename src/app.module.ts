@@ -34,6 +34,7 @@ import { ReceivablesModule } from "./modules/receivables/receivables.module";
 import { AppointmentReportModule } from "./modules/appointment-report/appointment-report.module";
 import { RankingsModule } from "./modules/rankings/rankings.module";
 import { FinancialReportModule } from "./modules/financial-report/financial-report.module";
+import { PackagesReportModule } from "./modules/packages-report/packages-report.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
 @Module({
@@ -59,6 +60,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     AppointmentReportModule,
     RankingsModule,
     FinancialReportModule,
+    PackagesReportModule,
     AgendaBlockModule,
     PeopleModule,
     ContactModule,
