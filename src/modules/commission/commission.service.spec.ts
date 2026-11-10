@@ -10,6 +10,7 @@ import {
   commissionBase,
   packageSessionValue,
 } from "./commission.calculations";
+import type { CommissionAdvanceService } from "./commission-advance.service";
 import { CommissionService } from "./commission.service";
 
 const d = (value: number | string) => new Decimal(value);
@@ -68,6 +69,7 @@ describe("CommissionService.generatePending", () => {
   const service = new CommissionService(
     prismaMock as unknown as PrismaService,
     {} as CompanyService,
+    {} as CommissionAdvanceService,
   );
 
   beforeEach(() => {
@@ -216,11 +218,13 @@ describe("CommissionService: consulta", () => {
   const november = periodOf(undefined, undefined, TZ, NOW);
   const prismaMock = {
     commission: { findMany: vi.fn(), count: vi.fn() },
-    people: { findFirst: vi.fn() },
+    people: { findFirst: vi.fn(), findMany: vi.fn() },
   };
+  const advanceMock = { openBalances: vi.fn() };
   const service = new CommissionService(
     prismaMock as unknown as PrismaService,
     { getTimeZone: vi.fn().mockResolvedValue(TZ) } as unknown as CompanyService,
+    advanceMock as unknown as CommissionAdvanceService,
   );
   const camila = { id: "p-1", name: "Camila" };
   const davi = { id: "p-2", name: "Davi" };
@@ -245,7 +249,10 @@ describe("CommissionService: consulta", () => {
     },
   });
 
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    advanceMock.openBalances.mockResolvedValue(new Map());
+  });
 
   it("totais e por profissional, só a empresa e o período", async () => {
     prismaMock.commission.findMany.mockResolvedValue([
@@ -267,6 +274,8 @@ describe("CommissionService: consulta", () => {
       base: "30.00",
       amount: "14.00",
       clientPaid: "20.00",
+      advanced: "0.00",
+      toPay: "0.00",
       byProfessional: [
         {
           id: "p-1",
@@ -275,6 +284,8 @@ describe("CommissionService: consulta", () => {
           base: "20.00",
           amount: "8.00",
           clientPaid: "10.00",
+          advanced: "0.00",
+          toPay: "0.00",
         },
         {
           id: "p-2",
@@ -283,9 +294,32 @@ describe("CommissionService: consulta", () => {
           base: "10.00",
           amount: "6.00",
           clientPaid: "10.00",
+          advanced: "0.00",
+          toPay: "0.00",
         },
       ],
     });
+  });
+
+  it("em aberto: adiantado e a pagar; quem só tem saldo também entra", async () => {
+    prismaMock.commission.findMany.mockResolvedValue([
+      row(camila, 4, paid(10, "PAID")),
+    ]);
+    advanceMock.openBalances.mockResolvedValue(
+      new Map([
+        ["p-1", { commission: d(48), advanced: d(30) }],
+        ["p-2", { commission: d(25), advanced: d(0) }],
+      ]),
+    );
+    prismaMock.people.findMany = vi.fn().mockResolvedValue([davi]);
+    const result = await service.summary({}, "co-1", NOW);
+    expect(result).toMatchObject({ advanced: "30.00", toPay: "43.00" });
+    expect(
+      result.byProfessional.map((p) => [p.name, p.count, p.advanced, p.toPay]),
+    ).toEqual([
+      ["Camila", 1, "30.00", "18.00"],
+      ["Davi", 0, "0.00", "25.00"],
+    ]);
   });
 
   it("profissional de outra empresa: 404", async () => {

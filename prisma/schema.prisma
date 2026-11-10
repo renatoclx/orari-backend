@@ -35,6 +35,8 @@ model User {
   agendaBlocks              AgendaBlock[]
   anamnesisTemplateVersions AnamnesisTemplateVersion[]
   anamnesisEntries          AnamnesisEntry[]
+  // Adiantamentos de comissão que este usuário lançou.
+  commissionAdvances        CommissionAdvance[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -155,6 +157,7 @@ model Company {
   plans                 Plan[]
   payments              Payment[]
   commissions           Commission[]
+  commissionAdvances    CommissionAdvance[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
@@ -212,6 +215,7 @@ model People {
   appointmentsAsClient        Appointment[]          @relation("AppointmentClient")
   appointmentsAsProfessional  Appointment[]          @relation("AppointmentProfessional")
   commissionsAsProfessional   Commission[]
+  commissionAdvances          CommissionAdvance[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
@@ -1301,4 +1305,26 @@ model Commission {
   @@index([companyId, professionalId])
   @@index([serviceId])
   @@map("commissions")
+}
+
+// Adiantamento de comissão a um profissional: abatido no fechamento. Enquanto
+// não é fechado, pode ser excluído (exclusão física: lançamento errado).
+model CommissionAdvance {
+  id             String   @id @default(uuid())
+  companyId      String
+  professionalId String
+  amount         Decimal  @db.Decimal(10, 2)
+  // Data do adiantamento pelo calendário (pode ser passada, nunca futura).
+  date           DateTime @db.Date
+  note           String?
+  // Usuário que lançou ("Lançado por").
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  company      Company @relation(fields: [companyId], references: [id])
+  professional People  @relation(fields: [professionalId], references: [id])
+  createdBy    User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, professionalId])
+  @@map("commission_advances")
 }

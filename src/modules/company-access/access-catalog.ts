@@ -133,11 +133,11 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   // Dashboard: só a tela (sem rota própria na API); cada bloco usa a rota do
   // relatório de origem e segue a funcionalidade dele.
   { key: "dashboard", actions: ["view"] },
-  // Financeiro → Comissões: por ora só consulta (adiantamento e fechamento
-  // ganham as ações nas próximas etapas).
+  // Financeiro → Comissões: consulta, lançar (Cria) e excluir (Exclui)
+  // adiantamento. O fechamento ganha a sua ação na etapa 5.
   {
     key: "commissions",
-    actions: ["view"],
+    actions: ["view", "create", "remove"],
     requiresView: ["professionals", "payments"],
   },
 ];

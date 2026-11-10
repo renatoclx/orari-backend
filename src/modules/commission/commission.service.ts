@@ -11,6 +11,10 @@ import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import {
+  CommissionAdvanceService,
+  availableOf,
+} from "./commission-advance.service";
+import {
   clientPaidFor,
   commissionAmount,
   commissionBase,
@@ -30,9 +34,17 @@ export interface CommissionTotals {
   clientPaid: string;
 }
 
-export interface CommissionSummary extends CommissionTotals {
+/** Em aberto (ainda não fechado), sem depender do período. */
+export interface OpenTotals {
+  advanced: string;
+  /** Comissão em aberto menos o adiantado. */
+  toPay: string;
+}
+
+export interface CommissionSummary extends CommissionTotals, OpenTotals {
   /** Do maior valor de comissão para o menor; empate pelo nome. */
-  byProfessional: (CommissionTotals & { id: string; name: string })[];
+  byProfessional: (CommissionTotals &
+    OpenTotals & { id: string; name: string })[];
 }
 
 export interface CommissionItem {
@@ -100,6 +112,7 @@ export class CommissionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly companyService: CompanyService,
+    private readonly advanceService: CommissionAdvanceService,
   ) {}
 
   /** Totais do período e por profissional (ver "Comissão" nas regras). */
@@ -109,10 +122,10 @@ export class CommissionService {
     now = new Date(),
   ): Promise<CommissionSummary> {
     const where = await this.listWhere(query, companyId, now);
-    const rows = await this.prisma.commission.findMany({
-      where,
-      select: commissionSelect,
-    });
+    const [rows, balances] = await Promise.all([
+      this.prisma.commission.findMany({ where, select: commissionSelect }),
+      this.advanceService.openBalances(companyId, query.professionalId),
+    ]);
 
     const total = newTotals();
     const byProfessional = new Map<
@@ -130,14 +143,48 @@ export class CommissionService {
       byProfessional.set(row.professional.id, current);
     }
 
+    // Quem só tem saldo em aberto (sem atendimento no período) entra também.
+    const missing = [...balances.keys()].filter(
+      (id) => !byProfessional.has(id),
+    );
+    if (missing.length > 0) {
+      const people = await this.prisma.people.findMany({
+        where: { id: { in: missing }, companyId },
+        select: { id: true, name: true },
+      });
+      for (const person of people) {
+        byProfessional.set(person.id, { ...person, ...newTotals() });
+      }
+    }
+
+    const zero = { commission: new Decimal(0), advanced: new Decimal(0) };
+    const openOf = (id?: string) => {
+      const list = id ? [balances.get(id) ?? zero] : [...balances.values()];
+      const advanced = list.reduce(
+        (sum, b) => sum.plus(b.advanced),
+        new Decimal(0),
+      );
+      const toPay = list.reduce(
+        (sum, b) => sum.plus(availableOf(b)),
+        new Decimal(0),
+      );
+      return { advanced: advanced.toFixed(2), toPay: toPay.toFixed(2) };
+    };
+
     return {
       ...totalsOut(total),
+      ...openOf(),
       byProfessional: [...byProfessional.values()]
         .sort(
           (a, b) =>
             b.amount.comparedTo(a.amount) || a.name.localeCompare(b.name),
         )
-        .map(({ id, name, ...totals }) => ({ id, name, ...totalsOut(totals) })),
+        .map(({ id, name, ...totals }) => ({
+          id,
+          name,
+          ...totalsOut(totals),
+          ...openOf(id),
+        })),
     };
   }
 

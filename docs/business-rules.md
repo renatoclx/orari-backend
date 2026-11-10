@@ -602,7 +602,7 @@
 
 ## Comissão
 
-> **Estado:** 2026-11-10, etapas 1 (regra no serviço), 2 (geração na conclusão) e 3 (consulta). Adiantamentos e fechamento nas próximas etapas. Funcionalidade `commissions` (por ora só Visualiza), exige ver Profissionais e Pagamentos; marcada no modelo padrão.
+> **Estado:** 2026-11-10, etapas 1 (regra no serviço), 2 (geração na conclusão), 3 (consulta) e 4 (adiantamentos). O fechamento entra na etapa 5. Funcionalidade `commissions` (Visualiza, Cria = lançar adiantamento, Exclui/Inativa = excluir adiantamento), exige ver Profissionais e Pagamentos; marcada no modelo padrão.
 
 - A regra fica no **serviço** (ver "Serviços"): percentual do valor cobrado ou valor fixo por atendimento. `commissionSince` marca quando a comissão passou a valer (ao sair de "sem comissão"; tirar a comissão limpa a data; trocar tipo ou valor mantém). Só os atendimentos que **terminam depois** dessa data geram comissão: **nada retroativo**.
 - **Profissional que não recebe** (2026-11-10): cada profissional tem `receivesCommission` (padrão: sim). O profissional **vinculado a um usuário ADMIN** (o dono que atende) nasce **sem** comissão: o vínculo (na criação ou na alteração do usuário) desliga a chave, e a migração desligou a dos que já estavam vinculados. Depois disso, mudar o tipo do usuário não mexe na chave; quem administra liga ou desliga no cadastro do profissional. Só o **ADMIN** envia o campo (403 para os demais); em quem não é profissional, 400. **Religar vale dali em diante** (`commissionSince` do profissional): o tempo desligado não gera nada retroativo. Desligado, os atendimentos dele não geram comissão em nenhum serviço.
@@ -617,6 +617,8 @@
   - `GET /commissions/summary`: quantidade, base, comissão e **pago pelo cliente**, no total e por profissional (do maior valor de comissão para o menor).
   - `GET /commissions` (paginado): atendimento a atendimento, do mais recente para o mais antigo, com data, cliente, serviço, se é sessão de pacote, base, regra, valor e o pago pelo cliente.
   - **Pago pelo cliente**: avulso com o pagamento `PAID` = a base inteira (senão zero); sessão de pacote = a base na proporção do que a contratação já recebeu (`PAID` ÷ total), sem passar da base.
+  - O resumo traz também, **em aberto** (ainda não fechado) e **sem depender do período**, o `advanced` (adiantado) e o `toPay` (comissão em aberto − adiantado), no total e por profissional; quem só tem saldo em aberto aparece mesmo sem atendimento no período. Até o fechamento existir, tudo o que foi gerado e adiantado está em aberto.
+- **Adiantamentos** (`/commission-advances`, só o **ADMIN**): `POST` lança para um profissional da empresa (404 se não for), com valor maior que zero, data no calendário da empresa (pode ser passada; **futura é 400**) e observação opcional (até 200 caracteres). O valor não passa do **disponível para adiantar** (comissão em aberto − adiantamentos em aberto; 400 com o disponível na mensagem); o profissional fica travado durante a conta, para dois lançamentos simultâneos não passarem juntos do limite. Grava quem lançou. `GET ?professionalId=` lista os do profissional (data mais recente primeiro, com quem lançou); `GET /available?professionalId=` dá o disponível. `DELETE /:id` exclui um lançamento errado (exclusão física, 204), enquanto não houver fechamento.
 
 ## Turmas
 
