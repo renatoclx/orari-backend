@@ -8,12 +8,13 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   ValidateNested,
 } from "class-validator";
 import { PeopleType } from "../../../../generated/prisma/enums";
-import { IsCpf } from "../../../common/validators/document.validator";
+import { IsCpfOrCnpj } from "../../../common/validators/document.validator";
 import {
   PHONE_MESSAGE,
   PHONE_PATTERN,
@@ -31,10 +32,18 @@ export class CreatePeopleDto {
   @IsNotEmpty()
   name!: string;
 
-  /** CPF sem máscara. Opcional; quando informado, precisa ser válido e único na empresa. */
+  /**
+   * CPF sem máscara (no fornecedor, CPF ou CNPJ). Opcional; quando informado,
+   * precisa ser válido e único na empresa.
+   */
   @IsOptional()
-  @IsCpf()
+  @IsCpfOrCnpj()
   document?: string;
+
+  /** Só no fornecedor: categoria de despesa principal; `null` tira. */
+  @IsOptional()
+  @IsUUID(undefined, { message: "Categoria inválida" })
+  expenseCategoryId?: string | null;
 
   /** Opcional. */
   @IsOptional()

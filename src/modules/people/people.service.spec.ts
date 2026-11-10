@@ -26,6 +26,7 @@ describe("PeopleService", () => {
           ? operations(prismaMock)
           : Promise.all(operations),
     ),
+    expenseCategory: { findFirst: vi.fn() },
     people: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -369,6 +370,8 @@ describe("PeopleService", () => {
               where: { isPrincipal: true, deletedAt: null },
               take: 1,
             }) as unknown,
+            // Categoria principal, para a coluna da listagem de fornecedores.
+            expenseCategory: { select: { id: true, name: true } },
           },
         }),
       );
@@ -480,6 +483,41 @@ describe("PeopleService", () => {
         where: { id: "1", companyId: COMPANY_ID, deletedAt: null },
         omit: { normalizedName: true },
       });
+    });
+  });
+
+  describe("fornecedor: CNPJ e categoria principal", () => {
+    const cnpj = "11222333000181";
+
+    it("CNPJ só no fornecedor", async () => {
+      await expect(
+        peopleService.create(
+          { ...dto, type: "CLIENT", document: cnpj } as never,
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("CNPJ só no cadastro de fornecedor");
+    });
+
+    it("categoria só no fornecedor e precisa estar ativa na empresa", async () => {
+      await expect(
+        peopleService.create(
+          { ...dto, type: "CLIENT", expenseCategoryId: "cat-1" } as never,
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("Categoria principal só no cadastro de fornecedor");
+
+      prismaMock.expenseCategory.findFirst.mockResolvedValue(null);
+      await expect(
+        peopleService.create(
+          {
+            ...dto,
+            type: "SUPPLIER",
+            document: cnpj,
+            expenseCategoryId: "cat-x",
+          } as never,
+          COMPANY_ID,
+        ),
+      ).rejects.toThrow("Escolha uma categoria de despesa ativa");
     });
   });
 

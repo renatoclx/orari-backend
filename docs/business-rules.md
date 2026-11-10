@@ -213,7 +213,8 @@
 - Usuários só acessam pessoas da própria empresa. Pessoas de outra empresa respondem 404.
 - Tipos de pessoa: cliente (`CLIENT`), funcionário (`EMPLOYEE`), profissional (`PROFESSIONAL`) e, desde 2026-11-10, **fornecedor** (`SUPPLIER`, favorecido das contas a pagar), todos com os mesmos campos. Cada tipo tem a sua funcionalidade em Acessos e limites (`clients`, `employees`, `professionals`, `suppliers`); a listagem sem tipo exige todas.
 - Só o nome e o tipo da pessoa são obrigatórios; CPF e data de nascimento são opcionais, para qualquer tipo de pessoa. Assim um cliente pode ser cadastrado só com o nome e um telefone (contato).
-- O documento da pessoa, quando informado, é um CPF válido, sem máscara.
+- O documento da pessoa, quando informado, é um CPF válido, sem máscara. Só o **fornecedor** pode ter **CNPJ** (14 dígitos, válido; nos demais tipos: 400).
+- Só o fornecedor tem **categoria principal** (`expenseCategoryId`, opcional): uma categoria de despesa ativa da empresa (400), usada para pré-preencher as contas a pagar dele; em outro tipo: 400. Se a pessoa deixar de ser fornecedor, a categoria sai. A listagem traz a categoria (`expenseCategory`).
 - Pessoas podem ser filtradas por nome (busca parcial que ignora acentos e maiúsculas), por CPF (exato) e por tipo.
 - A observação da pessoa é opcional, de texto livre, com até 1000 caracteres.
 - O cadastro da pessoa pode trazer, de uma vez, um telefone principal, uma lista de contatos e uma lista de endereços (até 10 de cada). Pessoa, contatos e endereços são criados juntos: se qualquer parte falhar, nada é criado.

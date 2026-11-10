@@ -59,6 +59,8 @@ type PrincipalAddress = Prisma.AddressGetPayload<typeof principalAddressQuery>;
 
 export type PeopleListItem = PublicPeople & {
   principalContact: PrincipalContact | null;
+  /** Só no fornecedor: a categoria principal (nome para a listagem). */
+  expenseCategory?: { id: string; name: string } | null;
 };
 
 export type PeopleDetail = PeopleListItem & {
@@ -132,6 +134,12 @@ export class PeopleService {
   async create(dto: CreatePeopleDto, companyId: string): Promise<PublicPeople> {
     const { phone, contacts = [], addresses = [], ...person } = dto;
     ensureCommissionFitsType(dto.receivesCommission, person.type);
+    await this.ensureSupplierFields(
+      person.type,
+      dto.document,
+      dto.expenseCategoryId,
+      companyId,
+    );
 
     this.ensureAtMostOnePrincipal(phone, contacts, addresses);
     // Antes de gravar: cidade inexistente é 404 e a pessoa não chega a ser criada.
@@ -158,6 +166,36 @@ export class PeopleService {
     }
   }
 
+  /**
+   * Campos do fornecedor: o CNPJ (14 dígitos) só no fornecedor (os demais tipos
+   * são pessoas físicas, só CPF); a categoria principal só no fornecedor e
+   * precisa ser uma categoria de despesa ativa da empresa.
+   */
+  private async ensureSupplierFields(
+    type: PeopleType,
+    document: string | null | undefined,
+    expenseCategoryId: string | null | undefined,
+    companyId: string,
+  ): Promise<void> {
+    const isSupplier = type === PeopleType.SUPPLIER;
+    if (document && document.length === 14 && !isSupplier) {
+      throw new BadRequestException("CNPJ só no cadastro de fornecedor");
+    }
+    if (!expenseCategoryId) return;
+    if (!isSupplier) {
+      throw new BadRequestException(
+        "Categoria principal só no cadastro de fornecedor",
+      );
+    }
+    const category = await this.prisma.expenseCategory.findFirst({
+      where: { id: expenseCategoryId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new BadRequestException("Escolha uma categoria de despesa ativa");
+    }
+  }
+
   async findAll(
     { page, limit, name, document, type, isActive }: FindPeopleQueryDto,
     companyId: string,
@@ -180,7 +218,11 @@ export class PeopleService {
       this.prisma.people.findMany({
         where,
         omit: omitSearchColumn,
-        include: { contacts: principalContactQuery },
+        include: {
+          contacts: principalContactQuery,
+          // Categoria principal do fornecedor (coluna da listagem de fornecedores).
+          expenseCategory: { select: { id: true, name: true } },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -249,7 +291,17 @@ export class PeopleService {
     companyId: string,
   ): Promise<PublicPeople> {
     const current = await this.findOne(id, companyId);
-    ensureCommissionFitsType(dto.receivesCommission, dto.type ?? current.type);
+    const finalType = dto.type ?? current.type;
+    ensureCommissionFitsType(dto.receivesCommission, finalType);
+    await this.ensureSupplierFields(
+      finalType,
+      dto.document !== undefined ? dto.document : current.document,
+      dto.expenseCategoryId,
+      companyId,
+    );
+    // Deixou de ser fornecedor: a categoria principal não faz mais sentido.
+    const clearsCategory =
+      finalType !== PeopleType.SUPPLIER && Boolean(current.expenseCategoryId);
     // Virar profissional (ex.: de cliente) ocupa uma vaga do limite.
     const becomesProfessional =
       dto.type === PeopleType.PROFESSIONAL &&
@@ -264,6 +316,7 @@ export class PeopleService {
             where: { id },
             data: {
               ...dto,
+              ...(clearsCategory && { expenseCategoryId: null }),
               ...commissionSinceOf(
                 dto.receivesCommission,
                 current.receivesCommission,
