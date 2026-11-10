@@ -275,3 +275,24 @@ a leitura pesaria uma vez por dia.
 o caso do 29/02) e um índice de expressão, se o volume pedir.
 
 **Registrado em:** 2026-11-05.
+
+## Relatórios calculados na API, sobre listas inteiras
+
+**Onde:** `rankings`, `packages-report`, `clients-report`, `appointment-report` e
+`receivables` (Relatórios, 2026-11-09 e 11-10).
+
+**O que é:** cada relatório lê do banco as linhas do período (ou todos os clientes
+ativos) e soma em funções puras na API, em vez de agregar no SQL. As listas
+paginadas (`/packages-report/ending`, `/clients-report/birthdays`,
+`/receivables/debtors`) também montam a lista inteira antes de cortar a página. Os
+aniversariantes conferem dia e mês fora do banco, como o job de aniversário.
+
+**Impacto:** nenhum com o volume de uma clínica (centenas de clientes, milhares de
+agendamentos por mês). Períodos longos de clínicas grandes pesariam mais. O
+Dashboard chama cada relatório duas vezes (período e anterior).
+
+**Como resolver:** levar as somas para o banco (`groupBy`/SQL) e paginar no banco,
+começando pelo relatório que ficar lento; uma rota de resumo própria para o
+Dashboard, se ele pesar.
+
+**Registrado em:** 2026-11-10.
