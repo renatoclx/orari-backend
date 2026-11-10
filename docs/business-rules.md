@@ -211,6 +211,7 @@
 
 - Uma pessoa pertence à empresa do usuário que a cadastrou; a empresa não é informada no payload.
 - Usuários só acessam pessoas da própria empresa. Pessoas de outra empresa respondem 404.
+- Tipos de pessoa: cliente (`CLIENT`), funcionário (`EMPLOYEE`), profissional (`PROFESSIONAL`) e, desde 2026-11-10, **fornecedor** (`SUPPLIER`, favorecido das contas a pagar), todos com os mesmos campos. Cada tipo tem a sua funcionalidade em Acessos e limites (`clients`, `employees`, `professionals`, `suppliers`); a listagem sem tipo exige todas.
 - Só o nome e o tipo da pessoa são obrigatórios; CPF e data de nascimento são opcionais, para qualquer tipo de pessoa. Assim um cliente pode ser cadastrado só com o nome e um telefone (contato).
 - O documento da pessoa, quando informado, é um CPF válido, sem máscara.
 - Pessoas podem ser filtradas por nome (busca parcial que ignora acentos e maiúsculas), por CPF (exato) e por tipo.
@@ -524,7 +525,9 @@
 - `GET /client-portfolio/clients` (mesmos filtros, mais `status`, `search` pelo nome sem acentos nem caixa, `page` e `limit` até 100): cada item traz `id`, `name`, `photoUrl`, `phone` (do contato principal), `status`, `lastCompleted` (`startAt` e `serviceName` do último concluído, ou `null`), `nextAt` (próximo agendamento futuro, ou `null`), `completedInPeriod` e `pending` (pagamentos `PENDING` dos agendamentos não cancelados do cliente com o profissional, **qualquer vencimento**).
 - **Ordem da lista:** quem precisa de contato primeiro: sem atendimento concluído e sem nada marcado; depois pelo último atendimento, do mais antigo ao mais recente; quem só tem agendamento futuro, por último. Empate: nome.
 
-## Contas a receber
+## Análise de recebíveis (antes "Contas a receber")
+
+> **2026-11-10:** o relatório foi renomeado na tela (rota `/relatorios/analise-de-recebiveis` no frontend); a API (`/receivables`) e a funcionalidade `receivables` não mudaram. "Contas a receber" passou a ser o nome da tela operacional de pagamentos dos clientes (Financeiro).
 
 > **Estado:** backend em 2026-11-09 (Relatórios → Contas a receber). Funcionalidade `receivables`, só Visualiza, **marcada no modelo padrão** de empresa nova; as empresas existentes não ganharam linha (liberar em Acessos e limites).
 
@@ -624,6 +627,13 @@
   - `POST` (ação Edita): data de corte e data do pagamento até hoje (futuras: 400), método de pagamento ativo da empresa (400), nada em aberto até a data: 400. Grava o fechamento com o **número do recibo** (sequencial por empresa, sem reaproveitar), os totais, a quantidade de atendimentos, quem fechou e uma **cópia do detalhamento** (cada atendimento com data, cliente, serviço, base e comissão; cada adiantamento com data, observação e valor), e marca as comissões e os adiantamentos como fechados. A empresa e o profissional ficam travados durante a operação.
   - `GET ?professionalId=`: os fechamentos do profissional (inclusive os desfeitos), do número maior para o menor. `GET /:id`: os dados do **recibo** (empresa com razão social, nome e documento; profissional com nome e CPF; pagamento; totais; detalhamento; quem fechou e, se desfeito, quem desfez).
   - `DELETE /:id` (desfazer, ação Exclui): só o **último fechamento não desfeito do profissional** (409); já desfeito: 409. O fechamento fica marcado como **cancelado** (o número não volta e o recibo continua consultável) e as comissões e os adiantamentos voltam ao em aberto.
+
+## Categorias de despesa
+
+> **Estado:** 2026-11-10 (Contas a pagar, etapa 3). Funcionalidade `expense-categories`, marcada no modelo padrão.
+
+- Cadastro das categorias das contas a pagar (ex.: Aluguel, Energia), com as mesmas regras dos métodos de pagamento: nome obrigatório, único entre as ativas da empresa sem diferenciar maiúsculas nem acentos (409); não há exclusão física, a categoria é inativada e pode ser reativada (409 se outra ativa já tiver o nome). Só o **ADMIN** (contas a pagar são da administração).
+- Toda empresa nasce com as categorias **Aluguel, Energia, Água, Internet e telefone, Produtos, Comissões, Salários, Impostos e Outros**; a migração deu as mesmas às empresas que já existiam. Todas são editáveis.
 
 ## Turmas
 

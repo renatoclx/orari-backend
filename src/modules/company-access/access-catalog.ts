@@ -13,6 +13,7 @@ export const FEATURE_KEYS = [
   "clients",
   "employees",
   "professionals",
+  "suppliers",
   "users",
   "services",
   "plans",
@@ -20,6 +21,7 @@ export const FEATURE_KEYS = [
   "tabs",
   "payments",
   "payment-methods",
+  "expense-categories",
   "anamnesis",
   "anamnesis-templates",
   "anamnesis-audit",
@@ -44,6 +46,7 @@ export const PERSON_TYPE_FEATURE: Record<string, FeatureKey> = {
   CLIENT: "clients",
   EMPLOYEE: "employees",
   PROFESSIONAL: "professionals",
+  SUPPLIER: "suppliers",
 };
 
 interface FeatureDefinition {
@@ -67,6 +70,8 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "clients", actions: ALL },
   { key: "employees", actions: ALL },
   { key: "professionals", actions: ALL },
+  // Fornecedores: cadastro de pessoa, favorecido das contas a pagar.
+  { key: "suppliers", actions: ALL },
   { key: "users", actions: ALL },
   { key: "services", actions: ALL },
   { key: "plans", actions: ALL },
@@ -74,6 +79,8 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "tabs", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "payments", actions: ALL },
   { key: "payment-methods", actions: ALL },
+  // Categorias de despesa (contas a pagar): só o ADMIN usa.
+  { key: "expense-categories", actions: ALL },
   { key: "anamnesis", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "anamnesis-templates", actions: ALL },
   { key: "anamnesis-audit", actions: ["view"] },

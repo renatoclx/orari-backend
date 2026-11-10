@@ -197,19 +197,19 @@ describe("FeatureAccessGuard", () => {
       await expect(guard.canActivate(request)).resolves.toBe(true);
     });
 
-    it("listagem sem tipo exige as três funcionalidades", async () => {
-      allowOnly("clients", "professionals");
+    it("listagem sem tipo exige as funcionalidades de todos os tipos", async () => {
+      allowOnly("clients", "professionals", "employees");
       await expect(
         guard.canActivate(contextFor(adminUser, "GET")),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
-      allowOnly("clients", "professionals", "employees");
+      allowOnly("clients", "professionals", "employees", "suppliers");
       await expect(
         guard.canActivate(contextFor(adminUser, "GET")),
       ).resolves.toBe(true);
     });
 
-    it("tipo desconhecido (ex.: constructor) cai na exigência das três", async () => {
+    it("tipo desconhecido (ex.: constructor) cai na exigência de todos", async () => {
       allowOnly("clients");
       await expect(
         guard.canActivate(

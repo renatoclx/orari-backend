@@ -17,6 +17,19 @@ import {
   superAdminUser,
 } from "../../../test/fixtures/authenticated-users";
 import { DEFAULT_LIMITS } from "../company-access/access-catalog";
+
+// A empresa nasce com as categorias de despesa iniciais (nome e nome normalizado).
+const defaultCategories = [
+  ["Aluguel", "aluguel"],
+  ["Energia", "energia"],
+  ["Água", "agua"],
+  ["Internet e telefone", "internet e telefone"],
+  ["Produtos", "produtos"],
+  ["Comissões", "comissoes"],
+  ["Salários", "salarios"],
+  ["Impostos", "impostos"],
+  ["Outros", "outros"],
+].map(([name, normalizedName]) => ({ name, normalizedName }));
 import { CompanyService } from "./company.service";
 import { CreateCompanyDto } from "./dto/create-company.dto";
 
@@ -79,6 +92,7 @@ describe("CompanyService", () => {
           ...dto,
           featureAccess: { create: anyArray },
           limit: { create: DEFAULT_LIMITS },
+          expenseCategories: { create: defaultCategories },
         },
       });
     });
@@ -122,6 +136,7 @@ describe("CompanyService", () => {
           ...personal,
           featureAccess: { create: anyArray },
           limit: { create: DEFAULT_LIMITS },
+          expenseCategories: { create: defaultCategories },
         },
       });
     });

@@ -1,3 +1,5 @@
+import { DEFAULT_EXPENSE_CATEGORIES } from "../expense-category/expense-category.service";
+import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import {
   BadRequestException,
   ConflictException,
@@ -49,6 +51,13 @@ export class CompanyService {
           ...dto,
           featureAccess: { create: defaultFeatureAccessRows() },
           limit: { create: DEFAULT_LIMITS },
+          // Categorias de despesa iniciais das contas a pagar (editáveis).
+          expenseCategories: {
+            create: DEFAULT_EXPENSE_CATEGORIES.map((name) => ({
+              name,
+              normalizedName: normalizeForSearch(name),
+            })),
+          },
         },
       });
     } catch (error) {

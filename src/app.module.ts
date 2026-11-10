@@ -37,6 +37,7 @@ import { FinancialReportModule } from "./modules/financial-report/financial-repo
 import { PackagesReportModule } from "./modules/packages-report/packages-report.module";
 import { ClientsReportModule } from "./modules/clients-report/clients-report.module";
 import { CommissionModule } from "./modules/commission/commission.module";
+import { ExpenseCategoryModule } from "./modules/expense-category/expense-category.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
 @Module({
@@ -65,6 +66,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     PackagesReportModule,
     ClientsReportModule,
     CommissionModule,
+    ExpenseCategoryModule,
     AgendaBlockModule,
     PeopleModule,
     ContactModule,

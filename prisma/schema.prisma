@@ -79,6 +79,8 @@ enum PeopleType {
   CLIENT
   EMPLOYEE
   PROFESSIONAL
+  // Fornecedor: favorecido das contas a pagar (2026-11-10).
+  SUPPLIER
 }
 
 enum ContactType {
@@ -162,6 +164,7 @@ model Company {
   commissions           Commission[]
   commissionAdvances    CommissionAdvance[]
   commissionClosings    CommissionClosing[]
+  expenseCategories     ExpenseCategory[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
   classSessions         ClassSession[]
@@ -1378,4 +1381,24 @@ model CommissionClosing {
   @@unique([companyId, number])
   @@index([companyId, professionalId])
   @@map("commission_closings")
+}
+
+// Categoria de despesa das contas a pagar (ex.: Aluguel, Energia), cadastrável
+// pela empresa. Não há exclusão física: é inativada (deletedAt).
+model ExpenseCategory {
+  id             String    @id @default(uuid())
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca (ver normalizeForSearch).
+  normalizedName String
+  companyId      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+  deletedAt      DateTime?
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  // Único pelo nome normalizado entre os ativos: "Aluguel" e "aluguel" são a mesma.
+  @@unique([companyId, normalizedName], where: raw("\"deletedAt\" IS NULL"))
+  @@index([companyId])
+  @@map("expense_categories")
 }

@@ -9,9 +9,9 @@ import { ReceivablesDebtorsQueryDto } from "./dto/receivables-debtors-query.dto"
 import { ReceivablesQueryDto } from "./dto/receivables-query.dto";
 import { ReceivablesService } from "./receivables.service";
 
-// Relatório "Contas a receber": só leitura, restrito à empresa do usuário.
+// Relatório "Análise de recebíveis" (antes "Contas a receber"): só leitura, restrito à empresa do usuário.
 // Só o ADMIN, como os demais relatórios (números financeiros da empresa).
-@ApiTags("Contas a receber")
+@ApiTags("Análise de recebíveis")
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
 @Feature("receivables")
