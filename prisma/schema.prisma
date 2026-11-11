@@ -612,6 +612,7 @@ model PaymentMethod {
   company            Company             @relation(fields: [companyId], references: [id])
   payments           Payment[]
   commissionClosings CommissionClosing[]
+  commissionAdvances CommissionAdvance[]
   payables           Payable[]
 
   // Único pelo nome normalizado: "PIX", "Pix" e "pix" são o mesmo método.
@@ -1338,23 +1339,28 @@ model Commission {
 // Adiantamento de comissão a um profissional: abatido no fechamento. Enquanto
 // não é fechado, pode ser excluído (exclusão física: lançamento errado).
 model CommissionAdvance {
-  id             String   @id @default(uuid())
-  companyId      String
-  professionalId String
-  amount         Decimal  @db.Decimal(10, 2)
+  id              String   @id @default(uuid())
+  companyId       String
+  professionalId  String
+  amount          Decimal  @db.Decimal(10, 2)
   // Data do adiantamento pelo calendário (pode ser passada, nunca futura).
-  date           DateTime @db.Date
-  note           String?
+  date            DateTime @db.Date
+  note            String?
+  // Como foi pago (vazio nos lançados antes de 2026-11-10).
+  paymentMethodId String?
   // Usuário que lançou ("Lançado por").
-  createdById    String
+  createdById     String
   // Fechamento que o abateu; vazio = em aberto (pode ser excluído).
-  closingId      String?
-  createdAt      DateTime @default(now())
+  closingId       String?
+  createdAt       DateTime @default(now())
 
-  company      Company            @relation(fields: [companyId], references: [id])
-  closing      CommissionClosing? @relation(fields: [closingId], references: [id])
-  professional People             @relation(fields: [professionalId], references: [id])
-  createdBy    User               @relation(fields: [createdById], references: [id])
+  company       Company            @relation(fields: [companyId], references: [id])
+  closing       CommissionClosing? @relation(fields: [closingId], references: [id])
+  professional  People             @relation(fields: [professionalId], references: [id])
+  paymentMethod PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
+  // Conta paga gerada no Contas a pagar.
+  payable       Payable?
+  createdBy     User               @relation(fields: [createdById], references: [id])
 
   @@index([companyId, professionalId])
   @@map("commission_advances")
@@ -1393,6 +1399,8 @@ model CommissionClosing {
   cancelledBy   User?               @relation("CommissionClosingCancelledBy", fields: [cancelledById], references: [id])
   commissions   Commission[]
   advances      CommissionAdvance[]
+  // Conta paga gerada no Contas a pagar (não há quando nada foi pago).
+  payable       Payable?
 
   @@unique([companyId, number])
   @@index([companyId, professionalId])
@@ -1426,33 +1434,38 @@ model ExpenseCategory {
 // conta com o mesmo seriesId e o número da parcela. "Atrasada" não é gravada:
 // é a pendente com vencimento antes de hoje (no fuso da empresa).
 model Payable {
-  id              String        @id @default(uuid())
-  companyId       String
-  description     String
+  id                  String        @id @default(uuid())
+  companyId           String
+  description         String
   // Fornecedor ou profissional; vazio quando não há (ex.: imposto).
-  payeeId         String?
-  categoryId      String
-  amount          Decimal       @db.Decimal(10, 2)
-  dueDate         DateTime      @db.Date
-  note            String?
-  status          PayableStatus @default(PENDING)
+  payeeId             String?
+  categoryId          String
+  amount              Decimal       @db.Decimal(10, 2)
+  dueDate             DateTime      @db.Date
+  note                String?
+  status              PayableStatus @default(PENDING)
   // Preenchidos quando paga: data (calendário) e método.
-  paidAt          DateTime?     @db.Date
-  paymentMethodId String?
+  paidAt              DateTime?     @db.Date
+  paymentMethodId     String?
   // Repetição: as contas geradas juntas; "parcela installment de installments".
-  seriesId        String?
-  installment     Int?
-  installments    Int?
-  createdById     String
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime?
-  cancelledAt     DateTime?
+  seriesId            String?
+  installment         Int?
+  installments        Int?
+  createdById         String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime?
+  cancelledAt         DateTime?
+  // Gerada pela comissão (protegida: muda só pela tela Comissões).
+  commissionClosingId String?       @unique
+  commissionAdvanceId String?       @unique
 
-  company       Company         @relation(fields: [companyId], references: [id])
-  payee         People?         @relation(fields: [payeeId], references: [id])
-  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
-  paymentMethod PaymentMethod?  @relation(fields: [paymentMethodId], references: [id])
-  createdBy     User            @relation("PayableCreatedBy", fields: [createdById], references: [id])
+  company           Company            @relation(fields: [companyId], references: [id])
+  commissionClosing CommissionClosing? @relation(fields: [commissionClosingId], references: [id])
+  commissionAdvance CommissionAdvance? @relation(fields: [commissionAdvanceId], references: [id])
+  payee             People?            @relation(fields: [payeeId], references: [id])
+  category          ExpenseCategory    @relation(fields: [categoryId], references: [id])
+  paymentMethod     PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
+  createdBy         User               @relation("PayableCreatedBy", fields: [createdById], references: [id])
 
   @@index([companyId, status, dueDate])
   @@index([seriesId])

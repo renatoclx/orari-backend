@@ -21,6 +21,7 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { CreatePayableDto } from "./dto/create-payable.dto";
 import {
+  PayableCommissionQueryDto,
   PayableListQueryDto,
   PayableSummaryQueryDto,
 } from "./dto/payable-query.dto";
@@ -47,6 +48,22 @@ export class PayableController {
     @Query() query: PayableSummaryQueryDto,
   ) {
     return this.payableService.summary(query, currentUser.companyId);
+  }
+
+  @Get("commissions")
+  @ApiOperation({
+    summary: "Comissões em aberto por profissional (linha calculada)",
+    description:
+      'O mesmo saldo do "A pagar" da tela Comissões: comissão não fechada menos adiantamentos. Quita-se pelo fechamento.',
+  })
+  commissions(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Query() query: PayableCommissionQueryDto,
+  ) {
+    return this.payableService.commissions(
+      currentUser.companyId,
+      query.payeeId,
+    );
   }
 
   @Get()

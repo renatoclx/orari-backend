@@ -15,6 +15,8 @@ describe("CommissionClosingService", () => {
     commission: { findMany: vi.fn(), updateMany: vi.fn() },
     commissionAdvance: { findMany: vi.fn(), updateMany: vi.fn() },
     commissionClosing: { aggregate: vi.fn(), create: vi.fn() },
+    expenseCategory: { findFirst: vi.fn(), create: vi.fn() },
+    payable: { create: vi.fn() },
   };
   const prismaMock = {
     people: { findFirst: vi.fn() },
@@ -22,6 +24,7 @@ describe("CommissionClosingService", () => {
     commission: { aggregate: vi.fn(), updateMany: vi.fn() },
     commissionAdvance: { aggregate: vi.fn(), updateMany: vi.fn() },
     commissionClosing: { findFirst: vi.fn(), update: vi.fn() },
+    payable: { updateMany: vi.fn() },
     $transaction: vi.fn((arg: unknown) =>
       typeof arg === "function"
         ? (arg as (client: typeof tx) => unknown)(tx)
@@ -75,6 +78,36 @@ describe("CommissionClosingService", () => {
     ]);
     tx.commissionClosing.aggregate.mockResolvedValue({ _max: { number: 7 } });
     tx.commissionClosing.create.mockResolvedValue({ id: "f-1", number: 8 });
+    tx.expenseCategory.findFirst.mockResolvedValue({ id: "cat-com" });
+  });
+
+  it("fecha: o valor pago vira conta paga (48 − 30 = 18)", async () => {
+    await service.create(dto, "co-1", "u-1", NOW);
+    const { data } = tx.payable.create.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(data).toMatchObject({
+      description: "Comissão nº 0008",
+      payeeId: "p-1",
+      categoryId: "cat-com",
+      status: "PAID",
+      paymentMethodId: "m-1",
+      commissionClosingId: "f-1",
+    });
+    expect((data.amount as Decimal).toFixed(2)).toBe("18.00");
+  });
+
+  it("adiantamentos cobrem tudo: pago zero, nenhuma conta", async () => {
+    tx.commissionAdvance.findMany.mockResolvedValue([
+      {
+        id: "a-1",
+        date: new Date("2026-11-10T00:00:00Z"),
+        note: null,
+        amount: d(60),
+      },
+    ]);
+    await service.create(dto, "co-1", "u-1", NOW);
+    expect(tx.payable.create).not.toHaveBeenCalled();
   });
 
   it("fecha: próximo número, totais, cópia do detalhamento e marca tudo", async () => {
@@ -165,6 +198,11 @@ describe("CommissionClosingService", () => {
     expect(prismaMock.commissionAdvance.updateMany).toHaveBeenCalledWith({
       where: { closingId: "f-2" },
       data: { closingId: null },
+    });
+    // A conta paga do fechamento fica cancelada.
+    expect(prismaMock.payable.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { commissionClosingId: "f-2" },
+      data: { status: "CANCELLED" },
     });
   });
 });

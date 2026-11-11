@@ -9,6 +9,7 @@ import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
+import { createCommissionPayable } from "../payable/commission-payable";
 import { localToday } from "../receivables/receivables.service";
 import type {
   CommissionAdvanceListQueryDto,
@@ -33,6 +34,8 @@ export interface CommissionAdvanceItem {
   /** AAAA-MM-DD. */
   date: string;
   note: string | null;
+  /** Vazio nos lançados antes de o método existir. */
+  paymentMethod: { id: string; name: string } | null;
   createdBy: { id: string; name: string };
   createdAt: Date;
   /** Fechamento que o abateu; null = em aberto. */
@@ -44,6 +47,7 @@ const advanceSelect = {
   amount: true,
   date: true,
   note: true,
+  paymentMethod: { select: { id: true, name: true } },
   createdAt: true,
   createdBy: { select: { id: true, name: true } },
 } as const;
@@ -160,6 +164,13 @@ export class CommissionAdvanceService {
     if (Number.isNaN(date.getTime()) || date > localToday(now, timeZone)) {
       throw new BadRequestException("A data não pode ser futura");
     }
+    const method = await this.prisma.paymentMethod.findFirst({
+      where: { id: dto.paymentMethodId, companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!method) {
+      throw new BadRequestException("Escolha um método de pagamento ativo");
+    }
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM people WHERE id = ${dto.professionalId} FOR UPDATE`;
@@ -190,24 +201,30 @@ export class CommissionAdvanceService {
           `O valor passa do disponível para adiantar (R$ ${available.toFixed(2).replace(".", ",")})`,
         );
       }
-      return tx.commissionAdvance.create({
+      const advance = await tx.commissionAdvance.create({
         data: {
           companyId,
           professionalId: dto.professionalId,
           amount: dto.amount,
           date,
           note: dto.note,
+          paymentMethodId: dto.paymentMethodId,
           createdById: userId,
         },
-        select: {
-          id: true,
-          amount: true,
-          date: true,
-          note: true,
-          createdAt: true,
-          createdBy: { select: { id: true, name: true } },
-        },
+        select: advanceSelect,
       });
+      // O dinheiro saiu hoje: vira conta paga no Contas a pagar.
+      await createCommissionPayable(tx, {
+        companyId,
+        professionalId: dto.professionalId,
+        description: "Adiantamento de comissão",
+        amount: dto.amount,
+        paidAt: date,
+        paymentMethodId: dto.paymentMethodId,
+        createdById: userId,
+        commissionAdvanceId: advance.id,
+      });
+      return advance;
     });
     return {
       ...created,
@@ -233,7 +250,11 @@ export class CommissionAdvanceService {
         "O adiantamento já foi fechado e não pode ser excluído",
       );
     }
-    await this.prisma.commissionAdvance.delete({ where: { id } });
+    // A conta paga gerada sai junto (lançamento errado).
+    await this.prisma.$transaction([
+      this.prisma.payable.deleteMany({ where: { commissionAdvanceId: id } }),
+      this.prisma.commissionAdvance.delete({ where: { id } }),
+    ]);
   }
 
   private async ensureProfessional(id: string, companyId: string) {

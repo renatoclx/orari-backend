@@ -4,11 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { PeopleType } from "../../../generated/prisma/enums";
+import { PayableStatus, PeopleType } from "../../../generated/prisma/enums";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
+import { createCommissionPayable } from "../payable/commission-payable";
 import { localToday } from "../receivables/receivables.service";
 import type {
   CommissionClosingPreviewQueryDto,
@@ -233,6 +234,7 @@ export class CommissionClosingService {
         _max: { number: true },
       });
 
+      const paidAmount = Decimal.max(0, commissionTotal.minus(advanceTotal));
       const closing = await tx.commissionClosing.create({
         data: {
           companyId,
@@ -243,7 +245,7 @@ export class CommissionClosingService {
           paymentMethodId: dto.paymentMethodId,
           commissionTotal,
           advanceTotal,
-          paidAmount: Decimal.max(0, commissionTotal.minus(advanceTotal)),
+          paidAmount,
           appointmentsCount: commissions.length,
           details,
           createdById: userId,
@@ -260,6 +262,19 @@ export class CommissionClosingService {
           data: { closingId: closing.id },
         }),
       ]);
+      // O valor pago vira conta paga no Contas a pagar (zero: nada saiu).
+      if (paidAmount.greaterThan(0)) {
+        await createCommissionPayable(tx, {
+          companyId,
+          professionalId: dto.professionalId,
+          description: `Comissão nº ${String(closing.number).padStart(4, "0")}`,
+          amount: paidAmount,
+          paidAt: asDate(dto.paidAt),
+          paymentMethodId: dto.paymentMethodId,
+          createdById: userId,
+          commissionClosingId: closing.id,
+        });
+      }
       return closing;
     });
   }
@@ -346,6 +361,15 @@ export class CommissionClosingService {
       this.prisma.commissionAdvance.updateMany({
         where: { closingId: id },
         data: { closingId: null },
+      }),
+      // A conta paga do fechamento fica cancelada (no histórico).
+      this.prisma.payable.updateMany({
+        where: { commissionClosingId: id },
+        data: {
+          status: PayableStatus.CANCELLED,
+          cancelledAt: new Date(),
+          updatedAt: new Date(),
+        },
       }),
     ]);
   }

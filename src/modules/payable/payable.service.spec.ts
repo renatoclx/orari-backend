@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import type { PrismaService } from "../../prisma/prisma.service";
+import type { CommissionAdvanceService } from "../commission/commission-advance.service";
 import type { CompanyService } from "../company/company.service";
 import {
   PayableService,
@@ -85,8 +86,9 @@ describe("statusWhere", () => {
 });
 
 describe("PayableService", () => {
+  const advanceMock = { openBalances: vi.fn() };
   const prismaMock = {
-    people: { findFirst: vi.fn() },
+    people: { findFirst: vi.fn(), findMany: vi.fn() },
     expenseCategory: { findFirst: vi.fn() },
     paymentMethod: { findFirst: vi.fn() },
     payable: {
@@ -101,6 +103,7 @@ describe("PayableService", () => {
   const service = new PayableService(
     prismaMock as unknown as PrismaService,
     { getTimeZone: vi.fn().mockResolvedValue(TZ) } as unknown as CompanyService,
+    advanceMock as unknown as CommissionAdvanceService,
   );
   const dto = {
     description: " Aluguel ",
@@ -202,5 +205,54 @@ describe("PayableService", () => {
     expect(prismaMock.payable.delete).toHaveBeenCalledWith({
       where: { id: "a" },
     });
+  });
+
+  it("gerada pela comissão: não altera, cancela nem exclui (409)", async () => {
+    prismaMock.payable.findFirst.mockResolvedValue({
+      status: "PAID",
+      commissionClosingId: "f-1",
+      commissionAdvanceId: null,
+    });
+    await expect(service.remove("a", "co-1")).rejects.toThrow(
+      "desfaça o fechamento",
+    );
+    prismaMock.payable.findFirst.mockResolvedValue({
+      status: "PAID",
+      commissionClosingId: null,
+      commissionAdvanceId: "ad-1",
+    });
+    await expect(service.cancel("a", "co-1")).rejects.toThrow(
+      "exclua o adiantamento",
+    );
+    expect(prismaMock.payable.delete).not.toHaveBeenCalled();
+  });
+
+  it("comissões em aberto: o a pagar de cada profissional, pelo nome", async () => {
+    advanceMock.openBalances.mockResolvedValue(
+      new Map([
+        ["p-2", { commission: new Decimal(48), advanced: new Decimal(30) }],
+        ["p-1", { commission: new Decimal(10), advanced: new Decimal(20) }],
+      ]),
+    );
+    prismaMock.people.findMany.mockResolvedValue([
+      { id: "p-1", name: "Ana" },
+      { id: "p-2", name: "Camila" },
+    ]);
+    expect(await service.commissions("co-1")).toEqual([
+      {
+        id: "p-1",
+        name: "Ana",
+        commission: "10.00",
+        advanced: "20.00",
+        toPay: "0.00",
+      },
+      {
+        id: "p-2",
+        name: "Camila",
+        commission: "48.00",
+        advanced: "30.00",
+        toPay: "18.00",
+      },
+    ]);
   });
 });

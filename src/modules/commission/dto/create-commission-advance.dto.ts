@@ -29,6 +29,10 @@ export class CreateCommissionAdvanceDto {
   })
   date!: string;
 
+  // Como foi pago: vai para a conta paga no Contas a pagar.
+  @IsUUID(undefined, { message: "Escolha o método de pagamento" })
+  paymentMethodId!: string;
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()

@@ -13,6 +13,10 @@ type PayableWhereInput = Prisma.PayableWhereInput;
 import type { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { PrismaService } from "../../prisma/prisma.service";
 import { calculateDueDates } from "../client-plan/client-plan.calculations";
+import {
+  CommissionAdvanceService,
+  availableOf,
+} from "../commission/commission-advance.service";
 import { CompanyService } from "../company/company.service";
 import { localToday } from "../receivables/receivables.service";
 import type {
@@ -120,6 +124,22 @@ export interface PayableItem {
   createdBy: { id: string; name: string };
   createdAt: Date;
   cancelledAt: Date | null;
+  /** Gerada pelo fechamento da comissão (o recibo é dele). */
+  commissionClosing: { id: string; number: number } | null;
+  /** Gerada por um adiantamento de comissão. */
+  commissionAdvanceId: string | null;
+}
+
+/** Comissão em aberto de um profissional (linha calculada, sem conta). */
+export interface PayableCommission {
+  id: string;
+  name: string;
+  /** Comissão gerada e não fechada. */
+  commission: string;
+  /** Adiantamentos não fechados. */
+  advanced: string;
+  /** O que falta pagar: comissão menos adiantado (nunca negativo). */
+  toPay: string;
 }
 
 export interface PayableTotal {
@@ -150,7 +170,32 @@ const itemSelect = {
   createdBy: { select: { id: true, name: true } },
   createdAt: true,
   cancelledAt: true,
+  commissionClosing: { select: { id: true, number: true } },
+  commissionAdvanceId: true,
 } as const;
+
+const protectedSelect = {
+  status: true,
+  commissionClosingId: true,
+  commissionAdvanceId: true,
+} as const;
+
+/** A conta gerada pela comissão só muda pela tela Comissões (409). */
+function ensureNotFromCommission(payable: {
+  commissionClosingId: string | null;
+  commissionAdvanceId: string | null;
+}) {
+  if (payable.commissionClosingId) {
+    throw new ConflictException(
+      "Conta gerada pelo fechamento da comissão: desfaça o fechamento em Comissões",
+    );
+  }
+  if (payable.commissionAdvanceId) {
+    throw new ConflictException(
+      "Conta gerada por um adiantamento: exclua o adiantamento em Comissões",
+    );
+  }
+}
 
 /**
  * Contas a pagar (ver docs/business-rules.md, "Contas a pagar"). Só o ADMIN;
@@ -161,7 +206,38 @@ export class PayableService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly companyService: CompanyService,
+    private readonly advanceService: CommissionAdvanceService,
   ) {}
+
+  /**
+   * Comissões em aberto por profissional (o mesmo saldo do "A pagar" da tela
+   * Comissões). Não são contas: quitam-se pelo fechamento.
+   */
+  async commissions(
+    companyId: string,
+    professionalId?: string,
+  ): Promise<PayableCommission[]> {
+    const balances = await this.advanceService.openBalances(
+      companyId,
+      professionalId,
+    );
+    if (balances.size === 0) return [];
+    const people = await this.prisma.people.findMany({
+      where: { id: { in: [...balances.keys()] }, companyId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+    return people.map(({ id, name }) => {
+      const balance = balances.get(id)!;
+      return {
+        id,
+        name,
+        commission: balance.commission.toFixed(2),
+        advanced: balance.advanced.toFixed(2),
+        toPay: availableOf(balance).toFixed(2),
+      };
+    });
+  }
 
   async summary(
     query: PayableSummaryQueryDto,
@@ -350,9 +426,10 @@ export class PayableService {
   async remove(id: string, companyId: string): Promise<void> {
     const payable = await this.prisma.payable.findFirst({
       where: { id, companyId },
-      select: { status: true },
+      select: protectedSelect,
     });
     if (!payable) throw new NotFoundException("Conta a pagar não encontrada");
+    ensureNotFromCommission(payable);
     if (payable.status === PayableStatus.PAID) {
       throw new ConflictException("Conta paga não pode ser excluída");
     }
@@ -401,9 +478,10 @@ export class PayableService {
   private async findPending(id: string, companyId: string, verb: string) {
     const payable = await this.prisma.payable.findFirst({
       where: { id, companyId },
-      select: { status: true },
+      select: protectedSelect,
     });
     if (!payable) throw new NotFoundException("Conta a pagar não encontrada");
+    ensureNotFromCommission(payable);
     if (payable.status !== PayableStatus.PENDING) {
       throw new ConflictException(`Só conta pendente pode ser ${verb}`);
     }

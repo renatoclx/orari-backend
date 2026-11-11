@@ -53,3 +53,10 @@ export class PayableListQueryDto extends PaginationQueryDto {
   @Matches(DATE, { message: "Informe a data final no formato AAAA-MM-DD" })
   dueTo?: string;
 }
+
+// Comissões em aberto: todas, ou só a do profissional (favorecido do filtro).
+export class PayableCommissionQueryDto {
+  @IsOptional()
+  @IsUUID(undefined, { message: "Favorecido inválido" })
+  payeeId?: string;
+}

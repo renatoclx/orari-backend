@@ -25,25 +25,40 @@ describe("CommissionAdvanceService.create", () => {
     $queryRaw: vi.fn(),
     commission: { aggregate: vi.fn() },
     commissionAdvance: { aggregate: vi.fn(), create: vi.fn() },
+    expenseCategory: { findFirst: vi.fn(), create: vi.fn() },
+    payable: { create: vi.fn() },
   };
   const prismaMock = {
     people: { findFirst: vi.fn() },
+    paymentMethod: { findFirst: vi.fn() },
+    payable: { deleteMany: vi.fn() },
     commissionAdvance: {
       findFirst: vi.fn(),
       delete: vi.fn(),
       findMany: vi.fn(),
     },
-    $transaction: vi.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
+    $transaction: vi.fn((arg: unknown) =>
+      typeof arg === "function"
+        ? (arg as (client: typeof tx) => unknown)(tx)
+        : Promise.all(arg as Promise<unknown>[]),
+    ),
   };
   const service = new CommissionAdvanceService(
     prismaMock as unknown as PrismaService,
     { getTimeZone: vi.fn().mockResolvedValue(TZ) } as unknown as CompanyService,
   );
-  const dto = { professionalId: "p-1", amount: 30, date: "2026-11-10" };
+  const dto = {
+    professionalId: "p-1",
+    amount: 30,
+    date: "2026-11-10",
+    paymentMethodId: "m-1",
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.people.findFirst.mockResolvedValue({ id: "p-1" });
+    prismaMock.paymentMethod.findFirst.mockResolvedValue({ id: "m-1" });
+    tx.expenseCategory.findFirst.mockResolvedValue({ id: "cat-com" });
     tx.commission.aggregate.mockResolvedValue({ _sum: { amount: d(48) } });
     tx.commissionAdvance.aggregate.mockResolvedValue({
       _sum: { amount: d(10) },
@@ -70,6 +85,61 @@ describe("CommissionAdvanceService.create", () => {
       },
     });
     expect(result).toMatchObject({ amount: "30.00", date: "2026-11-10" });
+  });
+
+  it("gera a conta paga no Contas a pagar, na categoria Comissões", async () => {
+    await service.create(dto, "co-1", "u-1", NOW);
+    expect(tx.payable.create.mock.calls[0][0]).toMatchObject({
+      data: {
+        payeeId: "p-1",
+        categoryId: "cat-com",
+        description: "Adiantamento de comissão",
+        amount: 30,
+        status: "PAID",
+        paidAt: new Date("2026-11-10T00:00:00Z"),
+        paymentMethodId: "m-1",
+        commissionAdvanceId: "a-1",
+      },
+    });
+  });
+
+  it("sem a categoria Comissões ativa: cria de novo", async () => {
+    tx.expenseCategory.findFirst.mockResolvedValue(null);
+    tx.expenseCategory.create.mockResolvedValue({ id: "cat-new" });
+    await service.create(dto, "co-1", "u-1", NOW);
+    expect(tx.expenseCategory.create).toHaveBeenCalledWith({
+      data: {
+        companyId: "co-1",
+        name: "Comissões",
+        normalizedName: "comissoes",
+      },
+      select: { id: true },
+    });
+    expect(tx.payable.create.mock.calls[0][0]).toMatchObject({
+      data: { categoryId: "cat-new" },
+    });
+  });
+
+  it("método inativo ou de outra empresa: 400 e nada é gravado", async () => {
+    prismaMock.paymentMethod.findFirst.mockResolvedValue(null);
+    await expect(service.create(dto, "co-1", "u-1", NOW)).rejects.toThrow(
+      "método de pagamento ativo",
+    );
+    expect(tx.commissionAdvance.create).not.toHaveBeenCalled();
+  });
+
+  it("excluir em aberto: apaga a conta gerada junto", async () => {
+    prismaMock.commissionAdvance.findFirst.mockResolvedValue({
+      id: "a-1",
+      closingId: null,
+    });
+    await service.remove("a-1", "co-1");
+    expect(prismaMock.payable.deleteMany).toHaveBeenCalledWith({
+      where: { commissionAdvanceId: "a-1" },
+    });
+    expect(prismaMock.commissionAdvance.delete).toHaveBeenCalledWith({
+      where: { id: "a-1" },
+    });
   });
 
   it("acima do disponível: 400 e nada é gravado", async () => {
