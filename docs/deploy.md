@@ -342,7 +342,7 @@ sed -E 's/(PASSWORD|SECRET)=.*/\1=(oculto)/; s#(//orari:)[^@]*#\1(oculto)#' .env
 | `APP_DOMAIN`                                     | Endereço do frontend (`app.orariapp.com.br`). Sem ele, o frontend não fica acessível de fora |
 | `POSTGRES_USER` / `_PASSWORD` / `_DB`            | Usuário, senha e nome do banco que o contêiner do PostgreSQL cria                            |
 | `DATABASE_URL`                                   | Endereço do banco que a API usa. O `db` é o nome do contêiner; a senha é a mesma de cima     |
-| `JWT_SECRET`                                     | Segredo que assina os logins. Precisa ser longo e aleatório                                  |
+| `JWT_SECRET`                                     | Segredo que assina os logins e os links das fotos. Precisa ser longo e aleatório             |
 | `JWT_EXPIRES_IN` / `JWT_REFRESH_EXPIRES_IN`      | Duração do login (15 minutos, renovável por 7 dias)                                          |
 | `ANAMNESIS_ENCRYPTION_KEY`                       | Chave que criptografa as fichas de anamnese (dados de saúde). Ver a etapa 5.1                |
 | `CORS_ORIGIN`                                    | Endereço do frontend autorizado a falar com a API (`https://app.orariapp.com.br`)            |
@@ -565,7 +565,8 @@ seu servidor, e não endereços da Cloudflare (`104.21…`, `172.67…`).
 - [ ] Uma rota protegida (`https://app.orariapp.com.br/clientes`) sem estar logado
       leva ao `/login`.
 - [ ] A foto de uma pessoa e a logo da empresa aparecem (passam por
-      `/uploads`, repassado à API).
+      `/uploads`, repassado à API). O endereço da foto, sem o `?exp=…&sig=…`,
+      responde 403.
 - [ ] A porta do frontend **não** está aberta: `nc -zv IP_DO_SERVIDOR 3000` deve
       falhar (só o Caddy fala com ele).
 - [ ] O banco **não** aceita conexão de fora: de outro computador,

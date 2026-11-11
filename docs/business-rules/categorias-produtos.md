@@ -43,7 +43,7 @@
 - **Histórico:** `GET /products/:id/stock-movements`, paginado, da mais recente para a mais antiga, com quem lançou e a conta ligada. O saldo de antes do controle de estoque aparece sem usuário.
 - **Estoque baixo:** `GET /products?lowStock=true` traz os produtos com mínimo e o estoque atual abaixo dele.
 - **Situação:** o produto é inativado e reativado pela alteração (`isActive`). A exclusão é lógica (`deletedAt`); o produto excluído some das listagens e o SKU dele fica livre.
-- **Foto:** JPEG ou PNG, até 2 MB, enviada como multipart no campo `photo` (`POST /products/:id/photo`); a nova substitui a anterior. `DELETE /products/:id/photo` remove.
+- **Foto:** JPEG ou PNG, até 2 MB, enviada como multipart no campo `photo` (`POST /products/:id/photo`); a nova substitui a anterior. `DELETE /products/:id/photo` remove. A foto sai num link assinado, como a das pessoas (ver [Pessoas](pessoas.md)).
 - A listagem é paginada, em ordem de nome, com filtros por nome ou SKU (parcial, sem diferenciar acentos nem maiúsculas), categoria, fornecedor e situação. Cada produto traz a categoria (`id`, `name`) e o fornecedor (`id`, `name`) ou `null`.
 
 ## Venda de produtos
