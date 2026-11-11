@@ -598,3 +598,10 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Recorrência:** `buildOccurrences` e o calendário (`toDateParts`, `isBeforeOrSameDay`, `advanceOneDay`, `minutesBetween`) vão para `recurrence-occurrences.ts`, com spec próprio; o `weekDayIndex` local dá lugar ao `weekDayIndexOf`.
 - **Padrão:** a regra de quando separar um service entrou em `coding-standards.md` ("Organização").
 
+## 2.56 Fotos privadas por link assinado
+
+- **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.
+- **Respostas** (`SignedUploadsInterceptor`, global em `configureApp`): percorre arrays e objetos simples da resposta e assina cada caminho de foto privada (`people`, `products`, `client-accounts`). Date, Decimal e arquivos (`StreamableFile`) passam intactos, e o objeto original não é alterado. O banco continua com o caminho puro, e `save`/`remove`/`read` não mudaram.
+- **Porteiro do `/uploads`** (`uploadsGate`, antes dos arquivos estáticos): só `companies` é pública; o resto exige assinatura válida (403). O caminho é decodificado e normalizado antes de olhar a pasta (`..` responde 404). A foto assinada sai com `Cache-Control: private, max-age=<até vencer>`.
+- **Testes:** specs da assinatura e do interceptor, e o `app.setup.spec` com uma pasta de uploads real (link assinado abre, puro e adulterado dão 403, travessia dá 404, logo abre). Verificado na API real: upload de pessoa e de produto, listagem, logo.
+

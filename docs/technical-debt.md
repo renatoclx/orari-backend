@@ -44,10 +44,14 @@ latência de cada consulta é maior; vale medir de novo no ambiente real.
 **Onde:** `src/common/storage/local-file-storage.service.ts` e `main.ts`
 (`useStaticAssets`).
 
-**O que é:** as fotos de pessoas ficam numa pasta do próprio servidor
-(`UPLOADS_DIR`, padrão `uploads/`) e são servidas em `/uploads` **sem
-autenticação**: quem tiver o link abre a imagem. O nome do arquivo é um UUID,
-então o link não é adivinhável, mas não expira.
+**O que é:** as fotos de pessoas, de produtos e da conta do portal ficam numa
+pasta do próprio servidor (`UPLOADS_DIR`, padrão `uploads/`). **Desde
+2026-11-11, o acesso é por link assinado:** a API devolve `?exp=…&sig=…`
+(HMAC derivado do `JWT_SECRET`, válido até o fim da hora seguinte; ver
+`common/storage/signed-upload-url.ts`), e o `/uploads` responde 403 sem ele.
+Quem recebe o link ainda pode repassá-lo, mas só até ele vencer. As logos
+(`/uploads/companies`) continuam públicas. O que segue pendente é o
+armazenamento: os arquivos ficam no disco de uma única instância.
 
 **Impacto:** foto de pessoa é dado pessoal (LGPD). As logos das empresas
 (`/uploads/companies`) seguem o mesmo esquema de armazenamento e acesso; por
@@ -62,9 +66,10 @@ backup diário (`uploads-*.tgz`, ver `docs/deploy.md`), então um disco que falh
 os perde de vez; mas o acesso continua público por quem tiver o link.
 
 **Como resolver:** trocar o `LocalFileStorage` por um armazenamento em nuvem
-privado (ex.: S3 ou compatível) e servir as fotos por links temporários
-assinados. Como o resto do código só conhece `save` e `remove`, a troca fica
-concentrada nesse service.
+privado (ex.: S3 ou compatível). O `SignedUploadsInterceptor` passa a gerar o
+link assinado do próprio storage, e o porteiro do `/uploads` (`uploadsGate`, em
+`app.setup.ts`) sai. Como o resto do código só conhece `save`, `remove` e
+`read`, a troca fica concentrada nesses pontos.
 
 **Registrado em:** 2026-10-13.
 

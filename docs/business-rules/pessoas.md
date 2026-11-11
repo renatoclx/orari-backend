@@ -26,6 +26,7 @@
 - O caminho da foto (`photoUrl`) é preenchido pelo sistema; não é informado no cadastro nem na edição da pessoa.
 - Enviar uma nova foto substitui a anterior, que é apagada. A foto também pode ser removida.
 - A exclusão (lógica) da pessoa mantém a foto.
+- **Acesso à foto:** a API devolve a foto num link assinado (`photoUrl` com `?exp=…&sig=…`), que vale até o fim da hora seguinte. Sem assinatura, com assinatura adulterada ou vencida, o `/uploads` responde 403. O banco guarda o caminho puro; cada resposta traz um link novo. A logo da empresa (`/uploads/companies`) é pública: aparece no portal e no login.
 
 ## Contatos e endereços
 

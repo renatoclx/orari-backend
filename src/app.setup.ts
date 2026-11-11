@@ -1,13 +1,70 @@
 import { ValidationPipe } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
+import { posix } from "node:path";
 import {
   UPLOADS_PUBLIC_PREFIX,
   uploadsRoot,
 } from "./common/storage/local-file-storage.service";
+import {
+  isValidUploadSignature,
+  secondsUntil,
+} from "./common/storage/signed-upload-url";
+import { SignedUploadsInterceptor } from "./common/storage/signed-uploads.interceptor";
 
 type Env = Record<string, string | undefined>;
+
+// Pastas de /uploads abertas a quem tiver o link: só as logos das empresas, que
+// aparecem no portal e no login. Todo o resto exige link assinado.
+const PUBLIC_UPLOAD_FOLDERS = new Set(["companies"]);
+
+/**
+ * Porteiro do /uploads, antes dos arquivos estáticos: a foto privada só sai com
+ * assinatura válida e no prazo (403). O caminho é normalizado antes de olhar a
+ * pasta, para que "/uploads/companies/../people/x.jpg" não fure a regra.
+ */
+export function uploadsGate(secret: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    let relative: string;
+    try {
+      relative = decodeURIComponent(req.path);
+    } catch {
+      res.sendStatus(404);
+      return;
+    }
+    if (relative.includes("..") || relative.includes("\0")) {
+      res.sendStatus(404);
+      return;
+    }
+    const normalized = posix.normalize(relative);
+    const folder = normalized.split("/")[1] ?? "";
+    if (PUBLIC_UPLOAD_FOLDERS.has(folder)) {
+      next();
+      return;
+    }
+
+    const { exp, sig } = req.query;
+    if (
+      !isValidUploadSignature(
+        `${UPLOADS_PUBLIC_PREFIX}${normalized}`,
+        exp,
+        sig,
+        secret,
+      )
+    ) {
+      res.sendStatus(403);
+      return;
+    }
+    // Só quem recebeu o link guarda a foto, e no máximo até ele vencer.
+    res.setHeader(
+      "Cache-Control",
+      `private, max-age=${secondsUntil(exp as string)}`,
+    );
+    next();
+  };
+}
 
 // O Swagger fica ligado em desenvolvimento e desligado em produção, a menos que
 // SWAGGER_ENABLED diga o contrário.
@@ -23,6 +80,13 @@ export function isSwaggerEnabled(env: Env): boolean {
  */
 export function configureApp(app: NestExpressApplication, env: Env): void {
   const swaggerEnabled = isSwaggerEnabled(env);
+  // Assina os links das fotos privadas; em produção o validateEnv já garante o segredo.
+  const uploadsSecret = env.JWT_SECRET;
+  if (!uploadsSecret) {
+    throw new Error(
+      "JWT_SECRET é obrigatório para assinar os links de /uploads",
+    );
+  }
 
   // Atrás de proxy, o IP do cliente (usado no limite de tentativas) vem do
   // cabeçalho X-Forwarded-For. TRUST_PROXY é o número de proxies à frente da API;
@@ -41,9 +105,12 @@ export function configureApp(app: NestExpressApplication, env: Env): void {
     }),
   );
 
-  // Arquivos enviados (ex.: fotos de pessoas) servidos a partir da pasta local.
-  // São públicos para quem tem o link; ver docs/technical-debt.md antes de produção.
+  // Arquivos enviados servidos a partir da pasta local. As fotos de pessoas, de
+  // produtos e da conta do portal só saem com o link assinado que a API devolve
+  // (ver SignedUploadsInterceptor); as logos são públicas.
+  app.use(UPLOADS_PUBLIC_PREFIX, uploadsGate(uploadsSecret));
   app.useStaticAssets(uploadsRoot(), { prefix: UPLOADS_PUBLIC_PREFIX });
+  app.useGlobalInterceptors(new SignedUploadsInterceptor(uploadsSecret));
 
   if (swaggerEnabled) {
     // Documentação gerada a partir dos DTOs e controllers (ver @ApiTags/@ApiBearerAuth).
