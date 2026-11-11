@@ -28,7 +28,7 @@ reais**.
 | Arquivo | Responsabilidade |
 | ------- | ---------------- |
 | `modules/recurring-appointment/recurring-appointment.service.ts` | Validações, geração, regeração e extensão |
-| — `buildOccurrences()` | Percorre o calendário da empresa e monta os horários |
+| `modules/recurring-appointment/recurrence-occurrences.ts` | `buildOccurrences()`: percorre o calendário da empresa e monta os horários (função pura) |
 | — `findNeedingExtension()` | Alimenta a notificação de horizonte |
 | `modules/appointment/appointment.service.ts` | Cria e cancela os agendamentos gerados |
 

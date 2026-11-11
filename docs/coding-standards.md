@@ -32,6 +32,10 @@
   - acesso ao banco
   - regra de negócio
   - transformação de dados
+- Quando um service crescer, separar pelo assunto, não pelo tamanho:
+  - um caso de uso com vida própria vira outro service do mesmo módulo (ex.: `PaymentCheckoutService`, a comanda, ao lado do `PaymentService`);
+  - cálculos que não acessam o banco viram funções puras num arquivo ao lado (ex.: `class-session-agenda.ts`, `recurrence-occurrences.ts`, `product-pricing.ts`), testadas sem mock;
+  - funções de data e horário usadas por mais de um módulo ficam em `src/common/time/` (ex.: `localDateOf`, `minutesOf`), nunca importadas de outro service.
 
 - Padronizar as respostas para chamadas HTTP:
   - GET - 200

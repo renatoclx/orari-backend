@@ -587,3 +587,14 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Pagamentos:** `clientWhere` (as três origens) nos filtros por cliente; a origem `productSale` na listagem e nos anteriores da comanda; `productSales` na comanda e nos totais de hoje; a baixa lê o cliente da venda; `update`/`remove` recusam o pagamento da venda (409).
 - **Relatórios:** o financeiro ganhou `products` (total, série e origem `product` no extrato, com `saleDescription`); a Análise de recebíveis lê o cliente da venda.
 - **Acesso:** `product-sales` no catálogo (`view`, `create`, `remove`; exige ver `tabs` e `products`; fora do modelo padrão).
+
+## 2.55 Legibilidade dos services
+
+Refatoração sem mudança de comportamento: as rotas, as respostas e as regras são as mesmas.
+
+- **`common/time`:** `localDateOf` (data de calendário no fuso da empresa) substitui o `localToday` que os módulos importavam de `receivables.service.ts`, o `PaymentService.toLocalDate` e o `ClientPlanService.todayIn`. `minutesOf` e `formatMinutes` (em `time-of-day.ts`) substituem as cópias de `class-group-schedule.ts`, `portal-availability.ts` (`timeOf`) e da recorrência.
+- **Comanda:** `findCheckouts`, `settle` e os tipos `Checkout*` saem do `PaymentService` para o `PaymentCheckoutService` (`payment-checkout.service.ts`), usado pelo mesmo `PaymentController`. O que os dois compartilham (`isOverdue`, `sumAmounts`, `ensurePaidAtIsNotFuture`, `mapUniqueViolation`, `saleItemsSelect`) fica em `payment-rules.ts`. `payment.service.ts` foi de 1.397 para cerca de 740 linhas.
+- **Agenda de turmas:** `ensureAgendaRangeIsValid`, `classGroupStartsOf`, `freeSlotsOf` e `seatsOf` viram funções puras em `class-session-agenda.ts`; o `ClassSessionService` fica com as consultas.
+- **Recorrência:** `buildOccurrences` e o calendário (`toDateParts`, `isBeforeOrSameDay`, `advanceOneDay`, `minutesBetween`) vão para `recurrence-occurrences.ts`, com spec próprio; o `weekDayIndex` local dá lugar ao `weekDayIndexOf`.
+- **Padrão:** a regra de quando separar um service entrou em `coding-standards.md` ("Organização").
+
