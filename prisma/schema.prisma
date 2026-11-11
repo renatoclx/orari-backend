@@ -42,6 +42,8 @@ model User {
   closingsCancelled         CommissionClosing[]        @relation("CommissionClosingCancelledBy")
   // Contas a pagar que este usuário lançou.
   payablesCreated           Payable[]                  @relation("PayableCreatedBy")
+  // Movimentações de estoque que este usuário lançou.
+  stockMovements            StockMovement[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -169,6 +171,7 @@ model Company {
   expenseCategories     ExpenseCategory[]
   productCategories     ProductCategory[]
   products              Product[]
+  stockMovements        StockMovement[]
   payables              Payable[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
@@ -1470,6 +1473,8 @@ model Payable {
   category          ExpenseCategory    @relation(fields: [categoryId], references: [id])
   paymentMethod     PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
   createdBy         User               @relation("PayableCreatedBy", fields: [createdById], references: [id])
+  // Gerada pela entrada de estoque (compra), quando pedida.
+  stockMovement     StockMovement?
 
   @@index([companyId, status, dueDate])
   @@index([seriesId])
@@ -1535,9 +1540,11 @@ model Product {
   updatedAt        DateTime?
   deletedAt        DateTime?
 
-  company  Company         @relation(fields: [companyId], references: [id])
-  category ProductCategory @relation(fields: [categoryId], references: [id])
-  supplier People?         @relation(fields: [supplierId], references: [id])
+  company        Company         @relation(fields: [companyId], references: [id])
+  category       ProductCategory @relation(fields: [categoryId], references: [id])
+  supplier       People?         @relation(fields: [supplierId], references: [id])
+  // O estoque atual é o saldo destas movimentações (gravado no produto).
+  stockMovements StockMovement[]
 
   @@unique([companyId, sku], where: raw("\"deletedAt\" IS NULL AND \"sku\" IS NOT NULL"))
   @@index([companyId])
@@ -1545,4 +1552,46 @@ model Product {
   @@index([supplierId])
   @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("products")
+}
+
+// Motivo da movimentação de estoque (ver business-rules/categorias-produtos.md).
+enum StockMovementType {
+  // Saldo informado no cadastro do produto (ou o que havia antes do controle).
+  INITIAL
+  // Entrada por compra: atualiza o preço de custo.
+  PURCHASE
+  // Saídas lançadas à mão.
+  INTERNAL_USE
+  LOSS
+  // Inventário: o saldo passa a ser o contado.
+  ADJUSTMENT
+}
+
+// Entrada ou saída de estoque. Não se altera nem se exclui: um erro se
+// corrige com um ajuste.
+model StockMovement {
+  id           String            @id @default(uuid())
+  companyId    String
+  productId    String
+  type         StockMovementType
+  // Variação do saldo: positiva na entrada, negativa na saída.
+  quantity     Int
+  // Saldo do produto logo depois desta movimentação.
+  balanceAfter Int
+  // Custo unitário da compra (só na entrada por compra).
+  unitCost     Decimal?          @db.Decimal(10, 2)
+  note         String?
+  // Vazio no saldo de antes do controle de estoque (migração).
+  createdById  String?
+  // Conta a pagar lançada junto com a compra, quando pedida.
+  payableId    String?           @unique
+  createdAt    DateTime          @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+  createdBy User?    @relation(fields: [createdById], references: [id])
+  payable   Payable? @relation(fields: [payableId], references: [id], onDelete: SetNull)
+
+  @@index([productId, createdAt])
+  @@map("stock_movements")
 }

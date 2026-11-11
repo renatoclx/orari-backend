@@ -44,7 +44,11 @@ export class ProductController {
     @Body() dto: CreateProductDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.productService.create(dto, currentUser.companyId);
+    return this.productService.create(
+      dto,
+      currentUser.companyId,
+      currentUser.id,
+    );
   }
 
   @Get()

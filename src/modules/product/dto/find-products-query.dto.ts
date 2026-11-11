@@ -32,4 +32,14 @@ export class FindProductsQueryDto extends PaginationQueryDto {
   })
   @IsBoolean()
   isActive?: boolean;
+
+  /** `true`: só os produtos com o estoque atual abaixo do mínimo. */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return value;
+  })
+  @IsBoolean()
+  lowStock?: boolean;
 }

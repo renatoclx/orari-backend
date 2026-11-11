@@ -487,6 +487,28 @@ export class PayableService {
     }
   }
 
+  /**
+   * Confere o que uma conta nova precisa (favorecido, categoria e, se já
+   * paga, método e data) para quem a lança por outro caminho, dentro da
+   * própria transação (ex.: entrada de estoque por compra).
+   */
+  async ensureNewPayable(
+    input: {
+      payeeId?: string | null;
+      categoryId: string;
+      paid?: { paidAt: string; paymentMethodId: string };
+    },
+    companyId: string,
+    now = new Date(),
+  ): Promise<void> {
+    await this.ensurePayee(input.payeeId, companyId);
+    await this.ensureCategory(input.categoryId, companyId);
+    if (input.paid) {
+      await this.ensureMethod(input.paid.paymentMethodId, companyId);
+      await this.ensureNotFuture(input.paid.paidAt, companyId, now);
+    }
+  }
+
   private async today(companyId: string, now: Date) {
     return localToday(now, await this.companyService.getTimeZone(companyId));
   }

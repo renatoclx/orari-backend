@@ -157,6 +157,8 @@ describe("Rotas HTTP", () => {
       ["DELETE /products/:id", ["ADMIN"]],
       ["POST /products/:id/photo", ["ADMIN"]],
       ["DELETE /products/:id/photo", ["ADMIN"]],
+      ["POST /products/:id/stock-movements", ["ADMIN"]],
+      ["GET /products/:id/stock-movements", ["ADMIN"]],
       ["POST /class-groups", ["ADMIN"]],
       ["GET /class-groups", ["ADMIN"]],
       ["GET /class-groups/:id", ["ADMIN"]],
@@ -314,6 +316,14 @@ describe("Rotas HTTP", () => {
           .set("Authorization", auth(http, "admin"))
           .expect(400);
       }
+    });
+
+    it("produto: a alteração recusa o estoque atual (muda só pelas movimentações)", async () => {
+      await request(server())
+        .patch(`/products/${ANY_UUID}`)
+        .set("Authorization", auth(http, "admin"))
+        .send({ currentStock: 5 })
+        .expect(400);
     });
 
     it("usuário: aceita peopleId UUID ou null e recusa outro valor (400)", async () => {

@@ -21,7 +21,10 @@ const IfPresent = () => ValidateIf((_, value) => value !== undefined);
 // Campo opcional: null remove o valor gravado.
 const IfNotNull = () => ValidateIf((_, value) => value !== null);
 
-/** Tudo é opcional; o que não for enviado vem do que está gravado. */
+/**
+ * Tudo é opcional; o que não for enviado vem do que está gravado. O estoque
+ * atual não entra (400): muda só pelas movimentações de estoque.
+ */
 export class UpdateProductDto {
   @IfPresent()
   @IsString()
@@ -78,12 +81,6 @@ export class UpdateProductDto {
   @IsNumber(PRICE)
   @Min(MIN_PRICE)
   promotionalPrice?: number | null;
-
-  @IfPresent()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  currentStock?: number;
 
   /** `null` remove. */
   @IsOptional()

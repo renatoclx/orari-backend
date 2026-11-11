@@ -14,6 +14,7 @@ import { ProductCategoryService } from "../product-category/product-category.ser
 import { ProductService } from "./product.service";
 
 const COMPANY_ID = "company-1";
+const USER_ID = "user-1";
 const anyDate: unknown = expect.any(Date);
 const details = {
   omit: { normalizedName: true },
@@ -28,10 +29,14 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 describe("ProductService", () => {
   let service: ProductService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
+    // Lista de consultas (leitura) ou função (cadastro com o saldo inicial).
+    $transaction: vi.fn(
+      (arg: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+        typeof arg === "function" ? arg(prismaMock) : Promise.all(arg),
     ),
+    stockMovement: { create: vi.fn() },
     product: {
+      fields: { minimalStock: "minimalStock-ref" },
       create: vi.fn(),
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -73,6 +78,8 @@ describe("ProductService", () => {
     vi.clearAllMocks();
     prismaMock.product.findFirst.mockResolvedValue(stored);
     prismaMock.product.update.mockResolvedValue(stored);
+    // O cadastro usa o id do produto criado para o saldo inicial.
+    prismaMock.product.create.mockResolvedValue(stored);
     peopleServiceMock.findOne.mockResolvedValue({ type: "SUPPLIER" });
     storageMock.save.mockResolvedValue("/uploads/products/nova.png");
     const module: TestingModule = await Test.createTestingModule({
@@ -89,7 +96,7 @@ describe("ProductService", () => {
 
   describe("create", () => {
     it("calcula a margem sobre a venda e grava na empresa do usuário", async () => {
-      await service.create(dto, COMPANY_ID);
+      await service.create(dto, COMPANY_ID, USER_ID);
 
       expect(categoryServiceMock.ensureActive).toHaveBeenCalledWith(
         "cat-1",
@@ -106,14 +113,29 @@ describe("ProductService", () => {
       expect(String(data.profitMargin)).toBe("40");
     });
 
+    it("grava o estoque informado como a movimentação de saldo inicial", async () => {
+      await service.create(dto, COMPANY_ID, USER_ID);
+
+      expect(prismaMock.stockMovement.create).toHaveBeenCalledWith({
+        data: {
+          companyId: COMPANY_ID,
+          productId: "prod-1",
+          quantity: 10,
+          createdById: USER_ID,
+          type: "INITIAL",
+          balanceAfter: 10,
+        },
+      });
+    });
+
     it("recusa a categoria inativa sem gravar", async () => {
       categoryServiceMock.ensureActive.mockRejectedValueOnce(
         new BadRequestException("A categoria de produto está inativa"),
       );
 
-      await expect(service.create(dto, COMPANY_ID)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.create(dto, COMPANY_ID, USER_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.product.create).not.toHaveBeenCalled();
     });
 
@@ -135,7 +157,7 @@ describe("ProductService", () => {
       ],
     ])("recusa %s (400)", async (_, override, message) => {
       await expect(
-        service.create({ ...dto, ...override }, COMPANY_ID),
+        service.create({ ...dto, ...override }, COMPANY_ID, USER_ID),
       ).rejects.toThrow(message);
       expect(prismaMock.product.create).not.toHaveBeenCalled();
     });
@@ -145,8 +167,9 @@ describe("ProductService", () => {
         service.create(
           { ...dto, promotionalPrice: 90, minimalStock: 3, maximumStock: 3 },
           COMPANY_ID,
+          USER_ID,
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual(stored);
       expect(prismaMock.product.create).toHaveBeenCalled();
     });
 
@@ -164,7 +187,7 @@ describe("ProductService", () => {
       arrange();
 
       await expect(
-        service.create({ ...dto, supplierId: "p-1" }, COMPANY_ID),
+        service.create({ ...dto, supplierId: "p-1" }, COMPANY_ID, USER_ID),
       ).rejects.toThrow(
         "O fornecedor precisa ser uma pessoa ativa do tipo SUPPLIER",
       );
@@ -179,12 +202,27 @@ describe("ProductService", () => {
       );
 
       await expect(
-        service.create({ ...dto, sku: "OL-01" }, COMPANY_ID),
+        service.create({ ...dto, sku: "OL-01" }, COMPANY_ID, USER_ID),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
   describe("findAll", () => {
+    it("estoque baixo: só os com mínimo e o atual abaixo dele", async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await service.findAll({ page: 1, limit: 10, lowStock: true }, COMPANY_ID);
+
+      const { where } = prismaMock.product.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+      };
+      expect(where).toMatchObject({
+        minimalStock: { not: null },
+        currentStock: { lt: "minimalStock-ref" },
+      });
+    });
+
     it("busca por nome ou SKU e ignora os excluídos", async () => {
       prismaMock.product.findMany.mockResolvedValue([stored]);
       prismaMock.product.count.mockResolvedValue(1);

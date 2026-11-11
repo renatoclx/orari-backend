@@ -87,12 +87,19 @@ describe("UpdateProductDto", () => {
     ["categoryId"],
     ["salePrice"],
     ["purchasePrice"],
-    ["currentStock"],
     ["isActive"],
   ])("recusa %s nulo (é obrigatório)", async (property) => {
     await expect(
       errorsFor({ [property]: null }, UpdateProductDto),
     ).resolves.toEqual([property]);
+  });
+});
+
+describe("UpdateProductDto: estoque", () => {
+  it("recusa o estoque atual (muda só pelas movimentações)", async () => {
+    await expect(
+      errorsFor({ currentStock: 5 }, UpdateProductDto),
+    ).resolves.toEqual(["currentStock"]);
   });
 });
 
@@ -113,5 +120,12 @@ describe("FindProductsQueryDto", () => {
 
     await expect(validate(query)).resolves.toEqual([]);
     expect(query.isActive).toBe(false);
+  });
+
+  it("converte o filtro de estoque baixo", async () => {
+    const query = plainToInstance(FindProductsQueryDto, { lowStock: "true" });
+
+    await expect(validate(query)).resolves.toEqual([]);
+    expect(query.lowStock).toBe(true);
   });
 });

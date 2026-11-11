@@ -66,7 +66,7 @@ export class CreateProductDto {
   @Min(MIN_PRICE)
   promotionalPrice?: number;
 
-  /** Quantidade inteira. */
+  /** Saldo inicial, inteiro; vira a primeira movimentação de estoque. */
   @Type(() => Number)
   @IsInt()
   @Min(0)

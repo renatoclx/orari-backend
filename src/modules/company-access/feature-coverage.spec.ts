@@ -23,6 +23,9 @@ import { CommissionAdvanceController } from "../commission/commission-advance.co
 import { CommissionClosingController } from "../commission/commission-closing.controller";
 import { ExpenseCategoryController } from "../expense-category/expense-category.controller";
 import { PayableController } from "../payable/payable.controller";
+import { ProductCategoryController } from "../product-category/product-category.controller";
+import { ProductController } from "../product/product.controller";
+import { StockMovementController } from "../stock/stock-movement.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
@@ -137,6 +140,9 @@ const CONTROLLERS: Controller[] = [
   RecurringAppointmentController,
   ServiceController,
   StateController,
+  ProductCategoryController,
+  ProductController,
+  StockMovementController,
   UserController,
 ];
 

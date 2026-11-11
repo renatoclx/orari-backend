@@ -25,7 +25,23 @@
 - **Unidade de medida:** opcional, de uma lista fixa: `UN` (unidade), `CX` (caixa), `PCT` (pacote), `KG`, `G`, `L`, `ML` e `M`.
 - **Preços:** os preços de venda e de custo são obrigatórios e maiores que zero, com até duas casas decimais. O preço promocional é opcional, maior que zero e menor que o preço de venda (400); `null` remove.
 - **Margem de lucro:** calculada pela API sobre o preço de venda, `(venda − custo) ÷ venda × 100`, com duas casas, e gravada a cada mudança de preço; não é aceita no payload. Ex.: venda 100 e custo 60 dão 40%. Com o custo acima da venda, a margem fica negativa. O preço promocional não muda a margem.
-- **Estoque:** quantidades inteiras, sem casas decimais. O estoque atual é obrigatório ao criar (0 ou mais) e é alterado direto no produto (não há movimentação nesta versão). O mínimo e o máximo são opcionais (0 ou mais), e o mínimo não pode passar do máximo (400); na alteração, o que não for enviado vem do que está gravado.
+- **Estoque:** quantidades inteiras. O estoque atual é o saldo das **movimentações**, gravado no produto. No cadastro, ele é informado (0 ou mais) e vira a movimentação "Saldo inicial". A alteração do produto recusa `currentStock` (400). O mínimo e o máximo são opcionais (0 ou mais), e o mínimo não pode passar do máximo (400); na alteração, o que não for enviado vem do que está gravado.
+- **Movimentações** (`POST /products/:id/stock-movements`, ação Edita de Produtos):
+  - **Tipos:** entrada por compra (`PURCHASE`), uso interno (`INTERNAL_USE`), perda (`LOSS`) e ajuste (`ADJUSTMENT`).
+  - **Quantidade:** na entrada e nas saídas, é 1 ou mais. No ajuste, é o saldo contado (0 ou mais), e a diferença vira a movimentação. Ajuste igual ao estoque atual é recusado (400).
+  - **Saldo:** o saldo nunca fica negativo (409, "Estoque insuficiente"). Se outro lançamento mudar o saldo ao mesmo tempo, a API responde 409.
+  - **Sem edição:** a movimentação não se altera nem se exclui. Um erro se corrige com um ajuste.
+- **Entrada por compra:**
+  - o custo unitário é obrigatório e passa a ser o preço de custo do produto (último custo), com a margem recalculada;
+  - custo e conta a pagar só valem na compra (400 nos demais tipos).
+- **Conta a pagar da compra** (opcional, `payable`):
+  - campos: categoria de despesa e vencimento; pode já nascer paga, com a data até hoje e o método;
+  - o valor é quantidade × custo, e a descrição é "Compra: produto (quantidade)";
+  - o favorecido é o fornecedor do produto, a não ser que venha outro (`null`: nenhum);
+  - segue as regras do Contas a pagar e exige essa funcionalidade no plano (403);
+  - é lançada na mesma transação da movimentação.
+- **Histórico:** `GET /products/:id/stock-movements`, paginado, da mais recente para a mais antiga, com quem lançou e a conta ligada. O saldo de antes do controle de estoque aparece sem usuário.
+- **Estoque baixo:** `GET /products?lowStock=true` traz os produtos com mínimo e o estoque atual abaixo dele.
 - **Situação:** o produto é inativado e reativado pela alteração (`isActive`). A exclusão é lógica (`deletedAt`); o produto excluído some das listagens e o SKU dele fica livre.
 - **Foto:** JPEG ou PNG, até 2 MB, enviada como multipart no campo `photo` (`POST /products/:id/photo`); a nova substitui a anterior. `DELETE /products/:id/photo` remove.
 - A listagem é paginada, em ordem de nome, com filtros por nome ou SKU (parcial, sem diferenciar acentos nem maiúsculas), categoria, fornecedor e situação. Cada produto traz a categoria (`id`, `name`) e o fornecedor (`id`, `name`) ou `null`.

@@ -571,3 +571,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Categoria:** `ProductCategoryService.ensureActive` (404/400) no cadastro, na troca de categoria e na reativação do produto; a inativação conta os produtos ativos direto na tabela (o `ProductModule` depende deste módulo).
 - **Alteração do produto:** os campos obrigatórios usam `ValidateIf(valor !== undefined)` (ausente não muda, `null` é 400); os opcionais aceitam `null` para limpar.
 - **Foto:** `POST/DELETE /products/:id/photo`, como a das pessoas (`LocalFileStorage`, pasta `products`).
+
+## 2.53 Estoque: movimentações
+
+- **Banco** (migration `20261111180000_stock_movements`): enum `StockMovementType` (`INITIAL`, `PURCHASE`, `INTERNAL_USE`, `LOSS`, `ADJUSTMENT`) e `stock_movements` (variação `quantity`, `balanceAfter`, `unitCost`, `createdById` opcional, `payableId` único com `SET NULL`). A migração grava o `INITIAL` de cada produto não excluído com o estoque que ele já tinha.
+- **Módulo `stock`** (`StockMovementService`, rotas `products/:productId/stock-movements`, ADMIN, `@Feature("products")`; lançar = Edita). O saldo é gravado com `updateMany` condicionado ao saldo lido (`currentStock` igual): se outro lançamento mudou o estoque no meio, responde 409 em vez de passar do que há.
+- **Compra:** atualiza `purchasePrice` e `profitMargin` (`profitMarginOf`). A conta a pagar opcional confere o acesso com `CompanyAccessService.can(…, "payables", "create")` e as referências com o novo `PayableService.ensureNewPayable`, e é criada na mesma transação.
+- **Produto:** `create` recebe o usuário e grava o `INITIAL` na transação (`recordInitialStock`); `UpdateProductDto` perdeu `currentStock` (o whitelist responde 400); `lowStock` compara colunas com `prisma.product.fields.minimalStock`.
+- **Testes:** `feature-coverage` passou a incluir os controllers de produto, categoria de produto e estoque.

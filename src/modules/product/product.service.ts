@@ -15,6 +15,7 @@ import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PeopleService } from "../people/people.service";
 import { ProductCategoryService } from "../product-category/product-category.service";
+import { recordInitialStock } from "../stock/initial-stock";
 import { CreateProductDto } from "./dto/create-product.dto";
 import { FindProductsQueryDto } from "./dto/find-products-query.dto";
 import { UpdateProductDto } from "./dto/update-product.dto";
@@ -57,9 +58,11 @@ export class ProductService {
     private readonly storage: LocalFileStorage,
   ) {}
 
+  /** O estoque informado vira a movimentação de saldo inicial. */
   async create(
     dto: CreateProductDto,
     companyId: string,
+    userId: string,
   ): Promise<ProductResponse> {
     this.ensurePricesAndStock({
       salePrice: dto.salePrice,
@@ -74,14 +77,23 @@ export class ProductService {
     }
 
     try {
-      return await this.prisma.product.create({
-        data: {
-          ...dto,
-          normalizedName: normalizeForSearch(dto.name),
-          profitMargin: profitMarginOf(dto.salePrice, dto.purchasePrice),
+      return await this.prisma.$transaction(async (tx) => {
+        const product = await tx.product.create({
+          data: {
+            ...dto,
+            normalizedName: normalizeForSearch(dto.name),
+            profitMargin: profitMarginOf(dto.salePrice, dto.purchasePrice),
+            companyId,
+          },
+          ...withDetails,
+        });
+        await recordInitialStock(tx, {
           companyId,
-        },
-        ...withDetails,
+          productId: product.id,
+          quantity: dto.currentStock,
+          createdById: userId,
+        });
+        return product;
       });
     } catch (error) {
       throw this.mapUniqueViolation(error);
@@ -96,6 +108,7 @@ export class ProductService {
       categoryId,
       supplierId,
       isActive,
+      lowStock,
     }: FindProductsQueryDto,
     companyId: string,
   ): Promise<PaginatedResult<ProductResponse>> {
@@ -105,6 +118,11 @@ export class ProductService {
       categoryId,
       supplierId,
       isActive,
+      // Estoque baixo: abaixo do mínimo (sem mínimo, nunca está baixo).
+      ...(lowStock && {
+        minimalStock: { not: null },
+        currentStock: { lt: this.prisma.product.fields.minimalStock },
+      }),
       OR: search
         ? [
             { normalizedName: { contains: normalizeForSearch(search) } },
@@ -142,7 +160,8 @@ export class ProductService {
   }
 
   /**
-   * O que não vier no payload continua como está. As regras entre campos
+   * O que não vier no payload continua como está. O estoque atual não muda
+   * aqui: só pelas movimentações. As regras entre campos
    * (promocional abaixo da venda, mínimo até o máximo) são conferidas com os
    * valores finais, e a margem é recalculada com eles.
    */

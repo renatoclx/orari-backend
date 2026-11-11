@@ -67,3 +67,32 @@
 - Um produto pertence a uma empresa.
 - Um produto pertence a uma categoria.
 - Um produto pode ter um fornecedor (pessoa do tipo SUPPLIER).
+- Um produto tem várias movimentações de estoque; o estoque atual é o saldo delas.
+
+---
+
+## StockMovement
+
+- Representa uma entrada ou saída de estoque de um produto. Não se altera nem se exclui: um erro se corrige com um ajuste.
+
+### Atributos
+
+| Nome         | Descrição                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| id           | Identificador único                                                                          |
+| companyId    | Código da empresa                                                                            |
+| productId    | Código do produto                                                                            |
+| type         | Motivo: INITIAL (saldo inicial), PURCHASE (compra), INTERNAL_USE, LOSS (perda) ou ADJUSTMENT |
+| quantity     | Variação do saldo: positiva na entrada, negativa na saída                                    |
+| balanceAfter | Saldo do produto logo depois da movimentação                                                 |
+| unitCost     | Custo unitário (só na compra)                                                                |
+| note         | Observação (opcional)                                                                        |
+| createdById  | Usuário que lançou (vazio no saldo de antes do controle de estoque)                          |
+| payableId    | Conta a pagar lançada junto com a compra (opcional)                                          |
+| createdAt    | Data e hora do lançamento                                                                    |
+
+### Relacionamentos
+
+- Uma movimentação pertence a uma empresa e a um produto.
+- Uma movimentação pode ter sido lançada por um usuário.
+- Uma movimentação de compra pode ter uma conta a pagar (Payable).
