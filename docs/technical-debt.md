@@ -171,7 +171,7 @@ empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
 
 **Onde:** `/contacts`, `/addresses` e as telas que leem dados de outra funcionalidade.
 
-**O que é:** o controle de acesso por empresa (ver `business-rules.md`, "Acessos e limites da empresa") barra por funcionalidade, mas três pontos ficaram de fora:
+**O que é:** o controle de acesso por empresa (ver `business-rules/empresa-e-acesso.md`, "Acessos e limites da empresa") barra por funcionalidade, mas três pontos ficaram de fora:
 
 - `/contacts` e `/addresses` servem a pessoas (clientes, funcionários, profissionais) e à empresa. Não há como saber a funcionalidade só pela rota, e resolver o dono do contato exigiria consultas extras.
 - Uma tela que lê dados de outra funcionalidade (ex.: o agendamento que mostra o pagamento) depende de a empresa ter as duas. A matriz só valida as dependências de cadastros (clientes, profissionais e serviços).

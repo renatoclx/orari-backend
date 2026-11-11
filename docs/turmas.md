@@ -1,7 +1,7 @@
 # Atendimento em Turma
 
-> **Implementado:** as seis etapas valem na API. As entidades estão no `domain.md` e as
-> regras vigentes no `business-rules.md` ("Turmas"); este documento guarda o desenho e as
+> **Implementado:** as seis etapas valem na API. As entidades estão no `domain/turmas.md` e as
+> regras vigentes no `business-rules/turmas.md` ("Turmas"); este documento guarda o desenho e as
 > decisões.
 
 - Certos serviços podem ser realizados em turma: vários clientes, no mesmo horário, com
@@ -254,7 +254,7 @@ abrir.
 
 | Etapa | Conteúdo                                                                                                                                      |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules.md`, "Turmas")                           |
+| 1     | `allowsClasses` no serviço e cadastro de turmas fixas (ADMIN) — **feita** (regras em `business-rules/turmas.md`, "Turmas")                    |
 | 2     | Sessões: encaixe avulso, atendimento que vira turma, vagas com trava, conflito do profissional, sessão na resposta do agendamento — **feita** |
 | 3     | Recorrência e plano encaixados em turma (dias escolhidos entre os da turma) — **feita**                                                       |
 | 4     | Cancelamento da sessão e saída da turma, com reposição das sessões de plano — **feita**                                                       |

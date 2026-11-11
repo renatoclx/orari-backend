@@ -27,7 +27,7 @@ const RECEIVES = {
 } as const;
 
 /**
- * Mensagens → Enviar (ver docs/business-rules.md, "Mensagens da clínica"): a
+ * Mensagens → Enviar (ver docs/business-rules/mensagens.md, "Mensagens da clínica"): a
  * clínica escreve e envia a todos os clientes com o app, uma vez por dia.
  */
 @Injectable()

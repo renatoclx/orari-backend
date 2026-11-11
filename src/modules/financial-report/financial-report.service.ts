@@ -144,7 +144,7 @@ export function summarizeReceived(
 const person = { select: { id: true, name: true } } as const;
 
 /**
- * Relatório financeiro: o que entrou no caixa (ver docs/business-rules.md,
+ * Relatório financeiro: o que entrou no caixa (ver docs/business-rules/relatorios.md,
  * "Relatório financeiro"). Só leitura, pela data do pagamento.
  */
 @Injectable()

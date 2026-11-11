@@ -3,7 +3,7 @@
 Atendimentos que se repetem em dias fixos da semana e **geram agendamentos
 reais**.
 
-**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules.md § Agendamentos recorrentes](../business-rules.md)
+**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules/recorrencias.md § Agendamentos recorrentes](../business-rules/recorrencias.md)
 
 ## Regras em resumo
 

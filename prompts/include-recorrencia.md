@@ -10,6 +10,6 @@ O frontend (Next.js) está montando as telas de Recorrências. Preciso de 4 muda
 
 **Opcional (me diga se acha viável e o custo):** uma forma de simular a criação sem gravar (dry-run), que devolva as datas que seriam geradas e as ocorrências que conflitariam, para o frontend mostrar o resultado antes de confirmar.
 
-Testes (vitest), `docs/business-rules.md` e Swagger atualizados. Sem push.
+Testes (vitest), `docs/business-rules/recorrencias.md` e Swagger atualizados. Sem push.
 
 **Ao final, devolva:** rotas, JSON de exemplo, as decisões que tomou onde deixei aberto e o custo do dry-run.

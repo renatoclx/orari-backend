@@ -156,7 +156,7 @@ export type CompletedStandaloneAppointment = Prisma.AppointmentGetPayload<{
  * Agendamentos pertencem à empresa do usuário autenticado; os de outras empresas
  * se comportam como inexistentes (404).
  *
- * Não existe exclusão (ver domain.md): o ciclo de vida é controlado pelo status,
+ * Não existe exclusão (ver docs/domain/agenda.md): o ciclo de vida é controlado pelo status,
  * e cancelar é mudar o status para CANCELLED.
  *
  * createFromRecurrence e cancelFutureFromRecurrence existem para serem

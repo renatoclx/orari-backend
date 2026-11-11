@@ -20,7 +20,7 @@ import { CreateAnamnesisTemplateDto } from "./dto/create-anamnesis-template.dto"
 import { FindAnamnesisTemplatesQueryDto } from "./dto/find-anamnesis-templates-query.dto";
 import { UpdateAnamnesisTemplateDto } from "./dto/update-anamnesis-template.dto";
 
-// Sem DELETE: o modelo é inativado por isActive (ver business-rules.md).
+// Sem DELETE: o modelo é inativado por isActive (ver business-rules/anamnese.md).
 @ApiTags("Anamnese - Modelos")
 @ApiBearerAuth()
 @Feature("anamnesis-templates")

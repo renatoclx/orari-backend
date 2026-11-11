@@ -126,7 +126,7 @@ type RecurringAppointmentWithDetails = Prisma.RecurringAppointmentGetPayload<
  * Agendamentos recorrentes pertencem à empresa do usuário autenticado; os de
  * outras empresas se comportam como inexistentes (404).
  *
- * Não existe exclusão (ver domain.md): a recorrência é desativada por isActive.
+ * Não existe exclusão (ver docs/domain/recorrencias.md): a recorrência é desativada por isActive.
  * Os dias fazem parte da recorrência e são substituídos em bloco.
  *
  * Este service não grava Appointment diretamente: ele calcula QUANDO cada

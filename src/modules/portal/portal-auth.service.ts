@@ -50,7 +50,7 @@ export const NOT_A_CLIENT = "NOT_A_CLIENT";
 
 /**
  * Conta do cliente no app: telefone + senha, única no Orari (ver
- * docs/business-rules.md, "Portal do cliente"). A sessão é da conta; em cada
+ * docs/business-rules/portal-do-cliente.md, "Portal do cliente"). A sessão é da conta; em cada
  * clínica o cliente é o cadastro dela (People) ligado à conta.
  */
 @Injectable()

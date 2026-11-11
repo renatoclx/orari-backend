@@ -2,7 +2,7 @@
 
 Login por JWT e controle de acesso por tipo de usuário.
 
-**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules.md § Tipos de usuário, Usuários e acesso, Senhas](../business-rules.md)
+**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules/empresa-e-acesso.md § Tipos de usuário, Usuários e acesso, Senhas](../business-rules/empresa-e-acesso.md)
 
 ## Regras em resumo
 

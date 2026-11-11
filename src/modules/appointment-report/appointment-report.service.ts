@@ -193,7 +193,7 @@ export function summarizeAppointments(
 }
 
 /**
- * Relatório de agendamentos (ver docs/business-rules.md, "Relatório de
+ * Relatório de agendamentos (ver docs/business-rules/relatorios.md, "Relatório de
  * agendamentos"). Só leitura, pelo início do agendamento no período.
  */
 @Injectable()

@@ -1,6 +1,6 @@
 # Resumo da implementação
 
-Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da preparação do template até o estado atual da API. As regras de negócio completas estão em `business-rules.md`. Este documento resume **o que foi feito, as decisões tomadas e as pendências**.
+Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da preparação do template até o estado atual da API. As regras de negócio completas estão em `business-rules/` (um arquivo por área). Este documento resume **o que foi feito, as decisões tomadas e as pendências**.
 
 > Estado do repositório: há 4 commits (até a criação do `domain.md`). Todo o trabalho a partir das entidades de domínio **ainda não foi commitado**.
 
@@ -510,7 +510,7 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 2.45 Falta (NO_SHOW) não cobra
 
 - **Motivo:** o `NO_SHOW` existia como status, mas não havia como usá-lo no dia a dia: o job de status conclui todo atendimento ao fim do horário e o de cobrança gera o pagamento em até 5 minutos, e o concluído com pagamento é travado. A falta só podia ser anotada até uns 5 minutos depois do fim do atendimento, e deixava o pagamento pendente.
-- **Regra (decidida com o dono do produto):** a falta **não cobra** e é **definitiva**. Marcar a falta (`PATCH /appointments/:id`, `status: NO_SHOW`) cancela o pagamento `PENDING` na mesma transação, vale também para o concluído, e é recusada se o atendimento ainda não iniciou ou se o pagamento já foi recebido (`PAID`, sem reembolso). Só o status e a observação mudam na mesma requisição. Detalhes em `business-rules.md` (Agendamentos > Falta).
+- **Regra (decidida com o dono do produto):** a falta **não cobra** e é **definitiva**. Marcar a falta (`PATCH /appointments/:id`, `status: NO_SHOW`) cancela o pagamento `PENDING` na mesma transação, vale também para o concluído, e é recusada se o atendimento ainda não iniciou ou se o pagamento já foi recebido (`PAID`, sem reembolso). Só o status e a observação mudam na mesma requisição. Detalhes em `business-rules/agenda.md` (Agendamentos > Falta).
 - **Como:** `AppointmentService.update` ganhou o caminho `marksNoShow`: `ensureCanBeMarkedNoShow` no lugar de `ensureNotLockedByPayment`, e a mesma transação do cancelamento (cancela o pagamento pendente), com o filtro de status em `NO_SHOW_FROM_STATUSES` (se o agendamento mudar no meio, 409). `ensureNotReopened` passou a valer também para a falta (estado final); pedir o cancelamento de quem faltou continua respondendo pela regra do cancelamento. Sem migration; os dois jobs não mudam.
 - **Verificado:** 23 testes novos no `appointment.service.spec.ts` e conferência numa segunda instância do backend, contra o banco local (futuro recusado, pago recusado, concluído com pendente vira falta e o pagamento fica `CANCELLED`, falta não volta nem cancela).
 - **Pagamento na resposta:** `payment: { status, deletedAt } | null` passou a vir em toda resposta de agendamento (`withRelations`), para a tela esconder "Marcar falta" no atendimento já pago (a API continua recusando, 400). Do pagamento só a situação: nada de valor ou método.

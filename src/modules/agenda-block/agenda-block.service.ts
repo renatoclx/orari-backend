@@ -42,7 +42,7 @@ const nextDay = ({ year, month, day }: Day): Day => {
 };
 
 /**
- * Horários bloqueados na agenda da empresa (ver docs/business-rules.md,
+ * Horários bloqueados na agenda da empresa (ver docs/business-rules/agenda.md,
  * "Bloqueio de horários"). O bloqueio conta como fora do funcionamento: a
  * conferência fica em BusinessHourService.isWithinBusinessHours; aqui só se
  * cadastra, lista e desbloqueia.

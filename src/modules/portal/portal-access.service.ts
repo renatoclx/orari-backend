@@ -52,7 +52,7 @@ type AccessLink = Prisma.PortalAccessLinkGetPayload<{
 }>;
 
 /**
- * Link de acesso que a clínica gera para um cliente (ver docs/business-rules.md,
+ * Link de acesso que a clínica gera para um cliente (ver docs/business-rules/portal-do-cliente.md,
  * "Portal do cliente"). A prova de identidade é a clínica, que conhece o
  * cliente: é o único caminho que liga a conta do app a um cadastro que já
  * existe, e também serve para criar uma senha nova ("esqueci a senha").

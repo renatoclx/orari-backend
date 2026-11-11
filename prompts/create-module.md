@@ -8,7 +8,7 @@ Module, Controller, Service e DTOs.
 ## Instruções
 
 1. Leia: `CLAUDE.md`, `architecture.md`, `coding-standards.md`,
-   `business-rules.md` e `auth.md`.
+   `business-rules/` (o arquivo da área) e `auth.md`.
 2. Confirme que a entidade já está no schema. Se não estiver, pare e use o
    `create-entity.md`.
 3. Apresente o plano: rotas e status, escopo de acesso (quem enxerga o quê),
@@ -23,7 +23,7 @@ Module, Controller, Service e DTOs.
 ## Limites
 
 - **Um módulo por vez.**
-- Não implemente regra que não esteja no `business-rules.md`.
+- Não implemente regra que não esteja em `docs/business-rules/`.
 - Não altere schema nem migration.
 - Não escreva testes (é a etapa seguinte).
 

@@ -28,7 +28,7 @@ Em `GET /client-plans`, acrescentar o filtro opcional `status`:
   recente para a mais antiga (`createdAt` decrescente), se ainda não for assim.
 
 Testes (vitest), Swagger (DTOs de resposta, como em recorrências) e
-`docs/business-rules.md` atualizados. Sem push.
+`docs/business-rules/planos.md` atualizados. Sem push.
 
 **Ao final, devolva:** rotas, JSON de exemplo (listagem e consulta), as decisões
 que tomou onde deixei aberto e a ordem da listagem.

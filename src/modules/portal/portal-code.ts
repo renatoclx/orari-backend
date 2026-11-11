@@ -6,7 +6,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-// Regras do código e da sessão do portal (ver docs/business-rules.md, "Portal do cliente").
+// Regras do código e da sessão do portal (ver docs/business-rules/portal-do-cliente.md, "Portal do cliente").
 export const CODE_TTL_MS = 10 * 60_000;
 export const MAX_CODE_ATTEMPTS = 5;
 // Depois de conferido, o código vale este tempo para escolher a pessoa e criar a sessão.

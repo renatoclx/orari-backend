@@ -2,7 +2,7 @@
 
 Base territorial usada pelos endereços.
 
-**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules.md § Estados e cidades](../business-rules.md)
+**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules/pessoas.md § Estados e cidades](../business-rules/pessoas.md)
 
 ## Regras em resumo
 

@@ -27,7 +27,7 @@ CLAUDE.md (plano, aprovação, código, testes) e não faça nada fora do escopo
   não muda contratações já feitas (as recorrências já guardam os dias, então
   basta não depender do plano depois de criadas).
 
-Testes (vitest), Swagger e `docs/business-rules.md` (seção "Planos": catálogo,
+Testes (vitest), Swagger e `docs/business-rules/planos.md` (seção "Planos": catálogo,
 serviços e horários, contratação) atualizados. Sem push.
 
 **Ao final, devolva:** rotas, JSON de exemplo (criação e resposta do plano, e o

@@ -2,7 +2,7 @@
 
 Cobrança de um agendamento e os métodos aceitos pela empresa.
 
-**PR:** 7 (`feat/pagamentos`) · **Regras:** [business-rules.md § Pagamentos](../business-rules.md)
+**PR:** 7 (`feat/pagamentos`) · **Regras:** [business-rules/pagamentos.md § Pagamentos](../business-rules/pagamentos.md)
 
 ## Regras em resumo
 

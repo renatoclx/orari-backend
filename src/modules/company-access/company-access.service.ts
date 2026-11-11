@@ -25,7 +25,7 @@ export interface CompanyAccessResponse {
 }
 
 /**
- * Acessos e limites por empresa (ver docs/business-rules.md, "Acessos e
+ * Acessos e limites por empresa (ver docs/business-rules/empresa-e-acesso.md, "Acessos e
  * limites"). Só o SUPER_ADMIN lê e grava, por empresa (garantido no controller).
  */
 @Injectable()

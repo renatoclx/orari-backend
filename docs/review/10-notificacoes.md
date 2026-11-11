@@ -3,7 +3,7 @@
 Avisos para a empresa agir. Hoje existe um único tipo: a recorrência está
 chegando ao fim dos agendamentos gerados.
 
-**PR:** 8 (`feat/notificacoes-e-demo`) · **Regras:** [business-rules.md § Notificações, Extensão do horizonte](../business-rules.md)
+**PR:** 8 (`feat/notificacoes-e-demo`) · **Regras:** [business-rules/mensagens.md § Notificações, Extensão do horizonte](../business-rules/mensagens.md)
 
 ## Regras em resumo
 

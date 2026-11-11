@@ -15,6 +15,6 @@ Regra nova:
 
 Testes (vitest) cobrindo: cancelar agendado e confirmado futuros (ok); cancelar em andamento, concluído e não compareceu (400); cancelar agendado ou confirmado cujo `startAt` já passou ou é agora (400, mesmo com o status ainda `SCHEDULED`); cancelar já cancelado (como você decidiu); cancelar junto com outros campos; a recorrência continua como está; alterar observação de um agendamento já iniciado continua permitido.
 
-Atualize `docs/business-rules.md` (seção Agendamentos: só se cancela antes de iniciar) e o Swagger (400 no PATCH). Em `docs/technical-debt.md`, remova ou marque como resolvida a dívida "Cancelamento de agendamento que já iniciou", se ela estiver lá. Sem push.
+Atualize `docs/business-rules/agenda.md` (seção Agendamentos: só se cancela antes de iniciar) e o Swagger (400 no PATCH). Em `docs/technical-debt.md`, remova ou marque como resolvida a dívida "Cancelamento de agendamento que já iniciou", se ela estiver lá. Sem push.
 
 **Ao final, devolva:** a regra implementada, a mensagem e o status de erro, o que decidiu sobre o já cancelado, o que encontrou sobre pagamento pendente, e os arquivos alterados.

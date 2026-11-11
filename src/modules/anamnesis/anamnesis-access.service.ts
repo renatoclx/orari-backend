@@ -4,7 +4,7 @@ import type { AuthenticatedUser } from "../../common/interfaces/authenticated-us
 import { PrismaService } from "../../prisma/prisma.service";
 
 /**
- * Quem pode usar a anamnese (ver docs/business-rules.md, "Acesso"): o ADMIN e o
+ * Quem pode usar a anamnese (ver docs/business-rules/anamnese.md, "Acesso"): o ADMIN e o
  * usuário vinculado a um profissional ativo da própria empresa. Os demais,
  * inclusive o SUPER_ADMIN sem vínculo, não acessam dados de saúde.
  */

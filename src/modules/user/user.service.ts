@@ -73,7 +73,7 @@ export type UserProfile = Prisma.UserGetPayload<{
 }>;
 
 /**
- * Gerenciamento de usuários (ver docs/business-rules.md):
+ * Gerenciamento de usuários (ver docs/business-rules/empresa-e-acesso.md):
  * - SUPER_ADMIN gerencia usuários de qualquer empresa ativa;
  * - ADMIN gerencia apenas usuários da própria empresa e não enxerga SUPER_ADMINs;
  * - ninguém exclui nem altera o tipo da própria conta.

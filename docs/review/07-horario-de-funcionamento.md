@@ -2,7 +2,7 @@
 
 Janelas em que a empresa atende, e o fuso em que elas valem.
 
-**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules.md § Horário de funcionamento, Fuso horário](../business-rules.md)
+**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules/agenda.md § Horário de funcionamento, Fuso horário](../business-rules/agenda.md)
 
 ## Regras em resumo
 

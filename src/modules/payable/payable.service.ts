@@ -198,7 +198,7 @@ function ensureNotFromCommission(payable: {
 }
 
 /**
- * Contas a pagar (ver docs/business-rules.md, "Contas a pagar"). Só o ADMIN;
+ * Contas a pagar (ver docs/business-rules/financeiro.md, "Contas a pagar"). Só o ADMIN;
  * tudo restrito à empresa do usuário.
  */
 @Injectable()

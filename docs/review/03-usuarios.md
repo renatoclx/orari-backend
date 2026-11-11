@@ -2,7 +2,7 @@
 
 Contas de acesso, sempre vinculadas a uma empresa.
 
-**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules.md § Usuários e acesso, Senhas](../business-rules.md)
+**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules/empresa-e-acesso.md § Usuários e acesso, Senhas](../business-rules/empresa-e-acesso.md)
 
 ## Regras em resumo
 

@@ -1,0 +1,97 @@
+# Domínio: Mensagens
+
+> Parte de [`domain/`](README.md). Mensagens da clínica, mensagens automáticas, campanhas e notificações.
+
+## ClientMessage
+
+- Aviso recebido pelo cliente no app (a caixa de Avisos).
+
+| Nome            | Descrição                                                                   |
+| --------------- | --------------------------------------------------------------------------- |
+| id              | Identificador único                                                         |
+| clientAccountId | Conta do cliente                                                            |
+| companyId       | Clínica que enviou (nula no aviso de teste)                                 |
+| kind            | `REMINDER`, `APPOINTMENT`, `BIRTHDAY`, `MISS_YOU`, `CAMPAIGN` ou `TEST`     |
+| title, body     | Título (até 100) e texto (até 500)                                          |
+| url             | Caminho do app aberto ao tocar (ex.: `/app/agendamentos`)                   |
+| readAt          | Quando o cliente viu (opcional)                                             |
+| createdAt       | Data do envio                                                               |
+
+- Pertence a uma conta do cliente; a clínica é opcional. Não é a `Notification` (aviso para a clínica).
+
+---
+
+## AutoMessage
+
+- Configuração de uma situação de mensagem automática numa clínica. Sem linha, valem os padrões; a linha nasce no primeiro "Salvar".
+
+| Nome            | Descrição                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| id              | Identificador único                                                                                            |
+| companyId       | Clínica                                                                                                        |
+| kind            | `REMINDER`, `APPOINTMENT_CREATED`, `APPOINTMENT_RESCHEDULED`, `APPOINTMENT_CANCELLED`, `BIRTHDAY` ou `MISS_YOU` |
+| enabled         | Ligada                                                                                                         |
+| body            | Texto com as variáveis (até 500)                                                                               |
+| reminderOffsets | Lembrete: minutos antes do horário (ex.: 1440 e 30)                                                            |
+| missYouDays     | Sentimos sua falta: dias sem vir                                                                               |
+| createdAt, updatedAt | Criação e última alteração                                                                                |
+
+- Uma por situação em cada clínica (único: `companyId` + `kind`).
+
+---
+
+## MessageCampaign
+
+- Mensagem escrita pela clínica e enviada a todos os clientes com o app (Mensagens → Enviar).
+
+| Nome        | Descrição                                                   |
+| ----------- | ----------------------------------------------------------- |
+| id          | Identificador único                                         |
+| companyId   | Clínica                                                     |
+| createdById | Usuário que enviou                                          |
+| title       | Título da notificação (até 100)                             |
+| body        | Texto com `{nome}` e `{estabelecimento}` (até 500)          |
+| recipients  | Quantos receberam na caixa de Avisos                        |
+| createdAt   | Data do envio (uma por dia por clínica, no fuso dela)       |
+
+- Pertence a uma clínica e a um usuário. Não tem exclusão.
+
+---
+
+## AutoMessageLog
+
+- Uma mensagem automática já enviada; a chave única impede o envio repetido.
+
+| Nome            | Descrição                                                                      |
+| --------------- | ------------------------------------------------------------------------------ |
+| id              | Identificador único                                                            |
+| companyId       | Clínica                                                                        |
+| kind            | A situação                                                                     |
+| dedupKey        | Chave única do envio (ex.: `reminder:<agendamento>:1440:<início>`, `birthday:<pessoa>:2026`) |
+| clientAccountId | Conta do cliente que recebeu                                                   |
+| createdAt       | Data do envio                                                                  |
+
+- Pertence a uma clínica. Não tem exclusão.
+
+---
+
+## Notification
+
+- Representa um aviso para a empresa agir.
+- Ainda não há tipos de notificação em uso. A entidade é mantida para implementações futuras.
+
+### Atributos
+
+| Nome       | Descrição                                      |
+| ---------- | ---------------------------------------------- |
+| id         | Identificador único                            |
+| companyId  | Código da empresa                              |
+| message    | Texto do aviso                                 |
+| readAt     | Data da leitura (opcional)                     |
+| resolvedAt | Data em que o aviso deixou de valer (opcional) |
+
+### Relacionamentos
+
+- Uma notificação pertence a uma empresa.
+
+---

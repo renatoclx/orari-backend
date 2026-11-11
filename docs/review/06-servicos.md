@@ -2,7 +2,7 @@
 
 O que a empresa oferece, com preço e duração.
 
-**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules.md § Serviços](../business-rules.md)
+**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules/servicos.md § Serviços](../business-rules/servicos.md)
 
 ## Regras em resumo
 

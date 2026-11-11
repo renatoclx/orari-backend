@@ -1179,7 +1179,7 @@ export class PaymentService {
 
   /**
    * Atraso é derivado, não gravado: pendente com vencimento antes de hoje. O
-   * status continua PENDING até a baixa (ver business-rules.md).
+   * status continua PENDING até a baixa (ver business-rules/pagamentos.md).
    */
   private isOverdue(
     { status, dueDate }: { status: PaymentStatus; dueDate: Date | null },
@@ -1228,7 +1228,7 @@ export class PaymentService {
     return service.price;
   }
 
-  // Só um pagamento PAID tem data de pagamento (ver docs/business-rules.md).
+  // Só um pagamento PAID tem data de pagamento (ver docs/business-rules/pagamentos.md).
   private ensurePaidAtMatchesStatus(
     status: PaymentStatus,
     paidAt?: Date | null,

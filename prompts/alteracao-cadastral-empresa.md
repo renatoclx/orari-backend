@@ -32,7 +32,7 @@ imagem real. Trocar por `null` na seed.
 Os horários de funcionamento (`/business-hours`, inclusive `batch`) já atendem o
 frontend; não mexer.
 
-Testes (vitest), Swagger (com os campos multipart) e `docs/business-rules.md`
+Testes (vitest), Swagger (com os campos multipart) e `docs/business-rules/empresa-e-acesso.md`
 atualizados. Sem push.
 
 **Ao final, devolva:** rotas, JSON de exemplo (GET e PATCH da empresa), regras de

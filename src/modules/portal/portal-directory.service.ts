@@ -19,7 +19,7 @@ const companyCity = {
 type CityRow = Prisma.AddressGetPayload<typeof companyCity>;
 
 /**
- * Busca de estabelecimentos do app (ver docs/business-rules.md, "Portal do
+ * Busca de estabelecimentos do app (ver docs/business-rules/portal-do-cliente.md, "Portal do
  * cliente"). Só aparecem as clínicas ativas, com o portal ligado, no plano e
  * que escolheram aparecer na busca (com o segmento).
  */

@@ -2,14 +2,14 @@
 
 ## Objetivo
 
-Levar **uma** entidade do `domain.md` para o banco: schema e migration. Nada além disso.
+Levar **uma** entidade de `docs/domain/` para o banco: schema e migration. Nada além disso.
 
 ## Instruções
 
-1. Leia: `CLAUDE.md`, `domain.md`, `database.md` e `business-rules.md`.
-2. Localize a entidade no `domain.md` e identifique atributos, tipos,
+1. Leia: `CLAUDE.md`, `domain/` (o arquivo da área), `database.md` e `business-rules/` (o arquivo da área).
+2. Localize a entidade no arquivo da área em `docs/domain/` e identifique atributos, tipos,
    obrigatoriedade, relacionamentos e índices.
-3. Aponte o que o `domain.md` não define (tipo, unicidade, exclusão lógica).
+3. Aponte o que o domínio não define (tipo, unicidade, exclusão lógica).
    **No máximo 2 perguntas.** O que não bloquear vira pendência.
 4. Apresente o plano: campos, relacionamentos, índices e constraints.
    **Aguarde aprovação.**

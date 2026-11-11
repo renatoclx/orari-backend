@@ -159,7 +159,7 @@ export function monthlySeries(
 }
 
 /**
- * Contas a receber da empresa (ver docs/business-rules.md, "Contas a
+ * Contas a receber da empresa (ver docs/business-rules/relatorios.md, "Contas a
  * receber"). Só leitura: tudo sai dos pagamentos, venham de atendimento,
  * recorrência ou contratação de plano.
  */
