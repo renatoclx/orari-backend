@@ -6,6 +6,7 @@ import type { PrismaService } from "../../prisma/prisma.service";
 import type { CompanyService } from "../company/company.service";
 import {
   FinancialReportService,
+  saleDescription,
   summarizeReceived,
   type ReceivedPayment,
 } from "./financial-report.service";
@@ -54,6 +55,7 @@ describe("summarizeReceived", () => {
       date: "2026-11-02",
       appointments: "200.00",
       packages: "0.00",
+      products: "0.00",
     });
     expect(report.series.points[2].packages).toBe("500.00");
     expect(report.series.points[4].appointments).toBe("50.00");
@@ -160,5 +162,40 @@ describe("FinancialReportService", () => {
       service.report({ paymentMethodId: "m-x" }, "c-1", NOW),
     ).rejects.toThrow(NotFoundException);
     expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("vendas de produtos no recebido", () => {
+  it("somam na origem Produtos e no total", () => {
+    const report = summarizeReceived(
+      [
+        {
+          paidAt: new Date("2026-11-02T15:00:00Z"),
+          amount: new Decimal(50),
+          origin: "product",
+          method: null,
+        },
+        {
+          paidAt: new Date("2026-11-02T16:00:00Z"),
+          amount: new Decimal(100),
+          origin: "appointment",
+          method: null,
+        },
+      ],
+      NOVEMBER,
+      TZ,
+    );
+
+    expect(report.products).toEqual({ count: 1, amount: "50.00" });
+    expect(report.received).toEqual({ count: 2, amount: "150.00" });
+  });
+
+  it("descreve a venda pelos produtos, com a quantidade quando passa de 1", () => {
+    expect(
+      saleDescription([
+        { quantity: 2, product: { name: "Sérum" } },
+        { quantity: 1, product: { name: "Protetor" } },
+      ]),
+    ).toBe("Sérum (2), Protetor");
   });
 });

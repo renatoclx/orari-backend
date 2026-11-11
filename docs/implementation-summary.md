@@ -1,6 +1,6 @@
 # Resumo da implementação
 
-Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da preparação do template até o estado atual da API. As regras de negócio completas estão em `business-rules.md`. Este documento resume **o que foi feito, as decisões tomadas e as pendências**.
+Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da preparação do template até o estado atual da API. As regras de negócio completas estão em `business-rules/` (um arquivo por área). Este documento resume **o que foi feito, as decisões tomadas e as pendências**.
 
 > Estado do repositório: há 4 commits (até a criação do `domain.md`). Todo o trabalho a partir das entidades de domínio **ainda não foi commitado**.
 
@@ -510,7 +510,7 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 ## 2.45 Falta (NO_SHOW) não cobra
 
 - **Motivo:** o `NO_SHOW` existia como status, mas não havia como usá-lo no dia a dia: o job de status conclui todo atendimento ao fim do horário e o de cobrança gera o pagamento em até 5 minutos, e o concluído com pagamento é travado. A falta só podia ser anotada até uns 5 minutos depois do fim do atendimento, e deixava o pagamento pendente.
-- **Regra (decidida com o dono do produto):** a falta **não cobra** e é **definitiva**. Marcar a falta (`PATCH /appointments/:id`, `status: NO_SHOW`) cancela o pagamento `PENDING` na mesma transação, vale também para o concluído, e é recusada se o atendimento ainda não iniciou ou se o pagamento já foi recebido (`PAID`, sem reembolso). Só o status e a observação mudam na mesma requisição. Detalhes em `business-rules.md` (Agendamentos > Falta).
+- **Regra (decidida com o dono do produto):** a falta **não cobra** e é **definitiva**. Marcar a falta (`PATCH /appointments/:id`, `status: NO_SHOW`) cancela o pagamento `PENDING` na mesma transação, vale também para o concluído, e é recusada se o atendimento ainda não iniciou ou se o pagamento já foi recebido (`PAID`, sem reembolso). Só o status e a observação mudam na mesma requisição. Detalhes em `business-rules/agenda.md` (Agendamentos > Falta).
 - **Como:** `AppointmentService.update` ganhou o caminho `marksNoShow`: `ensureCanBeMarkedNoShow` no lugar de `ensureNotLockedByPayment`, e a mesma transação do cancelamento (cancela o pagamento pendente), com o filtro de status em `NO_SHOW_FROM_STATUSES` (se o agendamento mudar no meio, 409). `ensureNotReopened` passou a valer também para a falta (estado final); pedir o cancelamento de quem faltou continua respondendo pela regra do cancelamento. Sem migration; os dois jobs não mudam.
 - **Verificado:** 23 testes novos no `appointment.service.spec.ts` e conferência numa segunda instância do backend, contra o banco local (futuro recusado, pago recusado, concluído com pendente vira falta e o pagamento fica `CANCELLED`, falta não volta nem cancela).
 - **Pagamento na resposta:** `payment: { status, deletedAt } | null` passou a vir em toda resposta de agendamento (`withRelations`), para a tela esconder "Marcar falta" no atendimento já pago (a API continua recusando, 400). Do pagamento só a situação: nada de valor ou método.
@@ -562,3 +562,28 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Encaixe em lote:** `POST /class-sessions/:id/participants` e `POST /class-groups/:id/participants` recebem `clientIds` (1 a 100, sem repetidos; o `clientId` foi removido) e devolvem a sessão (`ClassSessionService.findOne`). Tudo ou nada: `findRefusedClients` confere cada cliente fora da transação (sem parar no primeiro); com a sessão travada, `enrollLocked` junta quem já está nela e os conflitos de agenda (`AppointmentService.findClassSessionConflicts`), confere as vagas da lista inteira e grava com `createManyInClassSession`.
 - **Erros:** 409 com corpo próprio (`ConflictException` com objeto, levando `statusCode` e `error` explícitos): `errors: [{ clientId, message }]` nas recusas e `available`/`requested` na falta de vaga. O `ensureSlotIsFree` passou a usar `findSlotConflict`, que devolve o motivo em vez de lançar.
 - **`GET /class-groups/:id/members`** (ADMIN): `ClassGroupService.findMembers` lê as recorrências da turma direto do Prisma (o `RecurringAppointmentModule` já importa o `ClassGroupModule`) — ativas, sem `classLeftAt` e com `endDate` de hoje em diante (fuso da empresa).
+
+## 2.52 Categorias de produto e produtos
+
+- **Banco** (migration `20261111120000_products`): enum `ProductUnit` (`UN`, `CX`, `PCT`, `KG`, `G`, `L`, `ML`, `M`), `product_categories` (nome único por empresa pelo `normalizedName`, `isActive`) e `products` (preços `Decimal(10,2)`, margem `Decimal(9,2)`, estoque inteiro, `isActive` e `deletedAt`; SKU único entre os não excluídos quando informado, por índice único parcial; busca GIN no `normalizedName`).
+- **Módulos** `product-category` e `product`, só do ADMIN e atrás das funcionalidades `product-categories` e `products` (fora do modelo padrão: o SUPER_ADMIN libera; `products` exige ver `product-categories`).
+- **Margem:** `profitMarginOf` (`product-pricing.ts`), sobre a venda, em `Decimal` e com duas casas; recalculada a cada alteração com os preços finais. As regras entre campos (promocional abaixo da venda, mínimo até o máximo) usam o que veio no payload e, no que faltou, o que está gravado.
+- **Categoria:** `ProductCategoryService.ensureActive` (404/400) no cadastro, na troca de categoria e na reativação do produto; a inativação conta os produtos ativos direto na tabela (o `ProductModule` depende deste módulo).
+- **Alteração do produto:** os campos obrigatórios usam `ValidateIf(valor !== undefined)` (ausente não muda, `null` é 400); os opcionais aceitam `null` para limpar.
+- **Foto:** `POST/DELETE /products/:id/photo`, como a das pessoas (`LocalFileStorage`, pasta `products`).
+
+## 2.53 Estoque: movimentações
+
+- **Banco** (migration `20261111180000_stock_movements`): enum `StockMovementType` (`INITIAL`, `PURCHASE`, `INTERNAL_USE`, `LOSS`, `ADJUSTMENT`) e `stock_movements` (variação `quantity`, `balanceAfter`, `unitCost`, `createdById` opcional, `payableId` único com `SET NULL`). A migração grava o `INITIAL` de cada produto não excluído com o estoque que ele já tinha.
+- **Módulo `stock`** (`StockMovementService`, rotas `products/:productId/stock-movements`, ADMIN, `@Feature("products")`; lançar = Edita). O saldo é gravado com `updateMany` condicionado ao saldo lido (`currentStock` igual): se outro lançamento mudou o estoque no meio, responde 409 em vez de passar do que há.
+- **Compra:** atualiza `purchasePrice` e `profitMargin` (`profitMarginOf`). A conta a pagar opcional confere o acesso com `CompanyAccessService.can(…, "payables", "create")` e as referências com o novo `PayableService.ensureNewPayable`, e é criada na mesma transação.
+- **Produto:** `create` recebe o usuário e grava o `INITIAL` na transação (`recordInitialStock`); `UpdateProductDto` perdeu `currentStock` (o whitelist responde 400); `lowStock` compara colunas com `prisma.product.fields.minimalStock`.
+- **Testes:** `feature-coverage` passou a incluir os controllers de produto, categoria de produto e estoque.
+
+## 2.54 Venda de produtos na comanda
+
+- **Banco** (migration `20261111220000_product_sales`): `product_sales` (cliente, quem lançou, `cancelledAt`/`cancelledById`) e `product_sale_items` (quantidade, `unitPrice`); `payments.productSaleId` (único, terceira origem); `stock_movements.productSaleId` e os tipos `SALE` e `SALE_CANCELLED`.
+- **Módulo `product-sale`** (ADMIN, `@Feature("product-sales")`, cancelar = Exclui): a venda grava itens, a saída de cada produto (`updateMany` com `currentStock >= quantidade`, atômico) e o pagamento `PENDING` com o total, numa transação. O cancelamento cancela o pagamento com o status `PENDING` no filtro (protege de uma baixa no meio) e devolve o estoque.
+- **Pagamentos:** `clientWhere` (as três origens) nos filtros por cliente; a origem `productSale` na listagem e nos anteriores da comanda; `productSales` na comanda e nos totais de hoje; a baixa lê o cliente da venda; `update`/`remove` recusam o pagamento da venda (409).
+- **Relatórios:** o financeiro ganhou `products` (total, série e origem `product` no extrato, com `saleDescription`); a Análise de recebíveis lê o cliente da venda.
+- **Acesso:** `product-sales` no catálogo (`view`, `create`, `remove`; exige ver `tabs` e `products`; fora do modelo padrão).

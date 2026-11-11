@@ -17,7 +17,7 @@ import { FindPlansQueryDto } from "./dto/find-plans-query.dto";
 import { UpdatePlanDto } from "./dto/update-plan.dto";
 import { PlanService } from "./plan.service";
 
-// Sem DELETE: o plano é desativado por isActive (ver business-rules.md).
+// Sem DELETE: o plano é desativado por isActive (ver business-rules/planos.md).
 @ApiTags("Planos")
 @ApiBearerAuth()
 @Feature("plans")

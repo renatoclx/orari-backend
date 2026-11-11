@@ -8,6 +8,6 @@ O frontend (Next.js) está montando a tela de Serviços. Preciso de 1 mudança n
 - Inativar continua sendo `PATCH /services/:id` com `isActive: false`. Nada muda aí.
 - Se algum planItem de plano já excluído conta como relacionamento, me avise e sugira o tratamento.
 
-Testes (vitest), `docs/business-rules.md` (seção Serviços) e Swagger atualizados. Sem push.
+Testes (vitest), `docs/business-rules/servicos.md` (seção Serviços) e Swagger atualizados. Sem push.
 
 **Ao final, devolva:** rota, status e mensagens de erro, e as decisões que tomou onde deixei aberto.

@@ -38,7 +38,7 @@ import {
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
 import { RecurringAppointmentService } from "./recurring-appointment.service";
 
-// Sem DELETE: a recorrência é desativada por isActive (ver domain.md).
+// Sem DELETE: a recorrência é desativada por isActive (ver docs/domain/recorrencias.md).
 @ApiTags("Agendamentos recorrentes")
 @ApiBearerAuth()
 @Feature("recurrences")

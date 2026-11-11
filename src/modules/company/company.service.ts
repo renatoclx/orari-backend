@@ -32,7 +32,7 @@ const LOGO_FOLDER = "companies";
 const LOGO_PUBLIC_PREFIX = `/uploads/${LOGO_FOLDER}/`;
 
 /**
- * Empresas não são excluídas: são inativadas (ver docs/business-rules.md).
+ * Empresas não são excluídas: são inativadas (ver docs/business-rules/empresa-e-acesso.md).
  * Escrita é exclusiva do SUPER_ADMIN (garantido por @Roles no controller);
  * os demais tipos só enxergam a própria empresa.
  */

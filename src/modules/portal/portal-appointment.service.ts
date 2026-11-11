@@ -44,7 +44,7 @@ const listSelect = {
 /**
  * Agendamentos do cliente pelo portal. Pelo portal só se marcam e se cancelam
  * agendamentos avulsos; recorrência, pacote e turma aparecem na lista, mas
- * continuam com a clínica (ver docs/business-rules.md, "Portal do cliente").
+ * continuam com a clínica (ver docs/business-rules/portal-do-cliente.md, "Portal do cliente").
  */
 @Injectable()
 export class PortalAppointmentService {

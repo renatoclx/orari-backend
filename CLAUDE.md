@@ -16,9 +16,13 @@ coding-standards.md
 database.md
 auth.md
 
-Documentos adicionais (domain.md, business-rules.md, decisions.md, progress.md,
+Documentos adicionais (domain/, business-rules/, decisions.md, progress.md,
 journal.md, technical-debt.md) poderão ser criados conforme o projeto evoluir.
 Quando existirem, também deverão ser consultados antes de qualquer alteração.
+
+As pastas `docs/domain/` e `docs/business-rules/` são divididas por área (agenda,
+pagamentos, turmas etc.). Comece pelo `README.md` de cada uma e leia os arquivos
+das áreas que a alteração toca.
 
 ---
 
@@ -39,9 +43,9 @@ Antes de implementar:
 
 Ao implementar funcionalidades, considere:
 
-- O `domain.md` descreve as entidades do sistema, seus atributos, responsabilidades e relacionamentos.
-- O `business-rules.md` descreve as regras de negócio do domínio.
-- As regras descritas no `business-rules.md` devem ser refletidas na implementação (Services, Prisma, DTOs, etc.), quando aplicável.
+- O `domain/` descreve as entidades do sistema, seus atributos, responsabilidades e relacionamentos.
+- O `business-rules/` descreve as regras de negócio do domínio.
+- As regras descritas no `business-rules/` devem ser refletidas na implementação (Services, Prisma, DTOs, etc.), quando aplicável.
 - Quando uma regra de negócio implicar validação de entrada, implemente também as validações necessárias nos DTOs.
 - Não assuma regras que não estejam documentadas. Em caso de dúvida, pergunte antes de implementar.
 
@@ -82,16 +86,16 @@ Informe:
 
 ---
 
-## domain.md
+## domain/
 
-O domain.md descreve apenas:
+O domain/ descreve apenas:
 
 - o que existe no sistema;
 - responsabilidades das entidades;
 - atributos;
 - relacionamentos.
 
-Regras de funcionamento pertencem exclusivamente ao business-rules.md.
+Regras de funcionamento pertencem exclusivamente ao business-rules/.
 
 ## Regras de Testes
 

@@ -40,7 +40,7 @@ const PREFERENCE: Record<
 /**
  * Ponto único de aviso ao cliente do app: confere o interruptor, grava na caixa
  * de Avisos e envia para os aparelhos inscritos da conta (ver
- * docs/business-rules.md, "Avisos do app"). Nunca lança erro: um agendamento
+ * docs/business-rules/portal-do-cliente.md, "Avisos do app"). Nunca lança erro: um agendamento
  * salvo não pode falhar porque o aviso não saiu; a falha vai para o log.
  */
 @Injectable()

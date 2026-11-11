@@ -42,7 +42,7 @@ type ProfileRow = Prisma.ClientAccountGetPayload<{
 }>;
 
 /**
- * "Meus dados" do app do cliente (ver docs/business-rules.md, "Portal do
+ * "Meus dados" do app do cliente (ver docs/business-rules/portal-do-cliente.md, "Portal do
  * cliente"). A conta guarda o cadastro e, ao salvar, o copia para o cadastro
  * do cliente em cada clínica ligada à conta: nome, CPF, nascimento, profissão,
  * telefone e e-mail (o contato principal) e o endereço principal. As

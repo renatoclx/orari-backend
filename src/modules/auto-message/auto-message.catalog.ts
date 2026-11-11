@@ -1,7 +1,7 @@
 import type { AutoMessageKind } from "../../../generated/prisma/enums";
 
 // Situações das mensagens automáticas, seus padrões e suas opções (ver
-// docs/business-rules.md, "Mensagens automáticas").
+// docs/business-rules/mensagens.md, "Mensagens automáticas").
 
 export const AUTO_MESSAGE_KINDS = [
   "REMINDER",

@@ -169,7 +169,7 @@ const contractSelect = {
 } as const;
 
 /**
- * Relatório de pacotes: a vida das contratações (ver docs/business-rules.md,
+ * Relatório de pacotes: a vida das contratações (ver docs/business-rules/relatorios.md,
  * "Relatório de pacotes"). Só leitura.
  */
 @Injectable()

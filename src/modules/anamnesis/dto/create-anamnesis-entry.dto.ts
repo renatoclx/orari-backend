@@ -13,7 +13,7 @@ import { AnamnesisAnswerDto } from "./anamnesis-answer.dto";
 import { MAX_QUESTIONS } from "./create-anamnesis-template.dto";
 import { CONSULTATION_DATE_PATTERN } from "./create-anamnesis.dto";
 
-// Limite do texto da evolução (ver docs/business-rules.md, "Anamnese").
+// Limite do texto da evolução (ver docs/business-rules/anamnese.md, "Anamnese").
 export const MAX_EVOLUTION = 10000;
 
 // Acompanhamento de uma consulta. A ficha vem da rota; a empresa, do usuário.

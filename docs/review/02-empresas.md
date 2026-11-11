@@ -2,7 +2,7 @@
 
 Cadastro das empresas (tenants) da plataforma.
 
-**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules.md § Empresas, Fuso horário](../business-rules.md)
+**PR:** 4 (`feat/company-e-usuarios`) · **Regras:** [business-rules/empresa-e-acesso.md § Empresas](../business-rules/empresa-e-acesso.md), [business-rules/agenda.md § Fuso horário](../business-rules/agenda.md)
 
 ## Regras em resumo
 

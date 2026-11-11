@@ -17,7 +17,7 @@ const PUSH_DISABLED = "Os avisos do app não estão disponíveis no momento";
 
 /**
  * Avisos do app do lado do cliente: inscrição do aparelho, interruptores, aviso
- * de teste e a caixa de Avisos (ver docs/business-rules.md, "Avisos do app").
+ * de teste e a caixa de Avisos (ver docs/business-rules/portal-do-cliente.md, "Avisos do app").
  */
 @Injectable()
 export class PortalPushService {

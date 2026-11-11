@@ -20,7 +20,7 @@ export interface AuditEntry {
 }
 
 /**
- * Auditoria de ações sensíveis (ver docs/business-rules.md, "Anamnese"). Só
+ * Auditoria de ações sensíveis (ver docs/business-rules/anamnese.md, "Anamnese"). Só
  * insere e consulta: o registro nunca é alterado nem excluído.
  */
 @Injectable()

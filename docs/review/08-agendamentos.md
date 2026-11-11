@@ -2,7 +2,7 @@
 
 O atendimento marcado entre um cliente e um profissional.
 
-**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules.md § Agendamentos](../business-rules.md)
+**PR:** 6 (`feat/agenda`) · **Regras:** [business-rules/agenda.md § Agendamentos](../business-rules/agenda.md)
 
 ## Regras em resumo
 

@@ -35,4 +35,4 @@ o que entra e o que fica de fora da comanda (atrasado, futuro, cancelado, pago o
 o fuso da empresa;
 agrupamento, totais, busca e paginação;
 a baixa: transação e cada erro.
-Atualize docs/business-rules.md na seção Pagamentos.
+Atualize docs/business-rules/pagamentos.md na seção Pagamentos.

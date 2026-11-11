@@ -25,4 +25,4 @@ Acrescente: paidAt não pode estar no futuro (400, comparando com o instante atu
 Testes e docs
 
 Nos specs de payment: dados novos na listagem, totais (cada cartão, filtro de período, filtro de cliente, ignorar status, sem vencimento, cancelado fora, zeros) e o paidAt futuro.
-Atualize docs/business-rules.md (seção Pagamentos) e docs/implementation-summary.md.
+Atualize docs/business-rules/pagamentos.md (seção Pagamentos) e docs/implementation-summary.md.

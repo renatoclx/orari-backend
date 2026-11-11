@@ -37,7 +37,7 @@ export function actionFromMethod(method: string): AccessAction {
 
 /**
  * Barra a rota quando a empresa do usuário não tem a ação liberada na
- * funcionalidade (ver docs/business-rules.md, "Acessos e limites da empresa").
+ * funcionalidade (ver docs/business-rules/empresa-e-acesso.md, "Acessos e limites da empresa").
  * Roda depois do JwtAuthGuard e do RolesGuard. O SUPER_ADMIN não é limitado.
  */
 @Injectable()

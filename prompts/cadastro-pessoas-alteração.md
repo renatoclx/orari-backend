@@ -32,7 +32,7 @@ faça nada fora do escopo.
 Foto. photoUrl continua opcional e preenchida só por POST /people/:id/photo.
 Nada muda aí.
 
-Testes (vitest), docs/business-rules.md e Swagger atualizados. Sem push.
+Testes (vitest), docs/business-rules/pessoas.md e Swagger atualizados. Sem push.
 
 Ao final, devolva: rotas, JSON de exemplo, códigos de status e mensagens de erro,
 e as decisões que tomou onde deixei aberto.

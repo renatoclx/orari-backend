@@ -2,7 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 import { AnamnesisQuestionType } from "../../../generated/prisma/enums";
 import { AnamnesisAnswerDto } from "./dto/anamnesis-answer.dto";
 
-// Limite do texto de uma resposta (ver docs/business-rules.md, "Anamnese").
+// Limite do texto de uma resposta (ver docs/business-rules/anamnese.md, "Anamnese").
 export const MAX_TEXT_ANSWER = 5000;
 const SCALE_MAX = 10;
 

@@ -11,6 +11,6 @@ O frontend (Next.js) está montando a tela de Agendamentos (agenda do dia, somen
 - Garanta que a listagem aceite a janela de um dia (`from` e `to` já existem) e devolva ordenada por `startAt` crescente. Se o limite de 100 por página puder ser insuficiente para um dia cheio, me avise e sugira o tratamento.
 - As respostas de criação e alteração (`POST` e `PATCH`) devem ter o mesmo formato.
 
-Testes (vitest), `docs/business-rules.md` ou `domain.md` (se couber) e Swagger atualizados. Sem push.
+Testes (vitest), `docs/business-rules/agenda.md` ou `docs/domain/agenda.md` (se couber) e Swagger atualizados. Sem push.
 
 **Ao final, devolva:** rotas, JSON de exemplo, e as decisões que tomou onde deixei aberto.

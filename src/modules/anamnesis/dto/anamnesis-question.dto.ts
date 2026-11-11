@@ -10,7 +10,7 @@ import {
 } from "class-validator";
 import { AnamnesisQuestionType } from "../../../../generated/prisma/enums";
 
-// Limites do texto das perguntas (ver docs/business-rules.md, "Anamnese").
+// Limites do texto das perguntas (ver docs/business-rules/anamnese.md, "Anamnese").
 export const QUESTION_LABEL_MAX = 400;
 export const QUESTION_HELP_MAX = 500;
 export const QUESTION_OPTION_MAX = 100;

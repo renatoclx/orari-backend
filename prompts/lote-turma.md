@@ -1,7 +1,7 @@
 Contexto: o frontend do Orari já usa todas as rotas de turma (etapas 1 a 5 de
 backend/docs/turmas.md). Faltam duas coisas no backend. Siga o fluxo do
 CLAUDE.md: analise, proponha o plano e aguarde aprovação. Ao final, registre as
-regras em turmas.md e business-rules.md ("Turmas").
+regras em turmas.md e business-rules/turmas.md ("Turmas").
 
 1. Encaixe de vários alunos de uma vez, tudo ou nada
    - POST /class-sessions/:id/participants e POST /class-groups/:id/participants

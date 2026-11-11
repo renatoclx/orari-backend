@@ -1,0 +1,42 @@
+# Regras de negócio: Pagamentos
+
+> Parte de [`business-rules/`](README.md). Cobranças, baixa e cancelamento.
+
+## Pagamentos
+
+- Cada agendamento tem no máximo um pagamento. Excluir o pagamento libera o agendamento para um novo.
+- O pagamento pertence à empresa do usuário, assim como o agendamento e o método de pagamento. O agendamento não muda depois da criação.
+- Todo pagamento pertence a **uma** origem: um agendamento, uma contratação de plano ou uma venda de produtos (ver [categorias-produtos.md](categorias-produtos.md), "Venda de produtos"). O cliente do pagamento é o dessa origem, nos filtros por cliente da listagem e do resumo.
+- Um pagamento gerado pelo sistema nasce como `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
+- O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
+- Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
+- `paidAt` é obrigatório quando o status é `PAID` e recusado nos demais status. Sair de `PAID` limpa a data.
+- O nome do método de pagamento é único entre os métodos não excluídos da mesma empresa, sem diferenciar maiúsculas nem acentos ("PIX" e "Pix" são o mesmo método).
+- A exclusão do método de pagamento é lógica (inativação). A listagem (`GET /payment-methods`) traz ativos e inativos; com `isActive=true`, só os ativos (ex.: escolher o método na baixa de um pagamento). Consultar, alterar, excluir e usar na baixa valem só para ativos.
+- Um método inativado pode ser reativado por `PATCH /payment-methods/:id/restore` (limpa o `deletedAt`). Reativar um método já ativo responde 409; se o nome estiver em uso por outro método ativo da empresa, também responde 409.
+- A listagem de pagamentos (`GET /payments`) traz a origem de cada um, para a tela descrevê-lo: o atendimento (`appointment`, com a data, o serviço e o `recurringAppointmentId`, nulo no avulso) ou a contratação (`clientPlan`, com o nome do plano e a modalidade `billingType`). Traz também o cliente (`client`: o do atendimento ou o da contratação) e o método de pagamento (`paymentMethod`, preenchido quando pago). Cliente, serviço e plano são lidos pela chave, sem filtrar exclusão: o nome continua aparecendo depois de inativados. A ordem é o vencimento crescente, com os sem vencimento no fim, e os filtros combinam entre si (ex.: `status=PENDING&overdue=true`).
+- `GET /payments/summary` devolve os totais da tela de Pagamentos, cada um com `total` (texto com duas casas) e `count`: `overdue` (pendentes com vencimento antes de hoje, no fuso da empresa), `upcoming` (pendentes com vencimento de hoje em diante ou sem vencimento) e `paid` (pagos). Cancelados e excluídos ficam de fora. Só `clientId`, `dueFrom` e `dueTo` filtram; `status` e os demais filtros da listagem são recusados (400). Com período, os três usam o vencimento nele (inclusive os pagos) e o pagamento sem vencimento não entra.
+- A baixa (`PATCH /payments/settle` e a baixa em lote da recorrência) e a criação de um pagamento (`POST /payments`) não aceitam `paidAt` no futuro (400, comparando com o instante da requisição). Data passada é aceita, para lançar uma baixa esquecida. A edição de um pagamento (`PATCH /payments/:id`) não tem essa checagem.
+- Quando um agendamento avulso (não gerado por recorrência ou contratação de plano) passa para o status `COMPLETED`, gera um novo pagamento como `PENDING` para aquele agendamento, seja a conclusão feita pelo job de status ou manualmente.
+- Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
+- Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.
+- Não é possível registrar pagamento para uma sessão de pacote (409): ela já é cobrada pela contratação. Agendamento de recorrência avulsa continua aceitando um novo pagamento quando o anterior foi excluído.
+- `CANCELLED` é o estado final do pagamento: um pagamento cancelado não volta a `PENDING` nem vai para `PAID` (409). Repetir `CANCELLED` é aceito, sem efeito, e os demais campos (ex.: valor) continuam editáveis.
+  - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
+  - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.
+  - Serviço sem preço é considerado gratuito e não gera pagamento.
+  - Um agendamento que já teve pagamento, inclusive excluído, não gera outro.
+- Agendamentos gerados por recorrência já nascem com pagamento `PENDING`, com vencimento na data do agendamento, e não geram novo pagamento ao serem concluídos (ver Agendamentos recorrentes).
+- Agendamentos gerados por contratação de plano não geram pagamento por agendamento: os pagamentos pertencem à contratação (ver Planos).
+  - Esses pagamentos deverão ser registrados como `PENDING`, onde deverá ser alterado manualmente para `PAID` quando este for pago;
+
+### Comandas do dia (Financeiro)
+
+- `GET /payments/checkouts` lista as comandas do dia, uma por cliente, a partir das visitas. "Dia" é hoje no fuso da empresa.
+- Tem comanda o cliente que tem um atendimento que começa hoje em `SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED` (cancelado e não comparecimento ficam de fora), ou que tem algum pagamento `PAID` com `paidAt` hoje (a comanda paga continua na lista). Cliente só com pendência, sem atendimento nem pagamento hoje, não entra. Pessoa inativada continua aparecendo.
+- **Venda de produtos:** também tem comanda o cliente que comprou hoje (venda não cancelada) ou pagou hoje uma venda. A comanda traz `productSales`: as vendas de hoje não canceladas, com os itens e o pagamento, somadas aos totais de hoje (`todayPending` e `paidToday`). A venda pendente de outro dia entra nos anteriores, com a origem `productSale` (itens). A baixa aceita o pagamento da venda e reconhece o cliente dela.
+- A paginação é por cliente, em ordem alfabética, e `search` filtra pelo nome do cliente sem diferenciar acentos nem maiúsculas.
+- Cada comanda traz: `appointments` (os atendimentos de hoje, por horário, com serviço, profissional, `recurringAppointmentId`, `clientPlanId` quando é sessão de pacote e `payment`, que é o pagamento do atendimento ou `null` quando ainda não existe, como na sessão de pacote); `previousPayments` (pagamentos do cliente, de atendimento ou de contratação, que não são dos atendimentos listados: `PENDING` com vencimento até hoje, inclusive; `PENDING` de contratação integral sem vencimento; e `PAID` hoje, por vencimento crescente e sem vencimento por último, cada um com a origem); e os totais em texto com duas casas.
+- Totais: `todayPending` (pendentes dos atendimentos de hoje), `previousPending` (pendentes dos anteriores) e `paidToday` (pagos hoje, nas duas listas). Um atendimento de hoje já pago em outro dia aparece com o pagamento pago, mas não entra em nenhum total. Pagamentos `CANCELLED` e excluídos nunca entram em lista nem total.
+- `PATCH /payments/settle` dá baixa nos pagamentos escolhidos (`paymentIds`, ao menos um, sem repetir), com um `paymentMethodId` e `paidAt` opcional (padrão: o momento da requisição), tudo numa só transação. Todos precisam ser da empresa, não excluídos, `PENDING` e do mesmo cliente: inexistente (pagamento ou método) responde 404, algum fora de `PENDING` responde 409 e clientes diferentes respondem 400. O método precisa existir (não excluído) na empresa.
+- **Receber antes da conclusão** (desde 2026-11-09): a mesma baixa aceita `appointmentIds` (atendimentos avulsos ainda sem pagamento; `paymentIds` e `appointmentIds` somam ao menos um item, senão 400). Cada atendimento ganha, na mesma transação, um pagamento já `PAID` com o **preço do serviço**, o método e a data da baixa e o vencimento no dia local do atendimento. O job de conclusão não cobra de novo (só gera para atendimento sem pagamento). Recusa: atendimento inexistente na empresa (404); cancelado ou com falta, sessão de pacote ou já com pagamento ativo (409); serviço sem preço (400, o valor é lançado depois da conclusão); cliente diferente dos demais itens (400). Valor inteiro só: sinal parcial exigiria mais de um pagamento por atendimento. Recebido antes, o atendimento segue as regras de pago: cancelar não devolve (não há reembolso) e a falta é recusada. Na comanda, `appointments[].service` traz também o `price`.

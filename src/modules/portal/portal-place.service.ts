@@ -21,7 +21,7 @@ const HISTORY_SIZE = 20;
 
 /**
  * Os estabelecimentos da conta do cliente: entrar sozinho num novo e ver os
- * agendamentos de todos (ver docs/business-rules.md, "Portal do cliente").
+ * agendamentos de todos (ver docs/business-rules/portal-do-cliente.md, "Portal do cliente").
  */
 @Injectable()
 export class PortalPlaceService {

@@ -198,7 +198,7 @@ export function buildRankings(
 }
 
 /**
- * Rankings de serviços, profissionais e clientes (ver docs/business-rules.md,
+ * Rankings de serviços, profissionais e clientes (ver docs/business-rules/relatorios.md,
  * "Rankings"). Só leitura.
  */
 @Injectable()

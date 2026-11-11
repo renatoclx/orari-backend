@@ -171,7 +171,7 @@ empresas e usuários, baixas e exclusões de pagamento, ações do SUPER_ADMIN).
 
 **Onde:** `/contacts`, `/addresses` e as telas que leem dados de outra funcionalidade.
 
-**O que é:** o controle de acesso por empresa (ver `business-rules.md`, "Acessos e limites da empresa") barra por funcionalidade, mas três pontos ficaram de fora:
+**O que é:** o controle de acesso por empresa (ver `business-rules/empresa-e-acesso.md`, "Acessos e limites da empresa") barra por funcionalidade, mas três pontos ficaram de fora:
 
 - `/contacts` e `/addresses` servem a pessoas (clientes, funcionários, profissionais) e à empresa. Não há como saber a funcionalidade só pela rota, e resolver o dono do contato exigiria consultas extras.
 - Uma tela que lê dados de outra funcionalidade (ex.: o agendamento que mostra o pagamento) depende de a empresa ter as duas. A matriz só valida as dependências de cadastros (clientes, profissionais e serviços).
@@ -333,3 +333,43 @@ ter as duas, e as contas novas da comissão vão para a recriada.
 tela não deixe inativar, e a busca por ela em vez do nome.
 
 **Registrado em:** 2026-11-10.
+
+## Comanda montada pelo dia do cliente
+
+**Onde:** `PaymentService.findCheckouts` (`payment/payment.service.ts`; venda de
+produtos, 2026-11-11).
+
+**O que é:** a comanda não é gravada: é tudo o que o cliente tem no dia
+(atendimentos e vendas de hoje, o pago hoje e as pendências anteriores). Duas
+visitas no mesmo dia caem na mesma comanda; a comanda paga "reabre" quando
+entra um atendimento ou uma venda nova.
+
+**Impacto:** não há comandas separadas no mesmo dia nem o registro de quando
+uma comanda foi fechada; a tela separa o pago no bloco "Recebidos". Vários
+métodos numa comanda, desconto, gorjeta, troco e caixa continuam dependendo de
+uma comanda gravada.
+
+**Como resolver:** gravar o fechamento (`CheckoutClosing`, com as colunas
+opcionais `checkoutClosingId` em pagamentos e atendimentos) na baixa pela
+comanda; a comanda aberta passa a ser o que ainda não entrou em fechamento.
+Avaliado em 2026-11-11 e deixado de fora.
+
+**Registrado em:** 2026-11-11.
+
+## Movimentação de estoque sem data própria
+
+**Onde:** `StockMovementService.create` (`stock/stock-movement.service.ts`,
+2026-11-11).
+
+**O que é:** a movimentação vale pelo momento do lançamento (`createdAt`); uma
+compra que chegou ontem é lançada hoje. O saldo depois de cada movimentação
+(`balanceAfter`) segue a ordem de lançamento.
+
+**Impacto:** o histórico mostra quando foi lançado, não quando aconteceu. A
+conta a pagar da compra tem as próprias datas (vencimento e pagamento).
+
+**Como resolver:** um campo de data da movimentação (até hoje), com o histórico
+ordenado por ele e o `balanceAfter` recalculado a partir da data, se a clínica
+precisar lançar no passado.
+
+**Registrado em:** 2026-11-11.

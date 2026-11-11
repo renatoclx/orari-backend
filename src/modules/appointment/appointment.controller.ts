@@ -28,7 +28,7 @@ import { CreateAppointmentDto } from "./dto/create-appointment.dto";
 import { FindAppointmentsQueryDto } from "./dto/find-appointments-query.dto";
 import { UpdateAppointmentDto } from "./dto/update-appointment.dto";
 
-// Sem DELETE: agendamentos são cancelados pelo status (ver domain.md).
+// Sem DELETE: agendamentos são cancelados pelo status (ver docs/domain/agenda.md).
 @ApiTags("Agendamentos")
 @ApiBearerAuth()
 @Feature("appointments")

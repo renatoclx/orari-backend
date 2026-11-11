@@ -145,6 +145,24 @@ describe("Rotas HTTP", () => {
       ["POST /anamnesis-templates", ["ADMIN"]],
       ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
       // Turmas: só o ADMIN (ver docs/turmas.md).
+      // Produtos e categorias: só o ADMIN.
+      ["POST /product-categories", ["ADMIN"]],
+      ["GET /product-categories", ["ADMIN"]],
+      ["GET /product-categories/:id", ["ADMIN"]],
+      ["PATCH /product-categories/:id", ["ADMIN"]],
+      ["POST /products", ["ADMIN"]],
+      ["GET /products", ["ADMIN"]],
+      ["GET /products/:id", ["ADMIN"]],
+      ["PATCH /products/:id", ["ADMIN"]],
+      ["DELETE /products/:id", ["ADMIN"]],
+      ["POST /products/:id/photo", ["ADMIN"]],
+      ["DELETE /products/:id/photo", ["ADMIN"]],
+      ["POST /products/:id/stock-movements", ["ADMIN"]],
+      ["GET /products/:id/stock-movements", ["ADMIN"]],
+      // Venda de produtos: só o ADMIN vende (a comanda mostra a todos).
+      ["GET /product-sales/products", ["ADMIN"]],
+      ["POST /product-sales", ["ADMIN"]],
+      ["PATCH /product-sales/:id/cancel", ["ADMIN"]],
       ["POST /class-groups", ["ADMIN"]],
       ["GET /class-groups", ["ADMIN"]],
       ["GET /class-groups/:id", ["ADMIN"]],
@@ -302,6 +320,14 @@ describe("Rotas HTTP", () => {
           .set("Authorization", auth(http, "admin"))
           .expect(400);
       }
+    });
+
+    it("produto: a alteração recusa o estoque atual (muda só pelas movimentações)", async () => {
+      await request(server())
+        .patch(`/products/${ANY_UUID}`)
+        .set("Authorization", auth(http, "admin"))
+        .send({ currentStock: 5 })
+        .expect(400);
     });
 
     it("usuário: aceita peopleId UUID ou null e recusa outro valor (400)", async () => {

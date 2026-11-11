@@ -65,7 +65,7 @@ Todas as entidades persistentes devem possuir:
 
 - **State**: não possui operação de exclusão (mantida via seed). Não utiliza `deletedAt`.
 - **City**: não possui operação de exclusão pela aplicação (mantida via seed). Não utiliza `deletedAt`.
-- **Company**: não é excluída; é inativada (`isActive`). Não utiliza `deletedAt`, e seus dados relacionados ficam inacessíveis enquanto estiver inativa (ver `business-rules.md`).
+- **Company**: não é excluída; é inativada (`isActive`). Não utiliza `deletedAt`, e seus dados relacionados ficam inacessíveis enquanto estiver inativa (ver `business-rules/empresa-e-acesso.md`).
 - **Appointment**: não possui exclusão; o ciclo de vida é controlado pelo `status`. Não utiliza `deletedAt`.
 - **RecurringAppointment**: não possui exclusão; é desativado por `isActive`. Não utiliza `deletedAt`.
 - **RecurringDay**: faz parte do agendamento recorrente e é substituído em bloco junto com ele, por isso usa exclusão física (`onDelete: Cascade`). Não utiliza `deletedAt`.

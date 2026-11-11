@@ -12,7 +12,7 @@ import {
 import { AnamnesisQuestionDto } from "./anamnesis-question.dto";
 
 export const MAX_QUESTIONS = 100;
-// Limites do nome e da descrição do modelo (ver docs/business-rules.md, "Anamnese").
+// Limites do nome e da descrição do modelo (ver docs/business-rules/anamnese.md, "Anamnese").
 export const TEMPLATE_NAME_MAX = 100;
 export const TEMPLATE_DESCRIPTION_MAX = 1000;
 

@@ -42,6 +42,11 @@ model User {
   closingsCancelled         CommissionClosing[]        @relation("CommissionClosingCancelledBy")
   // Contas a pagar que este usuário lançou.
   payablesCreated           Payable[]                  @relation("PayableCreatedBy")
+  // Movimentações de estoque que este usuário lançou.
+  stockMovements            StockMovement[]
+  // Vendas de produto que este usuário lançou e as que cancelou.
+  productSalesCreated       ProductSale[]              @relation("ProductSaleCreatedBy")
+  productSalesCancelled     ProductSale[]              @relation("ProductSaleCancelledBy")
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -167,6 +172,10 @@ model Company {
   commissionAdvances    CommissionAdvance[]
   commissionClosings    CommissionClosing[]
   expenseCategories     ExpenseCategory[]
+  productCategories     ProductCategory[]
+  products              Product[]
+  stockMovements        StockMovement[]
+  productSales          ProductSale[]
   payables              Payable[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
@@ -232,9 +241,13 @@ model People {
   commissionAdvances          CommissionAdvance[]
   commissionClosings          CommissionClosing[]
   payablesAsPayee             Payable[]
+  // Produtos de que a pessoa (SUPPLIER) é o fornecedor.
+  suppliedProducts            Product[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
+  // Vendas de produto em que a pessoa é o cliente.
+  productSales                ProductSale[]
   users                       User[]
   anamnesesAsClient           Anamnesis[]            @relation("AnamnesisClient")
   anamnesisEntriesAsAuthor    AnamnesisEntry[]       @relation("AnamnesisEntryProfessional")
@@ -629,6 +642,8 @@ model Payment {
   // Um pagamento é de um agendamento ou de uma contratação de plano, nunca dos dois.
   appointmentId   String?
   clientPlanId    String?
+  // Terceira origem: a venda de produtos (protegida; muda só pela venda).
+  productSaleId   String?       @unique
   amount          Decimal       @db.Decimal(10, 2)
   // Vencimento pelo calendário, opcional. Em agendamentos de recorrência, acompanha a data do agendamento.
   dueDate         DateTime?     @db.Date
@@ -644,6 +659,7 @@ model Payment {
   company       Company        @relation(fields: [companyId], references: [id])
   appointment   Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
   clientPlan    ClientPlan?    @relation(fields: [clientPlanId], references: [id], onDelete: Restrict)
+  productSale   ProductSale?   @relation(fields: [productSaleId], references: [id], onDelete: Restrict)
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
 
   // Parcial: um pagamento excluído libera o agendamento para um novo pagamento.
@@ -1466,8 +1482,174 @@ model Payable {
   category          ExpenseCategory    @relation(fields: [categoryId], references: [id])
   paymentMethod     PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
   createdBy         User               @relation("PayableCreatedBy", fields: [createdById], references: [id])
+  // Gerada pela entrada de estoque (compra), quando pedida.
+  stockMovement     StockMovement?
 
   @@index([companyId, status, dueDate])
   @@index([seriesId])
   @@map("payables")
+}
+
+// Unidade de medida do produto (lista fixa; as quantidades do estoque são inteiras).
+enum ProductUnit {
+  UN
+  CX
+  PCT
+  KG
+  G
+  L
+  ML
+  M
+}
+
+// Categoria de produtos da empresa. Sem exclusão: é inativada (isActive).
+model ProductCategory {
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação (ver normalizeForSearch).
+  normalizedName String
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  products Product[]
+
+  // "Cosméticos" e "cosmeticos" são a mesma categoria.
+  @@unique([companyId, normalizedName])
+  @@map("product_categories")
+}
+
+// Produto da empresa, com preços e estoque (ver business-rules/categorias-produtos.md).
+model Product {
+  id               String       @id @default(uuid())
+  companyId        String
+  categoryId       String
+  // Pessoa do tipo SUPPLIER.
+  supplierId       String?
+  name             String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca.
+  normalizedName   String
+  description      String?
+  // Código interno: único entre os produtos não excluídos da empresa, quando informado.
+  sku              String?
+  photoUrl         String?
+  measureUnit      ProductUnit?
+  salePrice        Decimal      @db.Decimal(10, 2)
+  purchasePrice    Decimal      @db.Decimal(10, 2)
+  // Calculada pela API sobre o preço de venda; negativa quando o custo passa da venda.
+  profitMargin     Decimal      @db.Decimal(9, 2)
+  promotionalPrice Decimal?     @db.Decimal(10, 2)
+  currentStock     Int          @default(0)
+  minimalStock     Int?
+  maximumStock     Int?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime?
+  deletedAt        DateTime?
+
+  company        Company           @relation(fields: [companyId], references: [id])
+  category       ProductCategory   @relation(fields: [categoryId], references: [id])
+  supplier       People?           @relation(fields: [supplierId], references: [id])
+  // O estoque atual é o saldo destas movimentações (gravado no produto).
+  stockMovements StockMovement[]
+  saleItems      ProductSaleItem[]
+
+  @@unique([companyId, sku], where: raw("\"deletedAt\" IS NULL AND \"sku\" IS NOT NULL"))
+  @@index([companyId])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("products")
+}
+
+// Motivo da movimentação de estoque (ver business-rules/categorias-produtos.md).
+enum StockMovementType {
+  // Saldo informado no cadastro do produto (ou o que havia antes do controle).
+  INITIAL
+  // Entrada por compra: atualiza o preço de custo.
+  PURCHASE
+  // Saídas lançadas à mão.
+  INTERNAL_USE
+  LOSS
+  // Inventário: o saldo passa a ser o contado.
+  ADJUSTMENT
+  // Venda na comanda e a devolução ao estoque quando ela é cancelada.
+  SALE
+  SALE_CANCELLED
+}
+
+// Entrada ou saída de estoque. Não se altera nem se exclui: um erro se
+// corrige com um ajuste.
+model StockMovement {
+  id            String            @id @default(uuid())
+  companyId     String
+  productId     String
+  type          StockMovementType
+  // Variação do saldo: positiva na entrada, negativa na saída.
+  quantity      Int
+  // Saldo do produto logo depois desta movimentação.
+  balanceAfter  Int
+  // Custo unitário da compra (só na entrada por compra).
+  unitCost      Decimal?          @db.Decimal(10, 2)
+  note          String?
+  // Vazio no saldo de antes do controle de estoque (migração).
+  createdById   String?
+  // Conta a pagar lançada junto com a compra, quando pedida.
+  payableId     String?           @unique
+  // Venda que tirou (ou devolveu) o produto.
+  productSaleId String?
+  createdAt     DateTime          @default(now())
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  product     Product      @relation(fields: [productId], references: [id])
+  createdBy   User?        @relation(fields: [createdById], references: [id])
+  payable     Payable?     @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  productSale ProductSale? @relation(fields: [productSaleId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([productSaleId])
+  @@map("stock_movements")
+}
+
+// Venda de produtos na comanda (ver business-rules/categorias-produtos.md):
+// um ou mais itens e um pagamento. Só a pendente é cancelada (o estoque volta).
+model ProductSale {
+  id            String    @id @default(uuid())
+  companyId     String
+  // Pessoa do tipo CLIENT.
+  clientId      String
+  createdById   String
+  createdAt     DateTime  @default(now())
+  cancelledAt   DateTime?
+  cancelledById String?
+
+  company        Company           @relation(fields: [companyId], references: [id])
+  client         People            @relation(fields: [clientId], references: [id])
+  createdBy      User              @relation("ProductSaleCreatedBy", fields: [createdById], references: [id])
+  cancelledBy    User?             @relation("ProductSaleCancelledBy", fields: [cancelledById], references: [id])
+  items          ProductSaleItem[]
+  payment        Payment?
+  stockMovements StockMovement[]
+
+  @@index([companyId, createdAt])
+  @@index([clientId])
+  @@map("product_sales")
+}
+
+// Item da venda: o valor unitário é o cobrado (pode diferir do cadastro).
+model ProductSaleItem {
+  id        String  @id @default(uuid())
+  saleId    String
+  productId String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+
+  sale    ProductSale @relation(fields: [saleId], references: [id])
+  product Product     @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+  @@map("product_sale_items")
 }

@@ -3,7 +3,7 @@
 Dados de contato e de localização, que pertencem **ou** a uma empresa **ou** a
 uma pessoa.
 
-**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules.md § Contatos e endereços](../business-rules.md)
+**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules/pessoas.md § Contatos e endereços](../business-rules/pessoas.md)
 
 ## Regras em resumo
 

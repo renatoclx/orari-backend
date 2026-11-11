@@ -2,7 +2,7 @@
 
 Clientes, profissionais e funcionários de uma empresa.
 
-**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules.md § Pessoas](../business-rules.md)
+**PR:** 5 (`feat/entidades-base`) · **Regras:** [business-rules/pessoas.md § Pessoas](../business-rules/pessoas.md)
 
 ## Regras em resumo
 

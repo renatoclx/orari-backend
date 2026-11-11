@@ -6,7 +6,7 @@ Cobrir com testes **um** módulo já implementado.
 
 ## Instruções
 
-1. Leia o módulo e as regras dele no `business-rules.md`.
+1. Leia o módulo e as regras dele em `docs/business-rules/` (o arquivo da área).
 2. Liste os casos que pretende cobrir: caminho feliz, cada regra de negócio,
    erros esperados (400, 403, 404, 409) e o escopo por empresa.
    **Aguarde aprovação da lista.**

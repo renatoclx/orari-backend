@@ -125,7 +125,7 @@ export interface AnamnesisClientSummary {
 }
 
 /**
- * Fichas de anamnese (ver docs/business-rules.md, "Anamnese"). Pertencem à
+ * Fichas de anamnese (ver docs/business-rules/anamnese.md, "Anamnese"). Pertencem à
  * empresa do usuário; as de outras empresas se comportam como inexistentes (404).
  * Todo acesso exige a permissão da anamnese e deixa registro de auditoria. As
  * respostas e a evolução são guardadas criptografadas e decifradas só aqui, ao

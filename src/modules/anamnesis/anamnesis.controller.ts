@@ -23,7 +23,7 @@ import { FindAnamnesisClientsQueryDto } from "./dto/find-anamnesis-clients-query
 import { FindEntryAppointmentsQueryDto } from "./dto/find-entry-appointments-query.dto";
 import { FindAnamnesisPdfQueryDto } from "./dto/find-anamnesis-pdf-query.dto";
 
-// Sem PATCH nem DELETE: os registros são imutáveis (ver business-rules.md). O
+// Sem PATCH nem DELETE: os registros são imutáveis (ver business-rules/anamnese.md). O
 // acesso (ADMIN ou profissional vinculado) é conferido no service, pois depende
 // do vínculo, e não do tipo do usuário.
 @ApiTags("Anamnese")

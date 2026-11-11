@@ -139,7 +139,7 @@ export interface PortfolioSeries {
 }
 
 /**
- * Carteira de clientes por profissional (ver docs/business-rules.md, "Carteira
+ * Carteira de clientes por profissional (ver docs/business-rules/relatorios.md, "Carteira
  * de clientes"). Só leitura: tudo sai dos agendamentos e pagamentos.
  */
 @Injectable()

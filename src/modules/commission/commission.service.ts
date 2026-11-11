@@ -106,7 +106,7 @@ const commissionSelect = {
 const BATCH = 500;
 
 /**
- * Comissão do profissional (ver docs/business-rules.md, "Comissão"). Uma por
+ * Comissão do profissional (ver docs/business-rules/financeiro.md, "Comissão"). Uma por
  * atendimento concluído de serviço com comissão, só dos que terminaram depois
  * de a comissão passar a valer no serviço (`commissionSince`).
  */

@@ -29,7 +29,7 @@ const SELECT = {
 
 /**
  * Configuração das mensagens automáticas de uma clínica (ver
- * docs/business-rules.md, "Mensagens automáticas"). Quem nunca salvou recebe
+ * docs/business-rules/mensagens.md, "Mensagens automáticas"). Quem nunca salvou recebe
  * os padrões do catálogo.
  */
 @Injectable()

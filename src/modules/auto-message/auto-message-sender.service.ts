@@ -47,7 +47,7 @@ const UPCOMING: AppointmentStatus[] = [
 ];
 
 /**
- * Envio de uma mensagem automática (ver docs/business-rules.md, "Mensagens
+ * Envio de uma mensagem automática (ver docs/business-rules/mensagens.md, "Mensagens
  * automáticas"): confere a clínica e a situação, monta o texto, grava o
  * registro que impede repetir e entrega pelo ponto único de avisos do app.
  */

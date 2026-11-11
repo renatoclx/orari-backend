@@ -280,7 +280,7 @@ const clientWhere = (companyId: string) => ({
 });
 
 /**
- * Perfil do cliente da empresa toda (ver docs/business-rules.md, "Perfil do
+ * Perfil do cliente da empresa toda (ver docs/business-rules/relatorios.md, "Perfil do
  * cliente"). Só leitura.
  */
 @Injectable()

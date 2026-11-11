@@ -41,8 +41,12 @@ import { PaymentMethodController } from "../../src/modules/payment-method/paymen
 import { PaymentController } from "../../src/modules/payment/payment.controller";
 import { PeopleController } from "../../src/modules/people/people.controller";
 import { PlanController } from "../../src/modules/plan/plan.controller";
+import { ProductCategoryController } from "../../src/modules/product-category/product-category.controller";
+import { ProductController } from "../../src/modules/product/product.controller";
 import { RecurringAppointmentController } from "../../src/modules/recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../../src/modules/service/service.controller";
+import { StockMovementController } from "../../src/modules/stock/stock-movement.controller";
+import { ProductSaleController } from "../../src/modules/product-sale/product-sale.controller";
 import { StateController } from "../../src/modules/state/state.controller";
 import { UserController } from "../../src/modules/user/user.controller";
 import { UserService } from "../../src/modules/user/user.service";
@@ -73,9 +77,13 @@ export const CONTROLLERS: Type<unknown>[] = [
   PaymentController,
   PeopleController,
   PlanController,
+  ProductCategoryController,
+  ProductController,
   RecurringAppointmentController,
   ServiceController,
   StateController,
+  StockMovementController,
+  ProductSaleController,
   UserController,
 ];
 

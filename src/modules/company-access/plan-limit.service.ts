@@ -11,7 +11,7 @@ const LABEL: Record<LimitedResource, [singular: string, plural: string]> = {
 
 /**
  * Limites de profissionais e administradores por empresa (ver
- * docs/business-rules.md, "Acessos e limites da empresa"). Quem cria ou reativa
+ * docs/business-rules/empresa-e-acesso.md, "Acessos e limites da empresa"). Quem cria ou reativa
  * um deles chama `assertWithinLimit` dentro da própria transação.
  */
 @Injectable()

@@ -5,7 +5,7 @@
 > `/users` e redefinição de senha). Rotas isentas de autenticação usam
 > `@Public()`; rotas restritas por tipo de usuário usam `@Roles()`. O
 > primeiro SUPER_ADMIN é criado pelo seed (`npm run prisma:seed`, variáveis
-> `SEED_*`). As regras de acesso estão em `business-rules.md`.
+> `SEED_*`). As regras de acesso estão em `business-rules/empresa-e-acesso.md`.
 
 ## Estratégia
 
@@ -57,7 +57,7 @@
   `timezone` permite ao front exibir os horários no fuso da empresa.
 - Também traz `access.features`: uma entrada por funcionalidade (`feature`, `view`,
   `edit`, `create`, `remove`) com o que a empresa do usuário pode usar (ver
-  `business-rules.md`, "Acessos e limites da empresa"). É por ele que o front
+  `business-rules/empresa-e-acesso.md`, "Acessos e limites da empresa"). É por ele que o front
   esconde menus e botões. O SUPER_ADMIN não é limitado por plano: recebe todas as
   ações de todas as funcionalidades.
 - Os dados vêm do banco a cada chamada, não do token: refletem alterações
@@ -127,7 +127,7 @@ Exemplo:
   acessíveis de outra origem (o front os exibe).
 ## Portal do cliente (autenticação separada)
 
-- O cliente do app **não é usuário**: tem uma **conta do cliente** (`ClientAccount`), com telefone e senha, única no Orari. Em cada clínica, o cliente é o cadastro dela (pessoa CLIENT) ligado à conta (regras em `business-rules.md`, "Portal do cliente").
+- O cliente do app **não é usuário**: tem uma **conta do cliente** (`ClientAccount`), com telefone e senha, única no Orari. Em cada clínica, o cliente é o cadastro dela (pessoa CLIENT) ligado à conta (regras em `business-rules/portal-do-cliente.md`, "Portal do cliente").
 - A senha é guardada com bcrypt, com o mesmo custo das senhas dos usuários; o login compara a senha mesmo quando o telefone não tem conta, para a resposta levar o mesmo tempo.
 - O **token do portal** é uma string aleatória opaca (não é JWT), como o refresh token: só o hash (SHA-256) fica na tabela `PortalSession`, com validade de 90 dias, aparelho (`userAgent`) e revogação própria. A sessão é **da conta**. Trocar a senha tira os outros aparelhos; criar uma senha nova pelo link da clínica tira todos.
 - As rotas da conta (`/portal-account/...`) e dos estabelecimentos (`/portal/:slug/...`) são `@Public()` para o `JwtAuthGuard`; as que exigem a conta entrada usam o `PortalAuthGuard`, que confere o token no banco e, nas rotas de um estabelecimento, procura o cadastro da conta nessa clínica (sem cadastro: 403 `NOT_A_CLIENT`).

@@ -5,7 +5,7 @@ contexto. Cada guia traz: o que a funcionalidade faz, as regras em resumo, onde
 elas estão no código, quais testes as cobrem, em qual PR revisar e **o que
 merece atenção** — incluindo decisões discutíveis.
 
-> As regras normativas ficam no [`business-rules.md`](../business-rules.md).
+> As regras normativas ficam em [`business-rules/`](../business-rules/README.md).
 > Aqui elas aparecem resumidas, com o ponteiro para o código.
 
 ## Ordem de revisão

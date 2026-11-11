@@ -7,7 +7,7 @@ produza mais código do que você consegue revisar de uma vez.
 
 | Ordem | Prompt              | Entrega                                        | Para quando termina |
 | ----- | ------------------- | ---------------------------------------------- | ------------------- |
-| 1     | `define-rules.md`   | Regras escritas no `business-rules.md`         | Sim                 |
+| 1     | `define-rules.md`   | Regras escritas em `business-rules/`           | Sim                 |
 | 2     | `create-entity.md`  | Schema + migration de **uma** entidade         | Sim                 |
 | 3     | `create-module.md`  | Module, Controller, Service e DTOs de **uma** entidade | Sim         |
 | 4     | `add-tests.md`      | Testes de **um** módulo                        | Sim                 |
@@ -21,7 +21,7 @@ começa quando você pedir.
   implemente a primeira e liste as demais como pendência.
 - **No máximo 2 perguntas por rodada**, e só as que bloqueiam a etapa atual.
   Dúvidas que não bloqueiam viram pendência registrada, não implementação.
-- **Não invente regra de negócio.** Se a regra não está no `business-rules.md`,
+- **Não invente regra de negócio.** Se a regra não está em `docs/business-rules/`,
   pare e use o `define-rules.md` antes.
 - **Não altere arquivos fora da etapa.** Ajustes que aparecerem pelo caminho
   viram pendência.
