@@ -38,6 +38,8 @@ import { PackagesReportModule } from "./modules/packages-report/packages-report.
 import { ClientsReportModule } from "./modules/clients-report/clients-report.module";
 import { CommissionModule } from "./modules/commission/commission.module";
 import { ExpenseCategoryModule } from "./modules/expense-category/expense-category.module";
+import { ProductCategoryModule } from "./modules/product-category/product-category.module";
+import { ProductModule } from "./modules/product/product.module";
 import { PayableModule } from "./modules/payable/payable.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
@@ -68,6 +70,8 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     ClientsReportModule,
     CommissionModule,
     ExpenseCategoryModule,
+    ProductCategoryModule,
+    ProductModule,
     PayableModule,
     AgendaBlockModule,
     PeopleModule,

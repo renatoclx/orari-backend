@@ -23,6 +23,8 @@ export const FEATURE_KEYS = [
   "payment-methods",
   "expense-categories",
   "payables",
+  "product-categories",
+  "products",
   "anamnesis",
   "anamnesis-templates",
   "anamnesis-audit",
@@ -84,6 +86,9 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "expense-categories", actions: ALL },
   // Contas a pagar: só o ADMIN usa. Pagar = Edita; cancelar e excluir = Exclui.
   { key: "payables", actions: ALL },
+  { key: "product-categories", actions: ALL },
+  // O cadastro do produto escolhe a categoria.
+  { key: "products", actions: ALL, requiresView: ["product-categories"] },
   { key: "anamnesis", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "anamnesis-templates", actions: ALL },
   { key: "anamnesis-audit", actions: ["view"] },
@@ -161,6 +166,9 @@ const DEFAULT_OFF: readonly string[] = [
   // O SUPER_ADMIN libera o portal e as mensagens a quem contratar.
   "client-portal",
   "messages",
+  // Produtos: liberados pelo SUPER_ADMIN a quem contratar.
+  "product-categories",
+  "products",
 ];
 
 // Limites do modelo padrão (o "Essencial": administrador + 2 profissionais).

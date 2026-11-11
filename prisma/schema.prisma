@@ -167,6 +167,8 @@ model Company {
   commissionAdvances    CommissionAdvance[]
   commissionClosings    CommissionClosing[]
   expenseCategories     ExpenseCategory[]
+  productCategories     ProductCategory[]
+  products              Product[]
   payables              Payable[]
   clientPlans           ClientPlan[]
   classGroups           ClassGroup[]
@@ -232,6 +234,8 @@ model People {
   commissionAdvances          CommissionAdvance[]
   commissionClosings          CommissionClosing[]
   payablesAsPayee             Payable[]
+  // Produtos de que a pessoa (SUPPLIER) é o fornecedor.
+  suppliedProducts            Product[]
   recurringAsClient           RecurringAppointment[] @relation("RecurringAppointmentClient")
   recurringAsProfessional     RecurringAppointment[] @relation("RecurringAppointmentProfessional")
   clientPlans                 ClientPlan[]
@@ -1470,4 +1474,75 @@ model Payable {
   @@index([companyId, status, dueDate])
   @@index([seriesId])
   @@map("payables")
+}
+
+// Unidade de medida do produto (lista fixa; as quantidades do estoque são inteiras).
+enum ProductUnit {
+  UN
+  CX
+  PCT
+  KG
+  G
+  L
+  ML
+  M
+}
+
+// Categoria de produtos da empresa. Sem exclusão: é inativada (isActive).
+model ProductCategory {
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação (ver normalizeForSearch).
+  normalizedName String
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime?
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  products Product[]
+
+  // "Cosméticos" e "cosmeticos" são a mesma categoria.
+  @@unique([companyId, normalizedName])
+  @@map("product_categories")
+}
+
+// Produto da empresa, com preços e estoque (ver business-rules/categorias-produtos.md).
+model Product {
+  id               String       @id @default(uuid())
+  companyId        String
+  categoryId       String
+  // Pessoa do tipo SUPPLIER.
+  supplierId       String?
+  name             String
+  // Nome sem acentos e em minúsculas, mantido pela aplicação para a busca.
+  normalizedName   String
+  description      String?
+  // Código interno: único entre os produtos não excluídos da empresa, quando informado.
+  sku              String?
+  photoUrl         String?
+  measureUnit      ProductUnit?
+  salePrice        Decimal      @db.Decimal(10, 2)
+  purchasePrice    Decimal      @db.Decimal(10, 2)
+  // Calculada pela API sobre o preço de venda; negativa quando o custo passa da venda.
+  profitMargin     Decimal      @db.Decimal(9, 2)
+  promotionalPrice Decimal?     @db.Decimal(10, 2)
+  currentStock     Int          @default(0)
+  minimalStock     Int?
+  maximumStock     Int?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime?
+  deletedAt        DateTime?
+
+  company  Company         @relation(fields: [companyId], references: [id])
+  category ProductCategory @relation(fields: [categoryId], references: [id])
+  supplier People?         @relation(fields: [supplierId], references: [id])
+
+  @@unique([companyId, sku], where: raw("\"deletedAt\" IS NULL AND \"sku\" IS NOT NULL"))
+  @@index([companyId])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("products")
 }

@@ -145,6 +145,18 @@ describe("Rotas HTTP", () => {
       ["POST /anamnesis-templates", ["ADMIN"]],
       ["PATCH /anamnesis-templates/:id", ["ADMIN"]],
       // Turmas: só o ADMIN (ver docs/turmas.md).
+      // Produtos e categorias: só o ADMIN.
+      ["POST /product-categories", ["ADMIN"]],
+      ["GET /product-categories", ["ADMIN"]],
+      ["GET /product-categories/:id", ["ADMIN"]],
+      ["PATCH /product-categories/:id", ["ADMIN"]],
+      ["POST /products", ["ADMIN"]],
+      ["GET /products", ["ADMIN"]],
+      ["GET /products/:id", ["ADMIN"]],
+      ["PATCH /products/:id", ["ADMIN"]],
+      ["DELETE /products/:id", ["ADMIN"]],
+      ["POST /products/:id/photo", ["ADMIN"]],
+      ["DELETE /products/:id/photo", ["ADMIN"]],
       ["POST /class-groups", ["ADMIN"]],
       ["GET /class-groups", ["ADMIN"]],
       ["GET /class-groups/:id", ["ADMIN"]],

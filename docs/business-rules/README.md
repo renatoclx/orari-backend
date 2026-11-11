@@ -3,21 +3,22 @@
 As regras de funcionamento do sistema, divididas por área. Antes de alterar um
 módulo, leia o arquivo da área dele (e os das áreas que ele toca).
 
-| Arquivo                                        | Seções                                                                                                                                                                                |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`empresa-e-acesso.md`](empresa-e-acesso.md)   | Tipos de usuário, Empresas, Acessos e limites da empresa, Usuários e acesso, Senhas                                                                                                   |
-| [`pessoas.md`](pessoas.md)                     | Pessoas, Contatos e endereços, Unicidade, Estados e cidades                                                                                                                           |
-| [`servicos.md`](servicos.md)                   | Serviços                                                                                                                                                                              |
-| [`agenda.md`](agenda.md)                       | Agendamentos, Status dos Agendamentos, Fuso horário, Horário de funcionamento, Bloqueio de horários                                                                                   |
-| [`recorrencias.md`](recorrencias.md)           | Agendamentos recorrentes                                                                                                                                                              |
-| [`planos.md`](planos.md)                       | Planos                                                                                                                                                                                |
-| [`pagamentos.md`](pagamentos.md)               | Pagamentos                                                                                                                                                                            |
-| [`turmas.md`](turmas.md)                       | Turmas                                                                                                                                                                                |
-| [`anamnese.md`](anamnese.md)                   | Anamnese                                                                                                                                                                              |
-| [`portal-do-cliente.md`](portal-do-cliente.md) | Portal do cliente, Avisos do app                                                                                                                                                      |
-| [`mensagens.md`](mensagens.md)                 | Mensagens automáticas, Mensagens da clínica, Notificações                                                                                                                             |
-| [`relatorios.md`](relatorios.md)               | Carteira de clientes, Análise de recebíveis (antes "Contas a receber"), Relatório de agendamentos, Rankings, Relatório financeiro, Relatório de pacotes, Perfil do cliente, Dashboard |
-| [`financeiro.md`](financeiro.md)               | Comissão, Categorias de despesa, Contas a pagar                                                                                                                                       |
+| Arquivo                                            | Seções                                                                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`empresa-e-acesso.md`](empresa-e-acesso.md)       | Tipos de usuário, Empresas, Acessos e limites da empresa, Usuários e acesso, Senhas                                                                                                   |
+| [`pessoas.md`](pessoas.md)                         | Pessoas, Contatos e endereços, Unicidade, Estados e cidades                                                                                                                           |
+| [`servicos.md`](servicos.md)                       | Serviços                                                                                                                                                                              |
+| [`agenda.md`](agenda.md)                           | Agendamentos, Status dos Agendamentos, Fuso horário, Horário de funcionamento, Bloqueio de horários                                                                                   |
+| [`recorrencias.md`](recorrencias.md)               | Agendamentos recorrentes                                                                                                                                                              |
+| [`planos.md`](planos.md)                           | Planos                                                                                                                                                                                |
+| [`pagamentos.md`](pagamentos.md)                   | Pagamentos                                                                                                                                                                            |
+| [`turmas.md`](turmas.md)                           | Turmas                                                                                                                                                                                |
+| [`anamnese.md`](anamnese.md)                       | Anamnese                                                                                                                                                                              |
+| [`portal-do-cliente.md`](portal-do-cliente.md)     | Portal do cliente, Avisos do app                                                                                                                                                      |
+| [`mensagens.md`](mensagens.md)                     | Mensagens automáticas, Mensagens da clínica, Notificações                                                                                                                             |
+| [`relatorios.md`](relatorios.md)                   | Carteira de clientes, Análise de recebíveis (antes "Contas a receber"), Relatório de agendamentos, Rankings, Relatório financeiro, Relatório de pacotes, Perfil do cliente, Dashboard |
+| [`financeiro.md`](financeiro.md)                   | Comissão, Categorias de despesa, Contas a pagar                                                                                                                                       |
+| [`categorias-produtos.md`](categorias-produtos.md) | Categorias de produto, Produtos                                                                                                                                                       |
 
 ## Convenções
 
