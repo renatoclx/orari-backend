@@ -15,6 +15,7 @@ import {
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import {
   formatTimeOfDay,
+  minutesOf,
   parseTimeOfDay,
   WEEK_DAY_BY_INDEX,
 } from "../../common/time/time-of-day";
@@ -915,12 +916,7 @@ export class RecurringAppointmentService {
   }
 
   private minutesBetween(startTime: string, endTime: string): number {
-    const toMinutes = (time: string) => {
-      const [hours, minutes] = time.split(":").map(Number);
-      return hours * 60 + minutes;
-    };
-
-    return toMinutes(endTime) - toMinutes(startTime);
+    return minutesOf(endTime) - minutesOf(startTime);
   }
 
   private toDayRows(days: RecurringDayDto[]) {

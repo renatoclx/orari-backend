@@ -10,7 +10,7 @@ import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { createCommissionPayable } from "../payable/commission-payable";
-import { localToday } from "../receivables/receivables.service";
+import { localDateOf } from "../../common/time/time-zone";
 import type {
   CommissionAdvanceListQueryDto,
   CreateCommissionAdvanceDto,
@@ -126,8 +126,8 @@ export class CommissionAdvanceService {
     const timeZone = await this.companyService.getTimeZone(companyId);
     const period = periodOf(from, to, timeZone, now);
     // A data do adiantamento é de calendário: compara com os dias do período.
-    const first = localToday(period.start, timeZone);
-    const last = localToday(new Date(period.end.getTime() - 1), timeZone);
+    const first = localDateOf(period.start, timeZone);
+    const last = localDateOf(new Date(period.end.getTime() - 1), timeZone);
     const rows = await this.prisma.commissionAdvance.findMany({
       where: {
         companyId,
@@ -161,7 +161,7 @@ export class CommissionAdvanceService {
     await this.ensureProfessional(dto.professionalId, companyId);
     const timeZone = await this.companyService.getTimeZone(companyId);
     const date = new Date(`${dto.date}T00:00:00Z`);
-    if (Number.isNaN(date.getTime()) || date > localToday(now, timeZone)) {
+    if (Number.isNaN(date.getTime()) || date > localDateOf(now, timeZone)) {
       throw new BadRequestException("A data não pode ser futura");
     }
     const method = await this.prisma.paymentMethod.findFirst({

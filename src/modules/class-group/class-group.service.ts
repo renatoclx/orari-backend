@@ -12,7 +12,12 @@ import {
 } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
-import { formatTimeOfDay, parseTimeOfDay } from "../../common/time/time-of-day";
+import {
+  formatMinutes,
+  formatTimeOfDay,
+  minutesOf,
+  parseTimeOfDay,
+} from "../../common/time/time-of-day";
 import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { BusinessHourService } from "../business-hour/business-hour.service";
@@ -23,12 +28,7 @@ import { ClassGroupDayDto } from "./dto/class-group-day.dto";
 import { CreateClassGroupDto } from "./dto/create-class-group.dto";
 import { FindClassGroupsQueryDto } from "./dto/find-class-groups-query.dto";
 import { UpdateClassGroupDto } from "./dto/update-class-group.dto";
-import {
-  formatMinutes,
-  formatZonedDateTime,
-  minutesOf,
-  WEEK_DAY_LABEL,
-} from "./class-group-schedule";
+import { formatZonedDateTime, WEEK_DAY_LABEL } from "./class-group-schedule";
 
 // Serviço, profissional e dias vêm junto com a turma; a coluna de busca fica de fora.
 const withDetails = {

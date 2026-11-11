@@ -18,7 +18,7 @@ import {
   availableOf,
 } from "../commission/commission-advance.service";
 import { CompanyService } from "../company/company.service";
-import { localToday } from "../receivables/receivables.service";
+import { localDateOf } from "../../common/time/time-zone";
 import type {
   CreatePayableDto,
   PayableRepeatDto,
@@ -510,7 +510,7 @@ export class PayableService {
   }
 
   private async today(companyId: string, now: Date) {
-    return localToday(now, await this.companyService.getTimeZone(companyId));
+    return localDateOf(now, await this.companyService.getTimeZone(companyId));
   }
 
   private async ensureNotFuture(date: string, companyId: string, now: Date) {

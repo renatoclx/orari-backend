@@ -18,6 +18,7 @@ import {
 } from "../../../generated/prisma/enums";
 import {
   formatTimeOfDay,
+  minutesOf,
   WEEK_DAY_BY_INDEX,
 } from "../../common/time/time-of-day";
 import {
@@ -33,11 +34,7 @@ import { CompanyService } from "../company/company.service";
 import { PaymentService } from "../payment/payment.service";
 import { PeopleService } from "../people/people.service";
 import { ServiceService } from "../service/service.service";
-import {
-  formatZonedDateTime,
-  minutesOf,
-  WEEK_DAY_LABEL,
-} from "./class-group-schedule";
+import { formatZonedDateTime, WEEK_DAY_LABEL } from "./class-group-schedule";
 import { CancelClassSessionDto } from "./dto/cancel-class-session.dto";
 import {
   CreateClassSessionDto,

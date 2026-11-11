@@ -5,7 +5,7 @@ import type { PaginatedResult } from "../../common/interfaces/paginated-result.i
 import { periodOf, type Period } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
-import { localToday } from "../receivables/receivables.service";
+import { localDateOf } from "../../common/time/time-zone";
 import type {
   PackagesEndingQueryDto,
   PackagesReportQueryDto,
@@ -186,7 +186,7 @@ export class PackagesReportService {
   ): Promise<PackagesReport> {
     const timeZone = await this.companyService.getTimeZone(companyId);
     const period = periodOf(from, to, timeZone, now);
-    const today = localToday(now, timeZone);
+    const today = localDateOf(now, timeZone);
     const between = { gte: period.start, lt: period.end };
 
     // Só o que entra em alguma conta: nova ou cancelada no período, ou ativa.
@@ -211,7 +211,7 @@ export class PackagesReportService {
     now = new Date(),
   ): Promise<PaginatedResult<EndingContract>> {
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const today = localToday(now, timeZone);
+    const today = localDateOf(now, timeZone);
 
     const active = await this.prisma.clientPlan.findMany({
       where: { companyId, cancelledAt: null, endDate: { gte: today } },

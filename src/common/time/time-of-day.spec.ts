@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatMinutes,
   formatTimeOfDay,
+  minutesOf,
   parseTimeOfDay,
   TIME_OF_DAY_PATTERN,
 } from "./time-of-day";
@@ -25,4 +27,10 @@ describe("time-of-day", () => {
       expect(TIME_OF_DAY_PATTERN.test(value)).toBe(false);
     },
   );
+
+  it("converte HH:MM em minutos e de volta", () => {
+    expect(minutesOf("09:30")).toBe(570);
+    expect(formatMinutes(570)).toBe("09:30");
+    expect(formatMinutes(5)).toBe("00:05");
+  });
 });

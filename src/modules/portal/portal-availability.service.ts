@@ -5,7 +5,9 @@ import {
 } from "@nestjs/common";
 import { AppointmentStatus, WeekDay } from "../../../generated/prisma/enums";
 import {
+  formatMinutes,
   formatTimeOfDay,
+  minutesOf,
   WEEK_DAY_BY_INDEX,
 } from "../../common/time/time-of-day";
 import {
@@ -19,8 +21,6 @@ import {
   availableStarts,
   DAY_MINUTES,
   daysBetween,
-  minutesOf,
-  timeOf,
   type Interval,
 } from "./portal-availability";
 import type { PortalCompany } from "./portal-company.service";
@@ -95,7 +95,7 @@ export class PortalAvailabilityService {
 
     return availableStarts({ windows, busy, duration, notBefore }).map(
       (minutes) => ({
-        time: timeOf(minutes),
+        time: formatMinutes(minutes),
         startAt: zonedToUtc(
           { ...day, hours: Math.floor(minutes / 60), minutes: minutes % 60 },
           company.timezone,

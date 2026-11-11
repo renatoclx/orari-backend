@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isValidTimeZone,
+  localDateOf,
   minutesOfZonedDay,
   toZonedParts,
   weekDayIndexOf,
@@ -85,5 +86,16 @@ describe("time-zone", () => {
         expect(isValidTimeZone(timeZone)).toBe(false);
       },
     );
+  });
+
+  describe("localDateOf", () => {
+    it("usa o calendário da empresa, não o UTC", () => {
+      // 15/11/2026, 22:00 em São Paulo (já é dia 16 em UTC).
+      const instant = new Date("2026-11-16T01:00:00.000Z");
+
+      expect(localDateOf(instant, SP)).toEqual(
+        new Date(Date.UTC(2026, 10, 15)),
+      );
+    });
   });
 });

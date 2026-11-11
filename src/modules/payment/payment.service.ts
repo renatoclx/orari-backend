@@ -13,7 +13,7 @@ import {
 } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
-import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
+import { localDateOf, zonedToUtc } from "../../common/time/time-zone";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
@@ -582,7 +582,7 @@ export class PaymentService {
         companyId,
         appointmentId: appointment.id,
         amount,
-        dueDate: this.toLocalDate(appointment.startAt, timeZone),
+        dueDate: localDateOf(appointment.startAt, timeZone),
       })),
     });
 
@@ -609,7 +609,7 @@ export class PaymentService {
         companyId,
         appointmentId: id,
         amount: service.price,
-        dueDate: this.toLocalDate(startAt, company.timezone),
+        dueDate: localDateOf(startAt, company.timezone),
       });
     }
 
@@ -740,7 +740,7 @@ export class PaymentService {
     await db.payment.updateMany({
       where: { appointmentId, status: PaymentStatus.PENDING, deletedAt: null },
       data: {
-        dueDate: this.toLocalDate(startAt, timeZone),
+        dueDate: localDateOf(startAt, timeZone),
         updatedAt: new Date(),
       },
     });
@@ -1113,7 +1113,7 @@ export class PaymentService {
               companyId,
               appointmentId: appointment.id,
               amount: appointment.service.price!,
-              dueDate: this.toLocalDate(appointment.startAt, timeZone),
+              dueDate: localDateOf(appointment.startAt, timeZone),
               status: PaymentStatus.PAID,
               paymentMethodId,
               paidAt: settledAt,
@@ -1173,7 +1173,7 @@ export class PaymentService {
    */
   private async todayBounds(companyId: string) {
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const today = this.toLocalDate(new Date(), timeZone);
+    const today = localDateOf(new Date(), timeZone);
     const dayStart = (day: number) =>
       zonedToUtc(
         {
@@ -1305,7 +1305,7 @@ export class PaymentService {
   private async todayFor(companyId: string): Promise<Date> {
     const timeZone = await this.companyService.getTimeZone(companyId);
 
-    return this.toLocalDate(new Date(), timeZone);
+    return localDateOf(new Date(), timeZone);
   }
 
   /**
@@ -1327,13 +1327,6 @@ export class PaymentService {
     today: Date,
   ): T & { isOverdue: boolean } {
     return { ...payment, isOverdue: this.isOverdue(payment, today) };
-  }
-
-  // Data pura (coluna `date`) do dia em que o instante cai no fuso da empresa.
-  private toLocalDate(instant: Date, timeZone: string): Date {
-    const { year, month, day } = toZonedParts(instant, timeZone);
-
-    return new Date(Date.UTC(year, month - 1, day));
   }
 
   /**

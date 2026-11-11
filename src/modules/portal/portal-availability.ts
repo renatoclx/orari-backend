@@ -51,18 +51,6 @@ export function availableStarts({
     .sort((a, b) => a - b);
 }
 
-/** "HH:MM" para minutos do dia. */
-export function minutesOf(time: string): number {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-/** Minutos do dia para "HH:MM". */
-export function timeOf(minutes: number): string {
-  const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
-  return `${hours}:${String(minutes % 60).padStart(2, "0")}`;
-}
-
 /**
  * Dias entre duas datas de calendário (sem horário): positivo se `to` vem
  * depois de `from`.
