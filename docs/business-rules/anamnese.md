@@ -4,8 +4,8 @@
 
 ## Anamnese
 
-> **Em desenho:** estas regras descrevem o que será implementado. Ainda não valem na API.
-> O item marcado com **(adiado)** fica para uma atualização futura da funcionalidade.
+> As regras abaixo valem na API. O item marcado com **(adiado)** fica para uma
+> atualização futura da funcionalidade.
 
 A anamnese guarda **dados de saúde**, que a LGPD trata como dados pessoais sensíveis. Por
 isso o acesso é restrito, as respostas são criptografadas e toda ação fica registrada.

@@ -4,8 +4,7 @@
 
 ## Anamnese
 
-> **Em desenho:** as entidades desta seção ainda não foram implementadas. As regras de
-> funcionamento estão em `business-rules/anamnese.md` ("Anamnese").
+> As regras de funcionamento estão em `business-rules/anamnese.md` ("Anamnese").
 
 A anamnese é a ficha de saúde de um cliente. A empresa monta os **modelos** (perguntas
 e tipos de resposta), o profissional preenche uma **ficha** por cliente e por modelo, e
