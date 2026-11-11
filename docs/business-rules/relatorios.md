@@ -25,6 +25,7 @@
 > **Estado:** backend em 2026-11-09 (Relatórios → Contas a receber). Funcionalidade `receivables`, só Visualiza, **marcada no modelo padrão** de empresa nova; as empresas existentes não ganharam linha (liberar em Acessos e limites).
 
 - Relatório só de leitura da **empresa inteira**, só do **ADMIN**: o que há para receber, o que está atrasado e há quanto tempo. Tudo sai dos **pagamentos** (atendimento avulso, recorrência e contratação de plano); `CANCELLED` e excluídos ficam de fora. Atrasado segue a regra de Pagamentos: `PENDING` com vencimento **antes de hoje** no calendário da empresa.
+- Desde 2026-11-11, os pagamentos de **venda de produtos** também entram (o cliente vem da venda).
 - `GET /receivables?from=&to=` (resumo). Período como na carteira (AAAA-MM-DD, fuso da empresa, pontas incluídas; padrão: o mês atual; fim antes do início: 400).
   - Hoje, sem período: `open` (todo `PENDING`, inclusive sem vencimento), `overdue` (atrasado, com `clients`, quantos clientes devem) e `aging` (o atrasado por dias de atraso: `1-30`, `31-60`, `61-90` e `90+`; todas as faixas, mesmo vazias).
   - No período: `received` (`PAID` com `paidAt` no período) e `default` (inadimplência: `due` = pagamentos `PAID` ou `PENDING` com vencimento no período **até ontem**; `unpaid` = os que seguem `PENDING`; `rate` = `unpaid` ÷ `due`, de 0 a 1, ou `null` sem nada vencido).
@@ -62,8 +63,8 @@
 
 - Relatório só de leitura, só do **ADMIN**, da empresa toda: o que **entrou no caixa**. Complementa o Contas a receber (o que falta receber) e os Rankings (o faturado pelos atendimentos).
 - Base: pagamentos `PAID`, não excluídos, pela **data do pagamento** (`paidAt`) no período, no fuso da empresa (padrão: o mês atual). Filtro opcional por método de pagamento (`paymentMethodId`; de outra empresa: 404).
-- `GET /financial-report?from=&to=&paymentMethodId=`: `received` (total), `appointments` e `packages` (pela origem: pagamento de atendimento ou de contratação), `series` (por dia até 62 dias, senão por semana, separando atendimentos e pacotes) e `byMethod` (valor, quantidade e `share`, do maior para o menor; pagamento sem método fica numa linha com `id` null).
-- `GET /financial-report/payments` (paginado, mesmos filtros): o extrato, do pagamento mais recente para o mais antigo, com data, valor, origem, descrição (serviço do atendimento ou nome do pacote), cliente e método.
+- `GET /financial-report?from=&to=&paymentMethodId=`: `received` (total), `appointments`, `packages` e `products` (pela origem: pagamento de atendimento, de contratação ou de venda de produtos, desde 2026-11-11), `series` (por dia até 62 dias, senão por semana, separando atendimentos, pacotes e produtos) e `byMethod` (valor, quantidade e `share`, do maior para o menor; pagamento sem método fica numa linha com `id` null).
+- `GET /financial-report/payments` (paginado, mesmos filtros): o extrato, do pagamento mais recente para o mais antigo, com data, valor, origem (`appointment`, `package` ou `product`), descrição (serviço do atendimento, nome do pacote ou os produtos vendidos, ex.: "Sérum, Faixa (2)"), cliente e método.
 
 ## Relatório de pacotes
 

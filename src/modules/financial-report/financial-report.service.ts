@@ -14,8 +14,8 @@ import type {
   FinancialReportQueryDto,
 } from "./dto/financial-report-query.dto";
 
-/** De onde veio o dinheiro: um atendimento ou uma contratação de pacote. */
-export type ReceivedOrigin = "appointment" | "package";
+/** De onde veio o dinheiro: um atendimento, uma contratação de pacote ou uma venda de produtos. */
+export type ReceivedOrigin = "appointment" | "package" | "product";
 
 /** O que o relatório lê de cada pagamento recebido. */
 export interface ReceivedPayment {
@@ -34,10 +34,16 @@ export interface FinancialReport {
   received: ReceivedTotal;
   appointments: ReceivedTotal;
   packages: ReceivedTotal;
+  products: ReceivedTotal;
   series: {
     unit: "day" | "week";
     /** `date`: primeiro dia do intervalo, AAAA-MM-DD no fuso da empresa. */
-    points: { date: string; appointments: string; packages: string }[];
+    points: {
+      date: string;
+      appointments: string;
+      packages: string;
+      products: string;
+    }[];
   };
   /** Do maior valor para o menor; `id` null: pagamento sem método. */
   byMethod: (ReceivedTotal & {
@@ -52,10 +58,21 @@ export interface ReceivedItem {
   paidAt: Date;
   amount: string;
   origin: ReceivedOrigin;
-  /** Serviço do atendimento ou nome do pacote. */
+  /** Serviço do atendimento, nome do pacote ou os produtos vendidos. */
   description: string;
   client: { id: string; name: string };
   method: { id: string; name: string } | null;
+}
+
+/** "Sérum (2), Protetor" — os produtos da venda, com a quantidade quando passa de 1. */
+export function saleDescription(
+  items: { quantity: number; product: { name: string } }[],
+): string {
+  return items
+    .map(({ quantity, product }) =>
+      quantity > 1 ? `${product.name} (${quantity})` : product.name,
+    )
+    .join(", ");
 }
 
 const total = (count: number, amount: Decimal): ReceivedTotal => ({
@@ -77,10 +94,12 @@ export function summarizeReceived(
     date,
     appointments: new Decimal(0),
     packages: new Decimal(0),
+    products: new Decimal(0),
   }));
   const sums = {
     appointments: { count: 0, amount: new Decimal(0) },
     packages: { count: 0, amount: new Decimal(0) },
+    products: { count: 0, amount: new Decimal(0) },
   };
   const methods = new Map<
     string,
@@ -88,7 +107,13 @@ export function summarizeReceived(
   >();
 
   for (const payment of payments) {
-    const key = payment.origin === "package" ? "packages" : "appointments";
+    const key = (
+      {
+        appointment: "appointments",
+        package: "packages",
+        product: "products",
+      } as const
+    )[payment.origin];
     sums[key].count += 1;
     sums[key].amount = sums[key].amount.plus(payment.amount);
 
@@ -108,20 +133,24 @@ export function summarizeReceived(
     methods.set(methodKey, method);
   }
 
-  const receivedAmount = sums.appointments.amount.plus(sums.packages.amount);
+  const receivedAmount = sums.appointments.amount
+    .plus(sums.packages.amount)
+    .plus(sums.products.amount);
   return {
     received: total(
-      sums.appointments.count + sums.packages.count,
+      sums.appointments.count + sums.packages.count + sums.products.count,
       receivedAmount,
     ),
     appointments: total(sums.appointments.count, sums.appointments.amount),
     packages: total(sums.packages.count, sums.packages.amount),
+    products: total(sums.products.count, sums.products.amount),
     series: {
       unit: frame.unit,
       points: points.map((point) => ({
         date: point.date,
         appointments: point.appointments.toFixed(2),
         packages: point.packages.toFixed(2),
+        products: point.products.toFixed(2),
       })),
     },
     byMethod: [...methods.values()]
@@ -170,6 +199,7 @@ export class FinancialReportService {
         paidAt: true,
         amount: true,
         clientPlanId: true,
+        productSaleId: true,
         paymentMethod: person,
       },
     });
@@ -178,7 +208,11 @@ export class FinancialReportService {
         // O filtro garante paidAt preenchido (só PAID).
         paidAt: row.paidAt!,
         amount: row.amount,
-        origin: row.clientPlanId ? "package" : "appointment",
+        origin: row.clientPlanId
+          ? "package"
+          : row.productSaleId
+            ? "product"
+            : "appointment",
         method: row.paymentMethod,
       })),
       period,
@@ -210,6 +244,15 @@ export class FinancialReportService {
           paymentMethod: person,
           appointment: { select: { client: person, service: person } },
           clientPlan: { select: { client: person, plan: person } },
+          productSale: {
+            select: {
+              client: person,
+              items: {
+                select: { quantity: true, product: person },
+                orderBy: { id: "asc" },
+              },
+            },
+          },
         },
       }),
       this.prisma.payment.count({ where }),
@@ -220,12 +263,18 @@ export class FinancialReportService {
         id: row.id,
         paidAt: row.paidAt!,
         amount: row.amount.toFixed(2),
-        origin: row.clientPlan ? "package" : "appointment",
-        // Um pagamento é de um atendimento ou de uma contratação, nunca dos dois.
+        origin: row.clientPlan
+          ? "package"
+          : row.productSale
+            ? "product"
+            : "appointment",
+        // Um pagamento tem uma só origem: atendimento, contratação ou venda.
         description: row.clientPlan
           ? row.clientPlan.plan.name
-          : (row.appointment?.service.name ?? ""),
-        client: (row.clientPlan ?? row.appointment)!.client,
+          : row.productSale
+            ? saleDescription(row.productSale.items)
+            : (row.appointment?.service.name ?? ""),
+        client: (row.clientPlan ?? row.productSale ?? row.appointment)!.client,
         method: row.paymentMethod,
       })),
       total: count,

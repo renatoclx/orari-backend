@@ -159,6 +159,10 @@ describe("Rotas HTTP", () => {
       ["DELETE /products/:id/photo", ["ADMIN"]],
       ["POST /products/:id/stock-movements", ["ADMIN"]],
       ["GET /products/:id/stock-movements", ["ADMIN"]],
+      // Venda de produtos: só o ADMIN vende (a comanda mostra a todos).
+      ["GET /product-sales/products", ["ADMIN"]],
+      ["POST /product-sales", ["ADMIN"]],
+      ["PATCH /product-sales/:id/cancel", ["ADMIN"]],
       ["POST /class-groups", ["ADMIN"]],
       ["GET /class-groups", ["ADMIN"]],
       ["GET /class-groups/:id", ["ADMIN"]],

@@ -41,6 +41,7 @@ import { ExpenseCategoryModule } from "./modules/expense-category/expense-catego
 import { ProductCategoryModule } from "./modules/product-category/product-category.module";
 import { ProductModule } from "./modules/product/product.module";
 import { StockModule } from "./modules/stock/stock.module";
+import { ProductSaleModule } from "./modules/product-sale/product-sale.module";
 import { PayableModule } from "./modules/payable/payable.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 
@@ -74,6 +75,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     ProductCategoryModule,
     ProductModule,
     StockModule,
+    ProductSaleModule,
     PayableModule,
     AgendaBlockModule,
     PeopleModule,

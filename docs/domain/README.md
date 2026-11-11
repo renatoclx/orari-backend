@@ -27,7 +27,7 @@ As entidades estão divididas pelas mesmas áreas das regras de negócio.
 | [`anamnese.md`](anamnese.md)                       | Anamnese, AnamnesisTemplate, AnamnesisTemplateVersion, AnamnesisQuestion, Anamnesis, AnamnesisEntry, AnamnesisAnswer |
 | [`portal-do-cliente.md`](portal-do-cliente.md)     | PortalVerification, PortalAccessLink, ClientAccount, PortalSession, PushSubscription, PortalSettings                 |
 | [`mensagens.md`](mensagens.md)                     | ClientMessage, AutoMessage, MessageCampaign, AutoMessageLog, Notification                                            |
-| [`categorias-produtos.md`](categorias-produtos.md) | ProductCategory, Product, StockMovement                                                                              |
+| [`categorias-produtos.md`](categorias-produtos.md) | ProductCategory, Product, StockMovement, ProductSale, ProductSaleItem                                                |
 
 ## Convenções
 

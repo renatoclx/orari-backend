@@ -27,6 +27,7 @@ describe("PaymentService", () => {
     payment: Record<string, ReturnType<typeof vi.fn>>;
     people: Record<string, ReturnType<typeof vi.fn>>;
     appointment: Record<string, ReturnType<typeof vi.fn>>;
+    productSale: Record<string, ReturnType<typeof vi.fn>>;
   } = {
     // Aceita a forma em lote (array) e a interativa (função, que recebe o próprio mock).
     $transaction: vi.fn(
@@ -37,6 +38,8 @@ describe("PaymentService", () => {
     ),
     people: { findMany: vi.fn(), count: vi.fn() },
     appointment: { findMany: vi.fn() },
+    // Vendas de produtos do dia (comanda); vazio quando o teste não diz.
+    productSale: { findMany: vi.fn() },
     payment: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -73,6 +76,7 @@ describe("PaymentService", () => {
     companyServiceMock.getTimeZone.mockResolvedValue("UTC");
     // A edição devolve o pagamento gravado, usado para calcular o isOverdue.
     prismaMock.payment.update.mockResolvedValue(payment);
+    prismaMock.productSale.findMany.mockResolvedValue([]);
     appointmentServiceMock.findDetail.mockResolvedValue({
       id: "appointment-1",
       serviceId: "service-1",
@@ -338,7 +342,7 @@ describe("PaymentService", () => {
       });
     });
 
-    it("deve trazer a origem do pagamento (atendimento ou plano)", async () => {
+    it("deve trazer a origem do pagamento (atendimento, plano ou venda)", async () => {
       await paymentService.findAll({ page: 1, limit: 10 }, COMPANY_ID);
 
       const [{ include }] = prismaMock.payment.findMany.mock.calls[0] as [
@@ -348,6 +352,7 @@ describe("PaymentService", () => {
         "paymentMethod",
         "appointment",
         "clientPlan",
+        "productSale",
       ]);
     });
 
@@ -431,7 +436,7 @@ describe("PaymentService", () => {
       );
     });
 
-    it("deve filtrar por cliente vindo do agendamento ou da contratação", async () => {
+    it("deve filtrar por cliente vindo do agendamento, da contratação ou da venda", async () => {
       await paymentService.findAll(
         { page: 1, limit: 10, clientId: "client-1" },
         COMPANY_ID,
@@ -442,6 +447,7 @@ describe("PaymentService", () => {
           OR: [
             { appointment: { clientId: "client-1" } },
             { clientPlan: { clientId: "client-1" } },
+            { productSale: { clientId: "client-1" } },
           ],
         },
       ]);
@@ -1102,7 +1108,7 @@ describe("PaymentService", () => {
       });
     });
 
-    it("deve filtrar pelo cliente do atendimento ou da contratação", async () => {
+    it("deve filtrar pelo cliente do atendimento, da contratação ou da venda", async () => {
       await paymentService.summary({ clientId: "client-1" }, COMPANY_ID);
 
       for (const index of [0, 1, 2]) {
@@ -1110,6 +1116,7 @@ describe("PaymentService", () => {
           OR: [
             { appointment: { clientId: "client-1" } },
             { clientPlan: { clientId: "client-1" } },
+            { productSale: { clientId: "client-1" } },
           ],
         });
       }
@@ -1133,6 +1140,24 @@ describe("PaymentService", () => {
 
       expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
       expect(prismaMock.payment.aggregate).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("pagamento de venda de produtos", () => {
+    it("não deve ser alterado nem excluído por aqui (409)", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue({
+        ...payment,
+        appointmentId: null,
+        productSaleId: "sale-1",
+      });
+
+      await expect(
+        paymentService.update("payment-1", { amount: 10 }, COMPANY_ID),
+      ).rejects.toThrow("cancele a venda pela comanda");
+      await expect(
+        paymentService.remove("payment-1", COMPANY_ID),
+      ).rejects.toThrow("cancele a venda pela comanda");
+      expect(prismaMock.payment.update).not.toHaveBeenCalled();
     });
   });
 
@@ -1241,6 +1266,16 @@ describe("PaymentService", () => {
             },
             { appointmentsAsClient: { some: { payment: { is: paidToday } } } },
             { clientPlans: { some: { payments: { some: paidToday } } } },
+            // Comprou hoje (venda não cancelada) ou pagou hoje uma venda.
+            {
+              productSales: {
+                some: {
+                  createdAt: { gte: dayStart, lt: dayEnd },
+                  cancelledAt: null,
+                },
+              },
+            },
+            { productSales: { some: { payment: { is: paidToday } } } },
           ],
         });
       });
@@ -1464,6 +1499,93 @@ describe("PaymentService", () => {
             ],
           }),
         );
+      });
+    });
+
+    describe("vendas de produtos", () => {
+      const items = [
+        {
+          quantity: 2,
+          unitPrice: new Decimal("25"),
+          product: { id: "pr1", name: "Sérum" },
+        },
+      ];
+      // Pagamento de uma venda do cliente c1.
+      const ofSale = (id: string, saleId: string, extra: object = {}) =>
+        charge(id, {
+          productSaleId: saleId,
+          productSale: {
+            id: saleId,
+            clientId: "c1",
+            createdAt: new Date("2026-10-08T15:00:00.000Z"),
+            items,
+          },
+          ...extra,
+        });
+
+      it("deve mostrar as vendas de hoje em seção própria e somar nos totais de hoje", async () => {
+        setup({
+          payments: [
+            // A da venda de hoje vem pela consulta, mas fica na seção da venda.
+            ofSale("p-today", "sale-today", { amount: new Decimal("50") }),
+            // Venda de outro dia, ainda pendente: vai para os anteriores.
+            ofSale("p-old", "sale-old", {
+              amount: new Decimal("30"),
+              dueDate: new Date("2026-10-08"),
+            }),
+          ],
+        });
+        prismaMock.productSale.findMany.mockResolvedValue([
+          {
+            id: "sale-today",
+            clientId: "c1",
+            createdAt: new Date("2026-10-10T14:00:00.000Z"),
+            items,
+            payment: {
+              id: "p-today",
+              amount: new Decimal("50"),
+              dueDate: today,
+              status: "PENDING",
+              paidAt: null,
+              paymentMethod: null,
+            },
+          },
+        ]);
+
+        const { items: checkouts } = await run();
+
+        expect(prismaMock.productSale.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              companyId: COMPANY_ID,
+              clientId: { in: ["c1"] },
+              createdAt: { gte: dayStart, lt: dayEnd },
+              cancelledAt: null,
+            },
+          }),
+        );
+        const [checkout] = checkouts;
+        const salePayment: unknown = expect.objectContaining({
+          id: "p-today",
+          status: "PENDING",
+        });
+        expect(checkout.productSales).toEqual([
+          expect.objectContaining({
+            id: "sale-today",
+            items,
+            payment: salePayment,
+          }),
+        ]);
+        expect(checkout.previousPayments.map((payment) => payment.id)).toEqual([
+          "p-old",
+        ]);
+        expect(checkout.previousPayments[0].productSale).toEqual({
+          id: "sale-old",
+          createdAt: new Date("2026-10-08T15:00:00.000Z"),
+          items,
+        });
+        expect(checkout.todayPending).toBe("50.00");
+        expect(checkout.previousPending).toBe("30.00");
       });
     });
 

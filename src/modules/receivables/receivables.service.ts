@@ -195,6 +195,7 @@ export class ReceivablesService {
           dueDate: true,
           appointment: { select: { clientId: true } },
           clientPlan: { select: { clientId: true } },
+          productSale: { select: { clientId: true } },
         },
       }),
       this.prisma.payment.findMany({
@@ -231,7 +232,10 @@ export class ReceivablesService {
     );
     const debtors = new Set(
       overdue.map(
-        (row) => row.appointment?.clientId ?? row.clientPlan?.clientId,
+        (row) =>
+          row.appointment?.clientId ??
+          row.clientPlan?.clientId ??
+          row.productSale?.clientId,
       ),
     );
     const due = sum(dueInPeriod);
@@ -281,6 +285,7 @@ export class ReceivablesService {
         dueDate: true,
         appointment: { select: { client: clientSelect } },
         clientPlan: { select: { client: clientSelect } },
+        productSale: { select: { client: clientSelect } },
       },
     });
 
@@ -290,7 +295,9 @@ export class ReceivablesService {
       Omit<ReceivablesDebtor, "overdue"> & { amount: Decimal }
     >();
     for (const row of overdue) {
-      const client = (row.appointment?.client ?? row.clientPlan?.client)!;
+      const client = (row.appointment?.client ??
+        row.clientPlan?.client ??
+        row.productSale?.client)!;
       const current = byClient.get(client.id);
       if (current) {
         current.amount = current.amount.plus(row.amount);

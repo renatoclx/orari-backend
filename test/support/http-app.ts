@@ -46,6 +46,7 @@ import { ProductController } from "../../src/modules/product/product.controller"
 import { RecurringAppointmentController } from "../../src/modules/recurring-appointment/recurring-appointment.controller";
 import { ServiceController } from "../../src/modules/service/service.controller";
 import { StockMovementController } from "../../src/modules/stock/stock-movement.controller";
+import { ProductSaleController } from "../../src/modules/product-sale/product-sale.controller";
 import { StateController } from "../../src/modules/state/state.controller";
 import { UserController } from "../../src/modules/user/user.controller";
 import { UserService } from "../../src/modules/user/user.service";
@@ -82,6 +83,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   ServiceController,
   StateController,
   StockMovementController,
+  ProductSaleController,
   UserController,
 ];
 

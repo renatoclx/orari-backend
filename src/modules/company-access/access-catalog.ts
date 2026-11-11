@@ -25,6 +25,7 @@ export const FEATURE_KEYS = [
   "payables",
   "product-categories",
   "products",
+  "product-sales",
   "anamnesis",
   "anamnesis-templates",
   "anamnesis-audit",
@@ -89,6 +90,13 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
   { key: "product-categories", actions: ALL },
   // O cadastro do produto escolhe a categoria.
   { key: "products", actions: ALL, requiresView: ["product-categories"] },
+  // Venda de produtos na comanda (só o ADMIN vende): Cria = vender; Exclui =
+  // cancelar a venda pendente. Não há alteração da venda.
+  {
+    key: "product-sales",
+    actions: ["view", "create", "remove"],
+    requiresView: ["tabs", "products"],
+  },
   { key: "anamnesis", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "anamnesis-templates", actions: ALL },
   { key: "anamnesis-audit", actions: ["view"] },
@@ -169,6 +177,7 @@ const DEFAULT_OFF: readonly string[] = [
   // Produtos: liberados pelo SUPER_ADMIN a quem contratar.
   "product-categories",
   "products",
+  "product-sales",
 ];
 
 // Limites do modelo padrão (o "Essencial": administrador + 2 profissionais).

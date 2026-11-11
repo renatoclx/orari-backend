@@ -45,3 +45,15 @@
 - **Situação:** o produto é inativado e reativado pela alteração (`isActive`). A exclusão é lógica (`deletedAt`); o produto excluído some das listagens e o SKU dele fica livre.
 - **Foto:** JPEG ou PNG, até 2 MB, enviada como multipart no campo `photo` (`POST /products/:id/photo`); a nova substitui a anterior. `DELETE /products/:id/photo` remove.
 - A listagem é paginada, em ordem de nome, com filtros por nome ou SKU (parcial, sem diferenciar acentos nem maiúsculas), categoria, fornecedor e situação. Cada produto traz a categoria (`id`, `name`) e o fornecedor (`id`, `name`) ou `null`.
+
+## Venda de produtos
+
+> Funcionalidade `product-sales` ("Venda de produtos"): Visualiza, Cria (vender) e Exclui (cancelar). Exige ver Comandas e Produtos. Não vem liberada no modelo padrão: o SUPER_ADMIN libera por empresa.
+
+- Só o **ADMIN** vende e cancela (os demais perfis recebem 403); a comanda mostra a venda a todos que a acessam.
+- `GET /product-sales/products?search=`: produtos ativos (nome ou SKU, até 20), com preço de venda, promocional e estoque, para a busca da comanda.
+- `POST /product-sales`: um **cliente ativo** (pessoa do tipo CLIENT; senão 400) e de 1 a 50 itens, sem produto repetido (400). Cada item tem produto **ativo** da empresa (inativo: 400; inexistente: 404), quantidade inteira (1 ou mais) e valor unitário maior que zero, com até duas casas. O valor sugerido pela tela é o promocional, ou o de venda, e pode mudar.
+- **Estoque:** cada item sai **ao lançar** (movimentação `SALE`). Faltando, responde 409 com o produto e o saldo ("Estoque insuficiente de X: há N em estoque"). A saída só grava se houver o suficiente: duas vendas ao mesmo tempo não passam do estoque.
+- **Pagamento:** um só, `PENDING`, com o **total** dos itens e **vencimento hoje** (no fuso da empresa). É recebido pela baixa da comanda, junto com os atendimentos.
+- `PATCH /product-sales/:id/cancel`: só a venda **pendente**. O pagamento fica `CANCELLED` e cada item volta ao estoque (movimentação `SALE_CANCELLED`). Venda recebida (409) ou já cancelada (409) não se cancela.
+- **Pagamento protegido:** o pagamento da venda não se altera nem se exclui por `PATCH`/`DELETE /payments/:id` (409, "cancele a venda pela comanda"); a baixa funciona normalmente.

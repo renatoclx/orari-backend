@@ -579,3 +579,11 @@ Se alguma estiver ausente, o seed pula essa etapa. O seed **só cria o que falta
 - **Compra:** atualiza `purchasePrice` e `profitMargin` (`profitMarginOf`). A conta a pagar opcional confere o acesso com `CompanyAccessService.can(…, "payables", "create")` e as referências com o novo `PayableService.ensureNewPayable`, e é criada na mesma transação.
 - **Produto:** `create` recebe o usuário e grava o `INITIAL` na transação (`recordInitialStock`); `UpdateProductDto` perdeu `currentStock` (o whitelist responde 400); `lowStock` compara colunas com `prisma.product.fields.minimalStock`.
 - **Testes:** `feature-coverage` passou a incluir os controllers de produto, categoria de produto e estoque.
+
+## 2.54 Venda de produtos na comanda
+
+- **Banco** (migration `20261111220000_product_sales`): `product_sales` (cliente, quem lançou, `cancelledAt`/`cancelledById`) e `product_sale_items` (quantidade, `unitPrice`); `payments.productSaleId` (único, terceira origem); `stock_movements.productSaleId` e os tipos `SALE` e `SALE_CANCELLED`.
+- **Módulo `product-sale`** (ADMIN, `@Feature("product-sales")`, cancelar = Exclui): a venda grava itens, a saída de cada produto (`updateMany` com `currentStock >= quantidade`, atômico) e o pagamento `PENDING` com o total, numa transação. O cancelamento cancela o pagamento com o status `PENDING` no filtro (protege de uma baixa no meio) e devolve o estoque.
+- **Pagamentos:** `clientWhere` (as três origens) nos filtros por cliente; a origem `productSale` na listagem e nos anteriores da comanda; `productSales` na comanda e nos totais de hoje; a baixa lê o cliente da venda; `update`/`remove` recusam o pagamento da venda (409).
+- **Relatórios:** o financeiro ganhou `products` (total, série e origem `product` no extrato, com `saleDescription`); a Análise de recebíveis lê o cliente da venda.
+- **Acesso:** `product-sales` no catálogo (`view`, `create`, `remove`; exige ver `tabs` e `products`; fora do modelo padrão).

@@ -77,22 +77,63 @@
 
 ### Atributos
 
-| Nome         | Descrição                                                                                    |
-| ------------ | -------------------------------------------------------------------------------------------- |
-| id           | Identificador único                                                                          |
-| companyId    | Código da empresa                                                                            |
-| productId    | Código do produto                                                                            |
-| type         | Motivo: INITIAL (saldo inicial), PURCHASE (compra), INTERNAL_USE, LOSS (perda) ou ADJUSTMENT |
-| quantity     | Variação do saldo: positiva na entrada, negativa na saída                                    |
-| balanceAfter | Saldo do produto logo depois da movimentação                                                 |
-| unitCost     | Custo unitário (só na compra)                                                                |
-| note         | Observação (opcional)                                                                        |
-| createdById  | Usuário que lançou (vazio no saldo de antes do controle de estoque)                          |
-| payableId    | Conta a pagar lançada junto com a compra (opcional)                                          |
-| createdAt    | Data e hora do lançamento                                                                    |
+| Nome         | Descrição                                                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| id           | Identificador único                                                                                                                          |
+| companyId    | Código da empresa                                                                                                                            |
+| productId    | Código do produto                                                                                                                            |
+| type         | Motivo: INITIAL (saldo inicial), PURCHASE (compra), INTERNAL_USE, LOSS (perda), ADJUSTMENT, SALE (venda) ou SALE_CANCELLED (venda cancelada) |
+| quantity     | Variação do saldo: positiva na entrada, negativa na saída                                                                                    |
+| balanceAfter | Saldo do produto logo depois da movimentação                                                                                                 |
+| unitCost     | Custo unitário (só na compra)                                                                                                                |
+| note         | Observação (opcional)                                                                                                                        |
+| createdById  | Usuário que lançou (vazio no saldo de antes do controle de estoque)                                                                          |
+| payableId    | Conta a pagar lançada junto com a compra (opcional)                                                                                          |
+| createdAt    | Data e hora do lançamento                                                                                                                    |
 
 ### Relacionamentos
 
 - Uma movimentação pertence a uma empresa e a um produto.
 - Uma movimentação pode ter sido lançada por um usuário.
 - Uma movimentação de compra pode ter uma conta a pagar (Payable).
+- Uma movimentação de venda (ou de venda cancelada) pertence a uma venda (ProductSale).
+
+---
+
+## ProductSale
+
+- Representa uma venda de produtos a um cliente, lançada na comanda. Tem um pagamento (Payment com `productSaleId`).
+
+### Atributos
+
+| Nome          | Descrição                            |
+| ------------- | ------------------------------------ |
+| id            | Identificador único                  |
+| companyId     | Código da empresa                    |
+| clientId      | Cliente (pessoa do tipo CLIENT)      |
+| createdById   | Usuário que lançou                   |
+| createdAt     | Data e hora da venda                 |
+| cancelledAt   | Quando foi cancelada (só a pendente) |
+| cancelledById | Usuário que cancelou                 |
+
+### Relacionamentos
+
+- Uma venda pertence a uma empresa e a um cliente.
+- Uma venda tem um ou mais itens (ProductSaleItem) e um pagamento.
+- Uma venda tem as movimentações de estoque que tiraram (e, se cancelada, devolveram) os produtos.
+
+---
+
+## ProductSaleItem
+
+- Representa um produto vendido: quantidade e valor cobrado por unidade (pode diferir do cadastro).
+
+### Atributos
+
+| Nome      | Descrição              |
+| --------- | ---------------------- |
+| id        | Identificador único    |
+| saleId    | Código da venda        |
+| productId | Código do produto      |
+| quantity  | Quantidade (inteira)   |
+| unitPrice | Valor unitário cobrado |

@@ -75,6 +75,31 @@ export type PaymentResponse = Payment & { isOverdue: boolean };
  */
 const clientSelect = { select: { id: true, name: true } } as const;
 
+// Itens da venda de produtos: o que foi vendido descreve o pagamento.
+const saleItemsSelect = {
+  select: {
+    quantity: true,
+    unitPrice: true,
+    product: { select: { id: true, name: true } },
+  },
+  orderBy: { id: "asc" },
+} satisfies Prisma.ProductSale$itemsArgs;
+
+/**
+ * O cliente de um pagamento: o do atendimento, o da contratação ou o da venda
+ * (todo pagamento tem uma das três origens).
+ */
+const clientWhere = (clientId: string): Prisma.PaymentWhereInput => ({
+  OR: [
+    { appointment: { clientId } },
+    { clientPlan: { clientId } },
+    { productSale: { clientId } },
+  ],
+});
+
+const SALE_PAYMENT_PROTECTED =
+  "O pagamento é de uma venda de produtos: cancele a venda pela comanda";
+
 const withOrigin = {
   paymentMethod: { select: { id: true, name: true } },
   appointment: {
@@ -94,16 +119,24 @@ const withOrigin = {
       client: clientSelect,
     },
   },
+  productSale: {
+    select: {
+      id: true,
+      createdAt: true,
+      client: clientSelect,
+      items: saleItemsSelect,
+    },
+  },
 } satisfies Prisma.PaymentInclude;
 
 type PaymentWithOrigin = Prisma.PaymentGetPayload<{
   include: typeof withOrigin;
 }>;
 
-// O cliente sai no nível do pagamento (é o do atendimento ou o da contratação);
-// a origem não o repete.
+// O cliente sai no nível do pagamento (é o do atendimento, o da contratação ou
+// o da venda); a origem não o repete.
 export type PaymentListItem = PaymentResponse &
-  Omit<PaymentWithOrigin, "appointment" | "clientPlan"> & {
+  Omit<PaymentWithOrigin, "appointment" | "clientPlan" | "productSale"> & {
     client: { id: string; name: string };
     appointment: Omit<
       NonNullable<PaymentWithOrigin["appointment"]>,
@@ -111,6 +144,10 @@ export type PaymentListItem = PaymentResponse &
     > | null;
     clientPlan: Omit<
       NonNullable<PaymentWithOrigin["clientPlan"]>,
+      "client"
+    > | null;
+    productSale: Omit<
+      NonNullable<PaymentWithOrigin["productSale"]>,
       "client"
     > | null;
   };
@@ -167,7 +204,33 @@ const previousPaymentInclude = {
       plan: { select: { id: true, name: true } },
     },
   },
+  productSale: {
+    select: {
+      id: true,
+      clientId: true,
+      createdAt: true,
+      items: saleItemsSelect,
+    },
+  },
 } satisfies Prisma.PaymentInclude;
+
+// Venda de hoje na comanda: itens e o pagamento (só as não canceladas).
+const checkoutSaleSelect = {
+  id: true,
+  clientId: true,
+  createdAt: true,
+  items: saleItemsSelect,
+  payment: {
+    select: {
+      id: true,
+      amount: true,
+      dueDate: true,
+      status: true,
+      paidAt: true,
+      paymentMethod: { select: { id: true, name: true } },
+    },
+  },
+} satisfies Prisma.ProductSaleSelect;
 
 // Campos do pagamento que a comanda mostra, com o método quando pago.
 type CheckoutPaymentRow = Pick<
@@ -199,12 +262,26 @@ export type CheckoutPreviousPayment = CheckoutPayment & {
     NonNullable<PreviousPaymentRow["clientPlan"]>,
     "clientId"
   > | null;
+  productSale: Omit<
+    NonNullable<PreviousPaymentRow["productSale"]>,
+    "clientId"
+  > | null;
 };
+
+// Venda de produtos de hoje, com o pagamento dela.
+export interface CheckoutProductSale {
+  id: string;
+  createdAt: Date;
+  items: Prisma.ProductSaleItemGetPayload<typeof saleItemsSelect>[];
+  payment: CheckoutPayment | null;
+}
 
 // Comanda do dia de um cliente: os atendimentos de hoje, o que ficou para trás e os totais.
 export interface Checkout {
   client: { id: string; name: string };
   appointments: CheckoutAppointment[];
+  // Vendas de produtos de hoje (não canceladas).
+  productSales: CheckoutProductSale[];
   previousPayments: CheckoutPreviousPayment[];
   todayPending: string;
   previousPending: string;
@@ -297,10 +374,8 @@ export class PaymentService {
     // Cada filtro opcional entra no AND só quando informado.
     const filters: Prisma.PaymentWhereInput[] = [];
     if (clientId) {
-      // O cliente vem do agendamento (avulso ou recorrência) ou da contratação.
-      filters.push({
-        OR: [{ appointment: { clientId } }, { clientPlan: { clientId } }],
-      });
+      // O cliente vem do agendamento, da contratação ou da venda.
+      filters.push(clientWhere(clientId));
     }
     if (recurringAppointmentId) {
       filters.push({ appointment: { recurringAppointmentId } });
@@ -370,9 +445,7 @@ export class PaymentService {
       },
     ];
     if (clientId) {
-      base.push({
-        OR: [{ appointment: { clientId } }, { clientPlan: { clientId } }],
-      });
+      base.push(clientWhere(clientId));
     }
     if (hasPeriod) {
       base.push({ dueDate: { gte: dueFrom, lte: dueTo } });
@@ -433,6 +506,9 @@ export class PaymentService {
     companyId: string,
   ): Promise<PaymentResponse> {
     const payment = await this.findOwned(id, companyId);
+    if (payment.productSaleId) {
+      throw new ConflictException(SALE_PAYMENT_PROTECTED);
+    }
 
     // Cancelado é estado final: o cancelamento do agendamento, da recorrência ou
     // do plano não pode ser desfeito por aqui (reabrir a cobrança de algo que
@@ -475,7 +551,10 @@ export class PaymentService {
   }
 
   async remove(id: string, companyId: string): Promise<void> {
-    await this.findOwned(id, companyId);
+    const payment = await this.findOwned(id, companyId);
+    if (payment.productSaleId) {
+      throw new ConflictException(SALE_PAYMENT_PROTECTED);
+    }
 
     const now = new Date();
     await this.prisma.payment.update({
@@ -738,6 +817,13 @@ export class PaymentService {
         },
         { appointmentsAsClient: { some: { payment: { is: paidToday } } } },
         { clientPlans: { some: { payments: { some: paidToday } } } },
+        // Comprou hoje (venda não cancelada) ou pagou hoje uma venda.
+        {
+          productSales: {
+            some: { createdAt: { gte: start, lt: end }, cancelledAt: null },
+          },
+        },
+        { productSales: { some: { payment: { is: paidToday } } } },
       ],
     };
     // Pessoa excluída continua aparecendo: a comanda ainda tem o que cobrar.
@@ -767,6 +853,17 @@ export class PaymentService {
       orderBy: { startAt: "asc" },
     });
     const appointmentIds = appointments.map((appointment) => appointment.id);
+    const sales = await this.prisma.productSale.findMany({
+      where: {
+        companyId,
+        clientId: { in: pageIds },
+        createdAt: { gte: start, lt: end },
+        cancelledAt: null,
+      },
+      select: checkoutSaleSelect,
+      orderBy: { createdAt: "asc" },
+    });
+    const saleIds = new Set(sales.map((sale) => sale.id));
 
     // Dos atendimentos de hoje vem qualquer pagamento ativo; os demais entram
     // pelas três regras de "anteriores".
@@ -780,6 +877,7 @@ export class PaymentService {
             OR: [
               { appointment: { clientId: { in: pageIds } } },
               { clientPlan: { clientId: { in: pageIds } } },
+              { productSale: { clientId: { in: pageIds } } },
             ],
           },
           {
@@ -818,14 +916,19 @@ export class PaymentService {
       (appointment) => appointment.clientId,
     );
     const visitIds = new Set(appointmentIds);
+    // Anteriores: fora dos atendimentos e das vendas de hoje (que têm seção própria).
     const previousByClient = this.groupBy(
       payments.filter(
         (payment) =>
-          !payment.appointmentId || !visitIds.has(payment.appointmentId),
+          (!payment.appointmentId || !visitIds.has(payment.appointmentId)) &&
+          (!payment.productSaleId || !saleIds.has(payment.productSaleId)),
       ),
       (payment) =>
-        (payment.appointment?.clientId ?? payment.clientPlan?.clientId)!,
+        (payment.appointment?.clientId ??
+          payment.clientPlan?.clientId ??
+          payment.productSale?.clientId)!,
     );
+    const salesByClient = this.groupBy(sales, (sale) => sale.clientId);
 
     const items = clients.map((client): Checkout => {
       const visits = (visitsByClient.get(client.id) ?? []).map(
@@ -847,15 +950,30 @@ export class PaymentService {
       );
 
       const previous = previousByClient.get(client.id) ?? [];
-      const visitPayments = visits.flatMap((visit) =>
-        visit.payment ? [visit.payment] : [],
+      const productSales = (salesByClient.get(client.id) ?? []).map(
+        (sale): CheckoutProductSale => ({
+          id: sale.id,
+          createdAt: sale.createdAt,
+          items: sale.items,
+          // O cancelado não aparece (a venda cancelada já está fora).
+          payment:
+            sale.payment && sale.payment.status !== PaymentStatus.CANCELLED
+              ? this.toCheckoutPayment(sale.payment, today)
+              : null,
+        }),
       );
+      // Os pagamentos de hoje: dos atendimentos e das vendas.
+      const visitPayments = [
+        ...visits.flatMap((visit) => (visit.payment ? [visit.payment] : [])),
+        ...productSales.flatMap((sale) => (sale.payment ? [sale.payment] : [])),
+      ];
       const pending = (rows: { status: PaymentStatus; amount: Decimal }[]) =>
         this.sum(rows.filter((row) => row.status === PaymentStatus.PENDING));
 
       return {
         client,
         appointments: visits,
+        productSales,
         previousPayments: previous.map((payment) =>
           this.toPreviousPayment(payment, today),
         ),
@@ -908,6 +1026,7 @@ export class PaymentService {
                 status: true,
                 appointment: { select: { clientId: true } },
                 clientPlan: { select: { clientId: true } },
+                productSale: { select: { clientId: true } },
               },
             })
           : [];
@@ -945,7 +1064,9 @@ export class PaymentService {
       const clients = new Set([
         ...payments.map(
           (payment) =>
-            payment.appointment?.clientId ?? payment.clientPlan?.clientId,
+            payment.appointment?.clientId ??
+            payment.clientPlan?.clientId ??
+            payment.productSale?.clientId,
         ),
         ...appointments.map((appointment) => appointment.clientId),
       ]);
@@ -1095,10 +1216,17 @@ export class PaymentService {
     payment: PreviousPaymentRow,
     today: Date,
   ): CheckoutPreviousPayment {
-    const { appointment, clientPlan } = payment;
+    const { appointment, clientPlan, productSale } = payment;
 
     return {
       ...this.toCheckoutPayment(payment, today),
+      productSale: productSale
+        ? {
+            id: productSale.id,
+            createdAt: productSale.createdAt,
+            items: productSale.items,
+          }
+        : null,
       appointment: appointment
         ? {
             id: appointment.id,
@@ -1147,18 +1275,21 @@ export class PaymentService {
     };
   }
 
-  // Leva o cliente (do atendimento ou da contratação) para o nível do pagamento.
+  // Leva o cliente (do atendimento, da contratação ou da venda) para o nível
+  // do pagamento.
   private toListItem(payment: PaymentWithOrigin) {
-    const { appointment, clientPlan, ...rest } = payment;
+    const { appointment, clientPlan, productSale, ...rest } = payment;
     const { client: appointmentClient, ...appointmentRest } = appointment ?? {};
     const { client: planClient, ...planRest } = clientPlan ?? {};
+    const { client: saleClient, ...saleRest } = productSale ?? {};
 
     return {
       ...rest,
-      // Todo pagamento pertence a um agendamento ou a uma contratação.
-      client: (appointmentClient ?? planClient)!,
+      // Todo pagamento pertence a um agendamento, a uma contratação ou a uma venda.
+      client: (appointmentClient ?? planClient ?? saleClient)!,
       appointment: appointment ? appointmentRest : null,
       clientPlan: clientPlan ? planRest : null,
+      productSale: productSale ? saleRest : null,
     } as Omit<PaymentListItem, "isOverdue">;
   }
 

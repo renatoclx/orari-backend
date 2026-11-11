@@ -6,7 +6,7 @@
 
 - Cada agendamento tem no máximo um pagamento. Excluir o pagamento libera o agendamento para um novo.
 - O pagamento pertence à empresa do usuário, assim como o agendamento e o método de pagamento. O agendamento não muda depois da criação.
-- Todo pagamento pertence a um agendamento ou a uma contratação de plano, nunca aos dois.
+- Todo pagamento pertence a **uma** origem: um agendamento, uma contratação de plano ou uma venda de produtos (ver [categorias-produtos.md](categorias-produtos.md), "Venda de produtos"). O cliente do pagamento é o dessa origem, nos filtros por cliente da listagem e do resumo.
 - Um pagamento gerado pelo sistema nasce como `PENDING` e sem método de pagamento; a baixa para `PAID` é manual.
 - O método de pagamento é opcional enquanto o pagamento não está `PAID`, e obrigatório quando está.
 - Quando o valor não é informado, assume o preço do serviço do agendamento. Se o serviço não tiver preço, o valor passa a ser obrigatório. Valores diferentes do preço continuam permitidos.
@@ -34,6 +34,7 @@
 
 - `GET /payments/checkouts` lista as comandas do dia, uma por cliente, a partir das visitas. "Dia" é hoje no fuso da empresa.
 - Tem comanda o cliente que tem um atendimento que começa hoje em `SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED` (cancelado e não comparecimento ficam de fora), ou que tem algum pagamento `PAID` com `paidAt` hoje (a comanda paga continua na lista). Cliente só com pendência, sem atendimento nem pagamento hoje, não entra. Pessoa inativada continua aparecendo.
+- **Venda de produtos:** também tem comanda o cliente que comprou hoje (venda não cancelada) ou pagou hoje uma venda. A comanda traz `productSales`: as vendas de hoje não canceladas, com os itens e o pagamento, somadas aos totais de hoje (`todayPending` e `paidToday`). A venda pendente de outro dia entra nos anteriores, com a origem `productSale` (itens). A baixa aceita o pagamento da venda e reconhece o cliente dela.
 - A paginação é por cliente, em ordem alfabética, e `search` filtra pelo nome do cliente sem diferenciar acentos nem maiúsculas.
 - Cada comanda traz: `appointments` (os atendimentos de hoje, por horário, com serviço, profissional, `recurringAppointmentId`, `clientPlanId` quando é sessão de pacote e `payment`, que é o pagamento do atendimento ou `null` quando ainda não existe, como na sessão de pacote); `previousPayments` (pagamentos do cliente, de atendimento ou de contratação, que não são dos atendimentos listados: `PENDING` com vencimento até hoje, inclusive; `PENDING` de contratação integral sem vencimento; e `PAID` hoje, por vencimento crescente e sem vencimento por último, cada um com a origem); e os totais em texto com duas casas.
 - Totais: `todayPending` (pendentes dos atendimentos de hoje), `previousPending` (pendentes dos anteriores) e `paidToday` (pagos hoje, nas duas listas). Um atendimento de hoje já pago em outro dia aparece com o pagamento pago, mas não entra em nenhum total. Pagamentos `CANCELLED` e excluídos nunca entram em lista nem total.
