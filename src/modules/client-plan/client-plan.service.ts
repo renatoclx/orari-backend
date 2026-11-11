@@ -8,7 +8,7 @@ import { Prisma } from "../../../generated/prisma/client";
 import { PlanBillingType } from "../../../generated/prisma/enums";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { formatTimeOfDay } from "../../common/time/time-of-day";
-import { toZonedParts } from "../../common/time/time-zone";
+import { localDateOf } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
 import { CompanyService } from "../company/company.service";
@@ -185,7 +185,7 @@ export class ClientPlanService {
   async cancel(id: string, companyId: string): Promise<ClientPlanResponse> {
     const clientPlan = await this.findOne(id, companyId);
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const today = this.todayIn(timeZone);
+    const today = localDateOf(new Date(), timeZone);
 
     if (clientPlan.cancelledAt) {
       throw new BadRequestException("A contratação já está cancelada");
@@ -347,7 +347,7 @@ export class ClientPlanService {
    * futura é aceita; uma passada, não, porque o período pago já estaria correndo.
    */
   private resolveStartDate(startDate: Date | undefined, timeZone: string) {
-    const today = this.todayIn(timeZone);
+    const today = localDateOf(new Date(), timeZone);
 
     if (!startDate) {
       return today;
@@ -376,7 +376,8 @@ export class ClientPlanService {
       return { cancelledAt: { not: null } };
     }
 
-    const today = this.todayIn(
+    const today = localDateOf(
+      new Date(),
       await this.companyService.getTimeZone(companyId),
     );
 
@@ -400,12 +401,5 @@ export class ClientPlanService {
         }),
       ),
     };
-  }
-
-  // Data de hoje (pura, sem hora) no calendário da empresa.
-  private todayIn(timeZone: string): Date {
-    const { year, month, day } = toZonedParts(new Date(), timeZone);
-
-    return new Date(Date.UTC(year, month - 1, day));
   }
 }
