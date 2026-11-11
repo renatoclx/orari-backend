@@ -13,20 +13,12 @@ import {
   type AppointmentEvent,
 } from "../../common/events/appointment-events";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
-import {
-  formatTimeOfDay,
-  minutesOf,
-  parseTimeOfDay,
-  WEEK_DAY_BY_INDEX,
-} from "../../common/time/time-of-day";
-import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
+import { formatTimeOfDay, parseTimeOfDay } from "../../common/time/time-of-day";
+import { toZonedParts } from "../../common/time/time-zone";
 import { isRecordNotFound } from "../../prisma/prisma-errors";
 import { PrismaService } from "../../prisma/prisma.service";
 import { LONG_TRANSACTION_TIMEOUT_MS } from "../../prisma/transaction-options";
-import {
-  AppointmentOccurrence,
-  AppointmentService,
-} from "../appointment/appointment.service";
+import { AppointmentService } from "../appointment/appointment.service";
 import { CompanyService } from "../company/company.service";
 import { SettlePaymentsDto } from "../payment/dto/settle-payments.dto";
 import { PaymentService } from "../payment/payment.service";
@@ -42,6 +34,12 @@ import {
   RescheduleAppointmentDto,
 } from "./dto/reschedule-appointment.dto";
 import { UpdateRecurringAppointmentDto } from "./dto/update-recurring-appointment.dto";
+import {
+  buildOccurrences,
+  isBeforeOrSameDay,
+  minutesBetween,
+  toDateParts,
+} from "./recurrence-occurrences";
 
 // Os dias são devolvidos com horários em "HH:MM", como entraram.
 export interface RecurringAppointmentResponse {
@@ -644,7 +642,7 @@ export class RecurringAppointmentService {
       ...withDetails,
     });
 
-    const occurrences = this.buildOccurrences(
+    const occurrences = buildOccurrences(
       days,
       recurring.startDate,
       data.endDate,
@@ -735,8 +733,8 @@ export class RecurringAppointmentService {
     const day = toZonedParts(startAt, timeZone);
 
     const withinPeriod =
-      this.isBeforeOrSameDay(this.toDateParts(startDate), day) &&
-      (!endDate || this.isBeforeOrSameDay(day, this.toDateParts(endDate)));
+      isBeforeOrSameDay(toDateParts(startDate), day) &&
+      (!endDate || isBeforeOrSameDay(day, toDateParts(endDate)));
 
     if (!withinPeriod) {
       throw new BadRequestException(
@@ -759,7 +757,7 @@ export class RecurringAppointmentService {
 
       // O horário reservado precisa comportar o atendimento, já que o fim de
       // cada agendamento gerado vem da duração do serviço.
-      if (this.minutesBetween(day.startTime, day.endTime) < serviceDuration) {
+      if (minutesBetween(day.startTime, day.endTime) < serviceDuration) {
         throw new BadRequestException(
           `Cada dia deve reservar ao menos ${serviceDuration} minutos, a duração do serviço`,
         );
@@ -791,132 +789,6 @@ export class RecurringAppointmentService {
         );
       }
     }
-  }
-
-  /**
-   * Monta os horários que a recorrência ocupa.
-   *
-   * Gera do maior valor entre o início da recorrência e hoje (não se cria
-   * histórico) até a data final. Cada ocorrência começa no horário reservado do
-   * dia e termina conforme a duração do serviço. `from` é o instante atual.
-   */
-  private buildOccurrences(
-    days: RecurringDayDto[],
-    startDate: Date,
-    endDate: Date,
-    serviceDuration: number,
-    timeZone: string,
-    from: Date,
-  ): AppointmentOccurrence[] {
-    /*
-     * O calendário percorrido é o da empresa: "toda terça às 14h" é terça no
-     * relógio dela, e cada horário vira um instante UTC no fim.
-     *
-     * startDate e endDate são datas puras (coluna `date`), então entram pelo
-     * calendário, sem conversão de fuso — convertê-las deslocaria o dia (em
-     * UTC-3, "2026-12-15" viraria 14/12 às 21h e perderia o último dia).
-     * `from` é um instante, e por isso é lido no fuso da empresa.
-     *
-     * O início é o maior dos dois como dia de calendário. Comparar a data pura
-     * com o instante não serve: à noite, quando em UTC já é o dia seguinte, a
-     * meia-noite UTC da data de início ficaria "no passado" e a geração
-     * começaria no dia anterior ao contratado.
-     */
-    const start = this.toDateParts(startDate);
-    const today = toZonedParts(from, timeZone);
-    const cursor = this.isBeforeOrSameDay(today, start) ? start : today;
-
-    // A geração termina na data final, que é obrigatória (não há mais horizonte).
-    const limit = this.toDateParts(endDate);
-    const occurrences: AppointmentOccurrence[] = [];
-
-    while (this.isBeforeOrSameDay(cursor, limit)) {
-      const weekDay = WEEK_DAY_BY_INDEX[this.weekDayIndex(cursor)];
-
-      for (const day of days.filter((item) => item.weekDay === weekDay)) {
-        const [hours, minutes] = day.startTime.split(":").map(Number);
-        const startAt = zonedToUtc({ ...cursor, hours, minutes }, timeZone);
-
-        // Uma ocorrência que já passou não é criada.
-        if (startAt > from) {
-          occurrences.push({
-            startAt,
-            endAt: new Date(startAt.getTime() + serviceDuration * 60_000),
-          });
-        }
-      }
-
-      this.advanceOneDay(cursor);
-    }
-
-    return occurrences;
-  }
-
-  /*
-   * As quatro funções abaixo (toDateParts, weekDayIndex, isBeforeOrSameDay,
-   * advanceOneDay) formam um pequeno "kit de calendário"
-   * usado só pelo buildOccurrences, para andar dia a dia entre o início e o
-   * fim da recorrência.
-   *
-   * Por que não usar `Date` diretamente como cursor? Porque `Date` representa
-   * um instante (amarrado a um fuso), e o que se quer aqui é andar por dias de
-   * calendário "puros" (2026-10-01, 2026-10-02, ...), sem hora nem fuso — do
-   * contrário, perto da virada do dia no fuso da empresa, o cursor correria o
-   * risco de pular ou repetir um dia (mesmo problema explicado para
-   * `startDate`/`endDate` no comentário de buildOccurrences). Por isso o
-   * cursor é um objeto simples `{ year, month, day }`, e `Date.UTC(...)` entra
-   * só como calculadora (ela já sabe lidar com "dia 32" virando o mês
-   * seguinte, ano bissexto etc.), nunca como o valor guardado.
-   */
-
-  // Data pura (coluna `date`): o dia é o que está gravado, sem conversão de fuso.
-  private toDateParts(value: Date) {
-    return {
-      year: value.getUTCFullYear(),
-      month: value.getUTCMonth() + 1,
-      day: value.getUTCDate(),
-      hours: 0,
-      minutes: 0,
-    };
-  }
-
-  private weekDayIndex({
-    year,
-    month,
-    day,
-  }: {
-    year: number;
-    month: number;
-    day: number;
-  }): number {
-    return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  }
-
-  private isBeforeOrSameDay(
-    cursor: { year: number; month: number; day: number },
-    limit: { year: number; month: number; day: number },
-  ): boolean {
-    return (
-      Date.UTC(cursor.year, cursor.month - 1, cursor.day) <=
-      Date.UTC(limit.year, limit.month - 1, limit.day)
-    );
-  }
-
-  private advanceOneDay(cursor: {
-    year: number;
-    month: number;
-    day: number;
-  }): void {
-    const next = new Date(
-      Date.UTC(cursor.year, cursor.month - 1, cursor.day + 1),
-    );
-    cursor.year = next.getUTCFullYear();
-    cursor.month = next.getUTCMonth() + 1;
-    cursor.day = next.getUTCDate();
-  }
-
-  private minutesBetween(startTime: string, endTime: string): number {
-    return minutesOf(endTime) - minutesOf(startTime);
   }
 
   private toDayRows(days: RecurringDayDto[]) {
