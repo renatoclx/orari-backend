@@ -6,7 +6,6 @@ import type { CompanyService } from "../company/company.service";
 import {
   ReceivablesService,
   agingOf,
-  localToday,
   monthlySeries,
 } from "./receivables.service";
 
@@ -15,12 +14,6 @@ const TZ = "America/Sao_Paulo"; // UTC-3
 const NOW = new Date("2026-11-16T01:00:00.000Z");
 const TODAY = new Date(Date.UTC(2026, 10, 15));
 const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
-
-describe("localToday", () => {
-  it("usa o calendário da empresa, não o UTC", () => {
-    expect(localToday(NOW, TZ)).toEqual(TODAY);
-  });
-});
 
 describe("agingOf", () => {
   it("separa o atraso em faixas de dias, com as vazias", () => {

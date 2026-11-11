@@ -119,3 +119,13 @@ export function minutesOfZonedDay(date: Date, timeZone: string): number {
 export function weekDayIndexOf({ year, month, day }: ZonedParts): number {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
+
+/**
+ * Data de calendário (coluna `date`, UTC 00:00) do dia em que o instante cai no
+ * fuso da empresa. Com `new Date()`, é o "hoje" da empresa.
+ */
+export function localDateOf(instant: Date, timeZone: string): Date {
+  const { year, month, day } = toZonedParts(instant, timeZone);
+
+  return new Date(Date.UTC(year, month - 1, day));
+}

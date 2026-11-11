@@ -15,6 +15,7 @@ import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-tem
 import { AuditService } from "../src/modules/audit/audit.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
+import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
 import { PaymentService } from "../src/modules/payment/payment.service";
 import { PeopleService } from "../src/modules/people/people.service";
 import { UserService } from "../src/modules/user/user.service";
@@ -238,22 +239,26 @@ describe("Rotas HTTP", () => {
     beforeEach(() => vi.clearAllMocks());
 
     it.each([
-      ["GET", "/payments/checkouts", "findCheckouts"],
-      ["GET", "/payments/summary", "summary"],
-    ])("%s %s chega ao service, e não a :id", async (_method, path, name) => {
-      const payment = http.mockOf(PaymentService);
+      ["GET", "/payments/checkouts", PaymentCheckoutService, "findCheckouts"],
+      ["GET", "/payments/summary", PaymentService, "summary"],
+    ] as const)(
+      "%s %s chega ao service, e não a :id",
+      async (_method, path, service, name) => {
+        const target = http.mockOf(service);
 
-      await request(http.server())
-        .get(path)
-        .set("Authorization", auth(http, "user"))
-        .expect(200);
+        await request(http.server())
+          .get(path)
+          .set("Authorization", auth(http, "user"))
+          .expect(200);
 
-      expect(payment[name]).toHaveBeenCalledTimes(1);
-      expect(payment.findOne).not.toHaveBeenCalled();
-    });
+        expect(target[name]).toHaveBeenCalledTimes(1);
+        expect(http.mockOf(PaymentService).findOne).not.toHaveBeenCalled();
+      },
+    );
 
     it("PATCH /payments/settle chega ao service com a empresa do token", async () => {
       const payment = http.mockOf(PaymentService);
+      const checkout = http.mockOf(PaymentCheckoutService);
       const body = { paymentIds: [ANY_UUID], paymentMethodId: ANY_UUID };
 
       await request(http.server())
@@ -262,7 +267,7 @@ describe("Rotas HTTP", () => {
         .send(body)
         .expect(200);
 
-      expect(payment.settle).toHaveBeenCalledWith(body, COMPANY_A);
+      expect(checkout.settle).toHaveBeenCalledWith(body, COMPANY_A);
       expect(payment.update).not.toHaveBeenCalled();
     });
 

@@ -129,19 +129,15 @@ conferir a documentação gerada.
 
 ## Legibilidade
 
-- **"Hoje no fuso da empresa" repetido:** `ClientPlanService.todayIn`,
-  `PaymentService.toLocalDate` e o cálculo do dia da semana em
-  `RecurringAppointmentService` repetem o que poderia ser uma função em
-  `common/time/time-zone.ts`.
 - **Comentários de tutorial** em `appointment-status.job.ts` (ex.: "lte: less
   than or equal"): explicam a ferramenta, não a decisão.
-- **`payment.service.ts` extenso:** mistura cadastro, cobranças geradas, baixas e
-  comandas; as comandas poderiam ir para um service próprio.
 - **Erros do Prisma sem tradução:** registro removido no meio da operação ou chave
   estrangeira inválida respondem 500; um filtro global de exceções os
   converteria em 404 ou 409.
 
-**Registrado em:** 2026-10-22.
+**Registrado em:** 2026-10-22. **Resolvidos em 2026-11-11:** o "hoje no fuso da
+empresa" repetido (agora `localDateOf`, em `common/time/time-zone.ts`) e o
+`payment.service.ts` extenso (a comanda foi para o `PaymentCheckoutService`).
 
 ---
 
@@ -336,8 +332,8 @@ tela não deixe inativar, e a busca por ela em vez do nome.
 
 ## Comanda montada pelo dia do cliente
 
-**Onde:** `PaymentService.findCheckouts` (`payment/payment.service.ts`; venda de
-produtos, 2026-11-11).
+**Onde:** `PaymentCheckoutService.findCheckouts`
+(`payment/payment-checkout.service.ts`; venda de produtos, 2026-11-11).
 
 **O que é:** a comanda não é gravada: é tudo o que o cliente tem no dia
 (atendimentos e vendas de hoje, o pago hoje e as pendências anteriores). Duas

@@ -1,14 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  availableStarts,
-  daysBetween,
-  minutesOf,
-  timeOf,
-} from "./portal-availability";
+import { formatMinutes, minutesOf } from "../../common/time/time-of-day";
+import { availableStarts, daysBetween } from "./portal-availability";
 
 const h = (time: string) => minutesOf(time);
 const starts = (args: Parameters<typeof availableStarts>[0]) =>
-  availableStarts(args).map(timeOf);
+  availableStarts(args).map(formatMinutes);
 
 describe("availableStarts", () => {
   const morning = [{ start: h("09:00"), end: h("12:00") }];
@@ -78,12 +74,6 @@ describe("availableStarts", () => {
 });
 
 describe("auxiliares", () => {
-  it("converte HH:MM e minutos", () => {
-    expect(minutesOf("09:30")).toBe(570);
-    expect(timeOf(570)).toBe("09:30");
-    expect(timeOf(5)).toBe("00:05");
-  });
-
   it("conta dias entre datas, inclusive na virada de mês e de ano", () => {
     const d = (year: number, month: number, day: number) => ({
       year,

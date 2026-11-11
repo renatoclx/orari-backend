@@ -33,3 +33,15 @@ export const WEEK_DAY_BY_INDEX = [
   "FRIDAY",
   "SATURDAY",
 ] as const;
+
+// "HH:MM" em minutos desde a meia-noite.
+export function minutesOf(hhmm: string): number {
+  const [hours, minutes] = hhmm.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+// Minutos desde a meia-noite em "HH:MM".
+export function formatMinutes(minutes: number): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}

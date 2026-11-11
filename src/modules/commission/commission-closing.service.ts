@@ -10,7 +10,7 @@ import { periodOf } from "../../common/time/report-period";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { createCommissionPayable } from "../payable/commission-payable";
-import { localToday } from "../receivables/receivables.service";
+import { localDateOf } from "../../common/time/time-zone";
 import type {
   CommissionClosingPreviewQueryDto,
   CreateCommissionClosingDto,
@@ -165,7 +165,7 @@ export class CommissionClosingService {
       throw new BadRequestException("Escolha um método de pagamento ativo");
     }
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const today = localToday(now, timeZone);
+    const today = localDateOf(now, timeZone);
     if (asDate(dto.until) > today) {
       throw new BadRequestException("A data de corte não pode ser futura");
     }

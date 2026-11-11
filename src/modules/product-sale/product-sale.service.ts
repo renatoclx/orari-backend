@@ -14,7 +14,7 @@ import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
-import { localToday } from "../receivables/receivables.service";
+import { localDateOf } from "../../common/time/time-zone";
 import { CreateProductSaleDto } from "./dto/create-product-sale.dto";
 
 // Produtos que a busca da comanda mostra de cada vez.
@@ -133,7 +133,7 @@ export class ProductSaleService {
     );
 
     // Vencimento: hoje no calendário da empresa.
-    const today = localToday(
+    const today = localDateOf(
       now,
       await this.companyService.getTimeZone(companyId),
     );

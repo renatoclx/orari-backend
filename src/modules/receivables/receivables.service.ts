@@ -4,7 +4,7 @@ import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import type { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { normalizeForSearch } from "../../common/text/normalize-for-search";
 import { periodOf } from "../../common/time/report-period";
-import { toZonedParts } from "../../common/time/time-zone";
+import { localDateOf } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import type { ReceivablesDebtorsQueryDto } from "./dto/receivables-debtors-query.dto";
@@ -89,12 +89,6 @@ const monthKey = (date: Date) =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 const dateString = (date: Date) => date.toISOString().slice(0, 10);
 
-/** Hoje no calendário da empresa, como a coluna `date` do vencimento. */
-export function localToday(now: Date, timeZone: string): Date {
-  const { year, month, day } = toZonedParts(now, timeZone);
-  return new Date(Date.UTC(year, month - 1, day));
-}
-
 /** O atrasado (vencido antes de hoje) por faixa de dias, inclusive as vazias. */
 export function agingOf(overdue: Dated[], today: Date) {
   return AGING_BUCKETS.map(({ key, min, max }) => {
@@ -177,10 +171,10 @@ export class ReceivablesService {
   ): Promise<ReceivablesSummary> {
     const timeZone = await this.companyService.getTimeZone(companyId);
     const period = periodOf(from, to, timeZone, now);
-    const today = localToday(now, timeZone);
+    const today = localDateOf(now, timeZone);
     // O mesmo período em datas de calendário, para comparar com o vencimento.
-    const dueStart = localToday(period.start, timeZone);
-    const dueEnd = localToday(period.end, timeZone);
+    const dueStart = localDateOf(period.start, timeZone);
+    const dueEnd = localDateOf(period.end, timeZone);
     // A inadimplência só olha o que já venceu: até ontem.
     const dueUntil = dueEnd < today ? dueEnd : today;
     const window = monthsWindow(today);
@@ -269,7 +263,7 @@ export class ReceivablesService {
     now = new Date(),
   ): Promise<PaginatedResult<ReceivablesDebtor>> {
     const timeZone = await this.companyService.getTimeZone(companyId);
-    const today = localToday(now, timeZone);
+    const today = localDateOf(now, timeZone);
 
     const overdue = await this.prisma.payment.findMany({
       where: {

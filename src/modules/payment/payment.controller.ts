@@ -20,6 +20,7 @@ import { FindPaymentsQueryDto } from "./dto/find-payments-query.dto";
 import { SettleCheckoutDto } from "./dto/settle-checkout.dto";
 import { SummaryPaymentsQueryDto } from "./dto/summary-payments-query.dto";
 import { UpdatePaymentDto } from "./dto/update-payment.dto";
+import { PaymentCheckoutService } from "./payment-checkout.service";
 import { PaymentService } from "./payment.service";
 
 // Acesso de qualquer tipo de usuário, sempre restrito à empresa do usuário autenticado.
@@ -28,7 +29,10 @@ import { PaymentService } from "./payment.service";
 @Feature("payments")
 @Controller("payments")
 export class PaymentController {
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(
+    private readonly paymentService: PaymentService,
+    private readonly paymentCheckoutService: PaymentCheckoutService,
+  ) {}
 
   @Post()
   create(
@@ -54,7 +58,10 @@ export class PaymentController {
     @Query() query: FindCheckoutsQueryDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.paymentService.findCheckouts(query, currentUser.companyId);
+    return this.paymentCheckoutService.findCheckouts(
+      query,
+      currentUser.companyId,
+    );
   }
 
   // Totais da tela de Pagamentos (atrasado, a vencer, pago). Antes de ":id" pelo mesmo motivo.
@@ -73,7 +80,7 @@ export class PaymentController {
     @Body() dto: SettleCheckoutDto,
     @CurrentUser() currentUser: AuthenticatedUser,
   ) {
-    return this.paymentService.settle(dto, currentUser.companyId);
+    return this.paymentCheckoutService.settle(dto, currentUser.companyId);
   }
 
   @Get(":id")
