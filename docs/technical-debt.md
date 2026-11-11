@@ -316,3 +316,20 @@ no `where`) e somas no banco (`groupBy`), se o volume pedir; uma sequência no
 banco para o número do recibo.
 
 **Registrado em:** 2026-11-10.
+
+## Contas a pagar: categoria "Comissões" achada pelo nome
+
+**Onde:** `createCommissionPayable` (`payable/commission-payable.ts`, Contas a
+pagar etapa 5, 2026-11-10).
+
+**O que é:** a conta gerada pelo adiantamento ou pelo fechamento vai para a
+categoria ativa com o nome normalizado "comissoes". Se a empresa renomeou ou
+inativou essa categoria, uma nova "Comissões" é criada.
+
+**Impacto:** quem renomear "Comissões" para outro nome (ex.: "Comissão") passa a
+ter as duas, e as contas novas da comissão vão para a recriada.
+
+**Como resolver:** uma marca de sistema na categoria (ex.: `systemKey`), que a
+tela não deixe inativar, e a busca por ela em vez do nome.
+
+**Registrado em:** 2026-11-10.
