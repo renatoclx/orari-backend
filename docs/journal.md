@@ -106,6 +106,23 @@ não ser preciso reconstruí-las depois. O estado atual está em
   (marcações simultâneas do mesmo horário, validação em lote de recorrências
   longas, Swagger 12 e legibilidade).
 
+## 2026-11-12 · Papéis do sistema
+
+- **Três tipos de usuário, e só eles:** `SUPER_ADMIN` (o Orari, um só, criado pelo
+  seed), `ADMIN` (o cliente, que usa o sistema web) e `PROFESSIONAL` (o app).
+  O `USER` foi removido, com os usuários que havia. Motivo: ninguém precisava de
+  um nível intermediário, e cada papel a mais é uma regra a mais para testar e
+  explicar.
+- **Um só SUPER_ADMIN, garantido em dois lugares.** A API recusa criar ou
+  promover para esse tipo (só o seed cria) e um índice único parcial no banco
+  impede um segundo ativo, mesmo com requisições simultâneas.
+- **O ADMIN que atua como profissional ocupa uma vaga de profissional.** Foi
+  considerado deixar essa vaga livre, mas para vincular o ADMIN já é preciso
+  cadastrar uma pessoa `PROFESSIONAL`; uma exceção só causaria confusão. O
+  ajuste de quantidade fica no plano contratado, definido pelo SUPER_ADMIN.
+- **Funcionário (`EMPLOYEE`) é só cadastro,** sem login, para o controle de
+  contas a pagar e afins.
+
 ## Lições de processo
 
 - **Branches por funcionalidade, a partir da `main`;** quando uma depende de

@@ -18,7 +18,7 @@ A fase seguinte é o frontend.
 
 | Área                     | Entregue                                                                                                                                                                 |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Autenticação             | Login, access token, refresh token com rotação atômica, logout, `/auth/me`, perfis `SUPER_ADMIN`, `ADMIN` e `USER`, limite de tentativas no login e no refresh (429)     |
+| Autenticação             | Login, access token, refresh token com rotação atômica, logout, `/auth/me`, perfis `SUPER_ADMIN` (único), `ADMIN` e `PROFESSIONAL`, limite de tentativas no login e no refresh (429) |
 | Empresas                 | Cadastro e inativação (SUPER_ADMIN), nome fantasia e logo pelo próprio ADMIN, fuso horário                                                                               |
 | Usuários                 | CRUD com alcance por tipo, redefinição de senha, inativação e reativação, fim das sessões ao trocar a senha ou inativar                                                  |
 | Pessoas                  | Clientes, profissionais e funcionários; CPF e data de nascimento opcionais; foto; cadastro completo com contatos e endereços; inativação, reativação e filtro por status |
