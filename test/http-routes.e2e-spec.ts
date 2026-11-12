@@ -111,6 +111,7 @@ describe("Rotas HTTP", () => {
         "GET / (AppController.getHello)",
         "POST /auth/login (AuthController.login)",
         "POST /auth/logout (AuthController.logout)",
+        "POST /auth/professional/login (AuthController.professionalLogin)",
         "POST /auth/refresh (AuthController.refresh)",
       ]);
     });
@@ -119,6 +120,113 @@ describe("Rotas HTTP", () => {
       await request(http.server()).get("/").expect(200).expect("Hello World!");
       // Corpo vazio: chega à validação (400), não ao 401.
       await request(http.server()).post("/auth/login").expect(400);
+      await request(http.server()).post("/auth/professional/login").expect(400);
+    });
+  });
+
+  describe("perfil só de app (PROFESSIONAL): nega por padrão", () => {
+    const closed = routes.filter(
+      (route) => !route.isPublic && !route.professionalApp,
+    );
+
+    // Uma rota nova entra aqui sozinha: sem @ProfessionalApp(), o profissional
+    // recebe 403, mesmo nas rotas sem @Roles (agenda, pessoas, pagamentos...).
+    it("deve haver rotas fechadas para ele", () => {
+      expect(closed.length).toBeGreaterThan(80);
+    });
+
+    it.each(closed.map((route) => [route.label, route] as const))(
+      "%s responde 403",
+      async (_, route) => {
+        const response = await send(
+          http,
+          route,
+          http.tokenFor(USERS.professional),
+        );
+
+        expect(response.status).toBe(403);
+      },
+    );
+
+    it("as rotas marcadas são só as do app: o próprio perfil e a troca de senha", () => {
+      expect(
+        routes
+          .filter((route) => route.professionalApp)
+          .map((route) => route.label)
+          .sort(),
+      ).toEqual([
+        "GET /auth/me (AuthController.me)",
+        "PATCH /auth/me/password (AuthController.changePassword)",
+      ]);
+    });
+
+    it("ele lê o próprio perfil e troca a própria senha", async () => {
+      const auth = http.mockOf(AuthService);
+      auth.changePassword.mockClear();
+      const token = http.tokenFor(USERS.professional);
+
+      await request(http.server())
+        .get("/auth/me")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      await request(http.server())
+        .patch("/auth/me/password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          currentPassword: "Senha@Antiga1",
+          newPassword: "Nova@Senha123",
+          newPasswordConfirmation: "Nova@Senha123",
+        })
+        .expect(204);
+      expect(auth.changePassword).toHaveBeenCalledWith(
+        USERS.professional.id,
+        expect.objectContaining({ currentPassword: "Senha@Antiga1" }),
+      );
+    });
+
+    it("a troca de senha recusa confirmação diferente e senha fraca (400)", async () => {
+      const token = http.tokenFor(USERS.professional);
+      const body = {
+        currentPassword: "Senha@Antiga1",
+        newPassword: "Nova@Senha123",
+        newPasswordConfirmation: "Nova@Senha123",
+      };
+
+      await request(http.server())
+        .patch("/auth/me/password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...body, newPasswordConfirmation: "outra" })
+        .expect(400);
+      await request(http.server())
+        .patch("/auth/me/password")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ ...body, newPassword: "123", newPasswordConfirmation: "123" })
+        .expect(400);
+    });
+
+    it("o login por telefone é público e valida o corpo (400 sem a senha)", async () => {
+      const auth = http.mockOf(AuthService);
+      auth.professionalLogin.mockClear();
+
+      await request(http.server())
+        .post("/auth/professional/login")
+        .send({ phone: "(11) 98888-0001", password: "senha" })
+        .expect(200);
+      expect(auth.professionalLogin).toHaveBeenCalledWith({
+        phone: "(11) 98888-0001",
+        password: "senha",
+      });
+      await request(http.server())
+        .post("/auth/professional/login")
+        .send({ phone: "(11) 98888-0001" })
+        .expect(400);
+    });
+
+    it("os demais perfis não são afetados pela marca (ADMIN abre a agenda)", async () => {
+      await request(http.server())
+        .get("/appointments")
+        .set("Authorization", auth(http, "admin"))
+        .expect(200);
     });
   });
 

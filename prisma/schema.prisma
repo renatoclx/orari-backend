@@ -23,6 +23,9 @@ model User {
   companyId String
   // Profissional (People do tipo PROFESSIONAL) que este usuário representa; dá acesso à anamnese.
   peopleId  String?
+  // Telefone com DDD, só dígitos (10 ou 11): o login do usuário PROFESSIONAL no
+  // app (como o cliente entra). Só ele tem; único entre os ativos.
+  phone     String?   @db.VarChar(11)
   createdAt DateTime  @default(now())
   updatedAt DateTime?
   deletedAt DateTime?
@@ -52,6 +55,8 @@ model User {
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
   // Um profissional pertence a no máximo um usuário ativo (usuários sem vínculo não conflitam).
   @@unique([peopleId], where: raw("\"deletedAt\" IS NULL"))
+  // Dois profissionais com o mesmo telefone tornariam o login ambíguo.
+  @@unique([phone], where: raw("\"deletedAt\" IS NULL AND \"phone\" IS NOT NULL"))
   @@index([companyId])
   @@map("users")
 }
@@ -80,6 +85,9 @@ enum UserType {
   SUPER_ADMIN
   ADMIN
   USER
+  // Só o app (PWA): vê a agenda, os clientes e as comissões do profissional
+  // vinculado. Nega por padrão: só as rotas marcadas com @ProfessionalApp().
+  PROFESSIONAL
 }
 
 enum PeopleType {

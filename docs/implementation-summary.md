@@ -598,6 +598,12 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Recorrência:** `buildOccurrences` e o calendário (`toDateParts`, `isBeforeOrSameDay`, `advanceOneDay`, `minutesBetween`) vão para `recurrence-occurrences.ts`, com spec próprio; o `weekDayIndex` local dá lugar ao `weekDayIndexOf`.
 - **Padrão:** a regra de quando separar um service entrou em `coding-standards.md` ("Organização").
 
+## 2.57 App do profissional (etapa 1: acesso)
+
+- **Perfil:** `UserType.PROFESSIONAL` (migração `professional_app`, que também cria a funcionalidade `professional-app` para todas as empresas) e `User.phone` (migração `user_phone`, índice único parcial entre ativos).
+- **Barreira:** decorator `@ProfessionalApp()` e `ProfessionalAppGuard` global; só `me` e `changePassword` liberados. `feature-coverage.spec` e o e2e fixam a lista.
+- **Login:** `AuthService.professionalLogin` (telefone normalizado, bcrypt com hash falso para tempo constante). `UserService`: `ensureProfessionalLink`, `resolvePhone`, `ensurePhoneFree`, `changeOwnPassword`.
+
 ## 2.56 Fotos privadas por link assinado
 
 - **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.

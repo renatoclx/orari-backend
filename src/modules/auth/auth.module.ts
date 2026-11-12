@@ -13,6 +13,7 @@ import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { ProfessionalAppGuard } from "./guards/professional-app.guard";
 import { RolesGuard } from "./guards/roles.guard";
 import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
 
@@ -50,6 +51,11 @@ import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    // Perfil só de app: nega por padrão tudo o que não for @ProfessionalApp().
+    {
+      provide: APP_GUARD,
+      useClass: ProfessionalAppGuard,
     },
     // Por último: precisa do request.user e só vale para rotas com @Feature.
     {
