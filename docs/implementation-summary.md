@@ -605,3 +605,9 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Porteiro do `/uploads`** (`uploadsGate`, antes dos arquivos estáticos): só `companies` é pública; o resto exige assinatura válida (403). O caminho é decodificado e normalizado antes de olhar a pasta (`..` responde 404). A foto assinada sai com `Cache-Control: private, max-age=<até vencer>`.
 - **Testes:** specs da assinatura e do interceptor, e o `app.setup.spec` com uma pasta de uploads real (link assinado abre, puro e adulterado dão 403, travessia dá 404, logo abre). Verificado na API real: upload de pessoa e de produto, listagem, logo.
 
+## 2.57 Erros do Prisma sem tratamento
+
+- **`PrismaExceptionFilter`** (`src/prisma/prisma-exception.filter.ts`, global em `configureApp`): recebe o `PrismaClientKnownRequestError` que nenhum service tratou. `P2025` vira 404 "Registro não encontrado"; `P2002`, 409 "Já existe um registro com estes dados"; `P2003` (chave estrangeira), 409 "A operação depende de um registro que não existe ou está em uso"; `P2034` (conflito entre transações), 409 "Outra operação mudou estes dados; tente novamente". Outro código continua 500, sem detalhes do banco na resposta.
+- Os tratamentos dos services continuam, com as mensagens precisas; o filtro registra um aviso com o código, para achar o caso que falta tratar.
+- **Testes:** `app.setup.spec` com uma rota que lança cada código.
+

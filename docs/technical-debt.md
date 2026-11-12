@@ -136,13 +136,12 @@ conferir a documentação gerada.
 
 - **Comentários de tutorial** em `appointment-status.job.ts` (ex.: "lte: less
   than or equal"): explicam a ferramenta, não a decisão.
-- **Erros do Prisma sem tradução:** registro removido no meio da operação ou chave
-  estrangeira inválida respondem 500; um filtro global de exceções os
-  converteria em 404 ou 409.
 
 **Registrado em:** 2026-10-22. **Resolvidos em 2026-11-11:** o "hoje no fuso da
 empresa" repetido (agora `localDateOf`, em `common/time/time-zone.ts`) e o
 `payment.service.ts` extenso (a comanda foi para o `PaymentCheckoutService`).
+**Resolvido em 2026-11-12:** os erros do Prisma sem tradução (o
+`PrismaExceptionFilter` responde 404 ou 409 em vez de 500).
 
 ---
 

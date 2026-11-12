@@ -68,6 +68,7 @@
   - ForbiddenException
 
 - Evitar throw new Error().
+- Erros do Prisma previsíveis (registro inexistente, unicidade, chave estrangeira) são traduzidos no service, com a mensagem do caso (ver `src/prisma/prisma-errors.ts`). O `PrismaExceptionFilter` é só a rede de proteção: o que escapa vira 404 ou 409 com uma mensagem genérica, e o log aponta o código para tratá-lo no service.
 
 ## Paginação
 

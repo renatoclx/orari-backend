@@ -1,4 +1,4 @@
-import { Controller, Get, Req } from "@nestjs/common";
+import { Controller, Get, Param, Req } from "@nestjs/common";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
+import { Prisma } from "../generated/prisma/client";
 import { configureApp, isSwaggerEnabled } from "./app.setup";
 
 // Segredo dos links assinados de /uploads (o JWT_SECRET de verdade, na API).
@@ -19,6 +20,15 @@ class ProbeController {
   @Get("probe")
   probe(@Req() req: { ip: string }) {
     return { ip: req.ip };
+  }
+
+  // Um erro do Prisma que o service não tratou.
+  @Get("prisma/:code")
+  prisma(@Param("code") code: string) {
+    throw new Prisma.PrismaClientKnownRequestError("falha", {
+      code,
+      clientVersion: "test",
+    });
   }
 
   // Uma resposta com foto, como as da API.
@@ -208,6 +218,36 @@ describe("configureApp", () => {
       const http = await startWithFiles();
 
       await http.get(LOGO).expect(200);
+    });
+  });
+
+  describe("erros do Prisma sem tratamento", () => {
+    it.each([
+      ["P2025", 404, "Registro não encontrado"],
+      ["P2002", 409, "Já existe um registro com estes dados"],
+      [
+        "P2003",
+        409,
+        "A operação depende de um registro que não existe ou está em uso",
+      ],
+      ["P2034", 409, "Outra operação mudou estes dados; tente novamente"],
+    ])("%s → %i", async (code, status, message) => {
+      const http = await start();
+
+      const response = await http.get(`/prisma/${code}`).expect(status);
+
+      expect(response.body).toMatchObject({ statusCode: status, message });
+    });
+
+    it("um código desconhecido continua 500, sem detalhes do banco", async () => {
+      const http = await start();
+
+      const response = await http.get("/prisma/P2010").expect(500);
+
+      expect(response.body).toEqual({
+        statusCode: 500,
+        message: "Internal server error",
+      });
     });
   });
 });

@@ -13,6 +13,7 @@ import {
   secondsUntil,
 } from "./common/storage/signed-upload-url";
 import { SignedUploadsInterceptor } from "./common/storage/signed-uploads.interceptor";
+import { PrismaExceptionFilter } from "./prisma/prisma-exception.filter";
 
 type Env = Record<string, string | undefined>;
 
@@ -137,6 +138,9 @@ export function configureApp(app: NestExpressApplication, env: Env): void {
       ? env.CORS_ORIGIN.split(",").map((origin) => origin.trim())
       : true,
   });
+
+  // Erros do Prisma que nenhum service tratou viram 404/409 em vez de 500.
+  app.useGlobalFilters(new PrismaExceptionFilter());
 
   app.useGlobalPipes(
     new ValidationPipe({
