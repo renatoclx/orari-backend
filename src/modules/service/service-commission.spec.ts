@@ -11,7 +11,7 @@ import {
 } from "./service.service";
 
 const admin = { type: "ADMIN" } as AuthenticatedUser;
-const user = { type: "USER" } as AuthenticatedUser;
+const user = { type: "PROFESSIONAL" } as AuthenticatedUser;
 
 describe("resolveCommission", () => {
   it("sem os campos, nada muda", () => {

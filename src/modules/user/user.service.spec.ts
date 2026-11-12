@@ -83,13 +83,13 @@ describe("UserService", () => {
     email: "maria@orari.com",
     password: "senha-forte",
     passwordConfirmation: "senha-forte",
-    type: "USER",
+    type: "ADMIN",
   };
   const storedUser = {
     id: "user-2",
     name: dto.name,
     email: dto.email,
-    type: "USER",
+    type: "ADMIN",
     companyId: COMPANY_ID,
   };
   const resetDto = {
@@ -399,10 +399,16 @@ describe("UserService", () => {
       expect(prismaMock.user.create).not.toHaveBeenCalled();
     });
 
-    it("ADMIN não pode criar SUPER_ADMIN", async () => {
-      await expect(
-        userService.create({ ...dto, type: "SUPER_ADMIN" }, adminUser),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+    it("ninguém cria SUPER_ADMIN pela API, nem o SUPER_ADMIN", async () => {
+      for (const user of [adminUser, superAdminUser]) {
+        await expect(
+          userService.create(
+            { ...dto, type: "SUPER_ADMIN", companyId: COMPANY_ID },
+            user,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
     });
 
     it("SUPER_ADMIN cria na empresa informada, que precisa estar ativa", async () => {
@@ -660,14 +666,14 @@ describe("UserService", () => {
         prismaMock.user.findFirst.mockResolvedValue(professional);
         prismaMock.user.update.mockResolvedValue({
           ...professional,
-          type: "USER",
+          type: "ADMIN",
           phone: null,
         });
 
-        await userService.update("user-2", { type: "USER" }, adminUser);
+        await userService.update("user-2", { type: "ADMIN" }, adminUser);
 
         expect(prismaMock.user.update).toHaveBeenCalledWith(
-          containing({ data: containing({ type: "USER", phone: null }) }),
+          containing({ data: containing({ type: "ADMIN", phone: null }) }),
         );
       });
 
@@ -692,8 +698,8 @@ describe("UserService", () => {
 
     describe("auditoria da mudança de tipo", () => {
       it.each([
-        ["promove a ADMIN", "USER", "ADMIN"],
-        ["tira do ADMIN", "ADMIN", "USER"],
+        ["promove a ADMIN", "PROFESSIONAL", "ADMIN"],
+        ["tira do ADMIN", "ADMIN", "PROFESSIONAL"],
       ])("%s e audita na mesma transação", async (_, from, to) => {
         prismaMock.user.findFirst.mockResolvedValue({
           ...storedUser,
@@ -703,7 +709,7 @@ describe("UserService", () => {
 
         await userService.update(
           "user-2",
-          { type: to as "USER" | "ADMIN" },
+          { type: to as "PROFESSIONAL" | "ADMIN" },
           adminUser,
           "10.0.0.1",
         );
@@ -725,7 +731,7 @@ describe("UserService", () => {
         prismaMock.user.findFirst.mockResolvedValue(storedUser);
         prismaMock.user.update.mockResolvedValue(storedUser);
 
-        await userService.update("user-2", { type: "USER" }, adminUser);
+        await userService.update("user-2", { type: "ADMIN" }, adminUser);
         await userService.update("user-2", { name: "Outro" }, adminUser);
 
         expect(auditServiceMock.record).not.toHaveBeenCalled();
@@ -855,7 +861,7 @@ describe("UserService", () => {
       });
 
       await expect(
-        userService.update(adminUser.id, { type: "USER" }, adminUser),
+        userService.update(adminUser.id, { type: "PROFESSIONAL" }, adminUser),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
@@ -876,25 +882,15 @@ describe("UserService", () => {
       expect(prismaMock.user.update).toHaveBeenCalled();
     });
 
-    it("ADMIN não pode promover alguém a SUPER_ADMIN", async () => {
+    it("ninguém promove alguém a SUPER_ADMIN pela API, nem o SUPER_ADMIN", async () => {
       prismaMock.user.findFirst.mockResolvedValue(storedUser);
 
-      await expect(
-        userService.update("user-2", { type: "SUPER_ADMIN" }, adminUser),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      for (const user of [adminUser, superAdminUser]) {
+        await expect(
+          userService.update("user-2", { type: "SUPER_ADMIN" }, user),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
       expect(prismaMock.user.update).not.toHaveBeenCalled();
-    });
-
-    it("SUPER_ADMIN pode promover alguém a SUPER_ADMIN", async () => {
-      prismaMock.user.findFirst.mockResolvedValue(storedUser);
-
-      await userService.update(
-        "user-2",
-        { type: "SUPER_ADMIN" },
-        superAdminUser,
-      );
-
-      expect(prismaMock.user.update).toHaveBeenCalled();
     });
   });
 

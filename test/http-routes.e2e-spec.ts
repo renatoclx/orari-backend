@@ -13,6 +13,7 @@ import { AnamnesisPdfService } from "../src/modules/anamnesis/anamnesis-pdf.serv
 import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
 import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
+import { ProfessionalAppService } from "../src/modules/professional-app/professional-app.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
@@ -86,7 +87,7 @@ describe("Rotas HTTP", () => {
     });
 
     it("deve recusar usuário que não existe mais ou foi excluído", async () => {
-      const token = http.tokenFor(USERS.user);
+      const token = http.tokenFor(USERS.admin);
       http.mockOf(UserService).findActiveById.mockResolvedValueOnce(null);
 
       await request(http.server())
@@ -156,6 +157,7 @@ describe("Rotas HTTP", () => {
           .sort(),
       ).toEqual([
         "GET /auth/me (AuthController.me)",
+        "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
         "PATCH /auth/me/password (AuthController.changePassword)",
       ]);
     });
@@ -182,6 +184,39 @@ describe("Rotas HTTP", () => {
         USERS.professional.id,
         expect.objectContaining({ currentPassword: "Senha@Antiga1" }),
       );
+    });
+
+    it("ele lê a própria agenda; o dia é validado e o profissional não vem da consulta", async () => {
+      const service = http.mockOf(ProfessionalAppService);
+      service.findAgenda.mockResolvedValue({ day: "2026-11-12" });
+      const token = http.tokenFor(USERS.professional);
+
+      await request(http.server())
+        .get("/professional-app/agenda?day=2026-11-12")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      expect(service.findAgenda).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        "2026-11-12",
+      );
+      await request(http.server())
+        .get("/professional-app/agenda?day=12/11/2026")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+      // Parâmetro de profissional é recusado (whitelist): não há como espiar outro.
+      await request(http.server())
+        .get("/professional-app/agenda?professionalId=outro")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+    });
+
+    it("a agenda do app é só do profissional: os demais perfis recebem 403", async () => {
+      for (const user of [USERS.admin, USERS.superAdmin]) {
+        await request(http.server())
+          .get("/professional-app/agenda")
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
+          .expect(403);
+      }
     });
 
     it("a troca de senha recusa confirmação diferente e senha fraca (400)", async () => {
@@ -296,9 +331,23 @@ describe("Rotas HTTP", () => {
       expect([...(route?.roles ?? [])].sort()).toEqual([...expected].sort());
     });
 
-    // O tipo USER nunca está em @Roles: é recusado em toda rota restrita.
-    it.each(restricted)("$label recusa USER (403)", async (route) => {
-      const response = await send(http, route, http.tokenFor(USERS.user));
+    // O PROFESSIONAL nunca está em @Roles (e o ProfessionalAppGuard o nega por
+    // padrão): é recusado em toda rota restrita.
+    it.each(restricted)("$label recusa PROFESSIONAL (403)", async (route) => {
+      const response = await send(
+        http,
+        route,
+        http.tokenFor(USERS.professional),
+      );
+
+      expect(response.status).toBe(403);
+    });
+
+    // O SUPER_ADMIN só passa onde o @Roles o lista.
+    it.each(
+      restricted.filter((route) => !route.roles?.includes("SUPER_ADMIN")),
+    )("$label recusa SUPER_ADMIN (403)", async (route) => {
+      const response = await send(http, route, http.tokenFor(USERS.superAdmin));
 
       expect(response.status).toBe(403);
     });
@@ -356,7 +405,7 @@ describe("Rotas HTTP", () => {
 
         await request(http.server())
           .get(path)
-          .set("Authorization", auth(http, "user"))
+          .set("Authorization", auth(http, "admin"))
           .expect(200);
 
         expect(target[name]).toHaveBeenCalledTimes(1);
@@ -384,7 +433,7 @@ describe("Rotas HTTP", () => {
 
       await request(http.server())
         .get(`/payments/${ANY_UUID}`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
 
       expect(payment.findOne).toHaveBeenCalledWith(ANY_UUID, COMPANY_A);
@@ -466,7 +515,7 @@ describe("Rotas HTTP", () => {
         .expect(400);
     });
 
-    it("modelo de anamnese: ADMIN cria, USER recebe 403 na escrita e a leitura chega ao service", async () => {
+    it("modelo de anamnese: ADMIN cria, SUPER_ADMIN recebe 403 na escrita e a leitura chega ao service", async () => {
       const templates = http.mockOf(AnamnesisTemplateService);
       templates.create.mockClear();
       const body = {
@@ -476,7 +525,7 @@ describe("Rotas HTTP", () => {
 
       await request(server())
         .post("/anamnesis-templates")
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "superAdmin"))
         .send(body)
         .expect(403);
       expect(templates.create).not.toHaveBeenCalled();
@@ -491,11 +540,14 @@ describe("Rotas HTTP", () => {
       // A leitura passa o usuário ao service, que decide o acesso (aqui simulado).
       await request(server())
         .get(`/anamnesis-templates/${ANY_UUID}`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "superAdmin"))
         .expect(200);
       expect(templates.findOne).toHaveBeenCalledWith(
         ANY_UUID,
-        expect.objectContaining({ id: USERS.user.id, type: "USER" }),
+        expect.objectContaining({
+          id: USERS.superAdmin.id,
+          type: "SUPER_ADMIN",
+        }),
       );
     });
 
@@ -510,22 +562,22 @@ describe("Rotas HTTP", () => {
 
       await request(server())
         .post("/anamnesis")
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .send(body)
         .expect(201);
       expect(anamnesis.create).toHaveBeenCalledWith(
         expect.objectContaining({ clientId: ANY_UUID }),
-        expect.objectContaining({ id: USERS.user.id }),
+        expect.objectContaining({ id: USERS.admin.id }),
         expect.any(String),
       );
 
       await request(server())
         .get(`/anamnesis?clientId=${ANY_UUID}`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
       await request(server())
         .get(`/anamnesis/${ANY_UUID}`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
     });
 
@@ -536,7 +588,7 @@ describe("Rotas HTTP", () => {
 
       const response = await request(server())
         .get(`/anamnesis/${ANY_UUID}/pdf`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
 
       expect(response.headers["content-type"]).toContain("application/pdf");
@@ -548,7 +600,7 @@ describe("Rotas HTTP", () => {
       expect(pdf.generate).toHaveBeenLastCalledWith(
         ANY_UUID,
         expect.objectContaining({ includeHistory: true }),
-        expect.objectContaining({ id: USERS.user.id }),
+        expect.objectContaining({ id: USERS.admin.id }),
         expect.any(String),
       );
 
@@ -614,7 +666,7 @@ describe("Rotas HTTP", () => {
       }
       await request(server())
         .post(`/anamnesis/${ANY_UUID}/entries`)
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .send({ evolution: "Melhorou" })
         .expect(201);
 
@@ -692,7 +744,7 @@ describe("Rotas HTTP", () => {
 
       await request(server())
         .get("/people?page=2&limit=5")
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
       expect(people.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ page: 2, limit: 5 }),
@@ -701,7 +753,7 @@ describe("Rotas HTTP", () => {
 
       await request(server())
         .get("/people?limit=1000")
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(400);
     });
   });
@@ -780,7 +832,7 @@ describe("Limite de tentativas (429)", () => {
     for (let i = 0; i < 10; i++) {
       await request(http.server())
         .get("/auth/me")
-        .set("Authorization", auth(http, "user"))
+        .set("Authorization", auth(http, "admin"))
         .expect(200);
     }
   });

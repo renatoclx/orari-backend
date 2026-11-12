@@ -22,6 +22,6 @@ export const adminUser: AuthenticatedUser = {
 export const regularUser: AuthenticatedUser = {
   id: "user-1",
   email: "user@empresa.com",
-  type: "USER",
+  type: "PROFESSIONAL",
   companyId: COMPANY_ID,
 };

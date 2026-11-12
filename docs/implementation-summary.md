@@ -604,6 +604,11 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Barreira:** decorator `@ProfessionalApp()` e `ProfessionalAppGuard` global; só `me` e `changePassword` liberados. `feature-coverage.spec` e o e2e fixam a lista.
 - **Login:** `AuthService.professionalLogin` (telefone normalizado, bcrypt com hash falso para tempo constante). `UserService`: `ensureProfessionalLink`, `resolvePhone`, `ensurePhoneFree`, `changeOwnPassword`.
 
+## 2.58 App do profissional (etapa 2: agenda)
+
+- Módulo `professional-app` (`ProfessionalAppController` e `ProfessionalAppService`): `GET /professional-app/agenda`, marcada com `@ProfessionalApp()` e `@Roles(PROFESSIONAL)`. Consulta direta ao Prisma com `select` enxuto (sem pagamento nem contato), filtrada pelo vínculo do usuário.
+- Testes: spec do service, a rota na lista exata do teste de cobertura e no e2e (400 com `professionalId`, 403 para os outros perfis).
+
 ## 2.56 Fotos privadas por link assinado
 
 - **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.

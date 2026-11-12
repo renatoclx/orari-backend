@@ -25,6 +25,7 @@ import {
   LOGIN_LIMIT,
 } from "../../src/modules/auth/auth-throttle";
 import { AuthController } from "../../src/modules/auth/auth.controller";
+import { ProfessionalAppController } from "../../src/modules/professional-app/professional-app.controller";
 import { JwtAuthGuard } from "../../src/modules/auth/guards/jwt-auth.guard";
 import { ProfessionalAppGuard } from "../../src/modules/auth/guards/professional-app.guard";
 import { RolesGuard } from "../../src/modules/auth/guards/roles.guard";
@@ -86,6 +87,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   StateController,
   StockMovementController,
   ProductSaleController,
+  ProfessionalAppController,
   UserController,
 ];
 
@@ -113,12 +115,6 @@ export const USERS: Record<string, TestUser> = {
     id: "aaaaaaaa-0000-4000-8000-000000000002",
     email: "admin@orari.test",
     type: "ADMIN",
-    companyId: COMPANY_A,
-  },
-  user: {
-    id: "aaaaaaaa-0000-4000-8000-000000000003",
-    email: "user@orari.test",
-    type: "USER",
     companyId: COMPANY_A,
   },
   // Só o app (PWA): nega por padrão (ver ProfessionalAppGuard).
