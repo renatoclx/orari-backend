@@ -222,6 +222,8 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
       "AuthController.changePassword",
       "AuthController.me",
       "ProfessionalAppController.findAgenda",
+      "ProfessionalAppController.findClient",
+      "ProfessionalAppController.findClients",
     ]);
   });
 });

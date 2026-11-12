@@ -609,6 +609,12 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Módulo `professional-app` (`ProfessionalAppController` e `ProfessionalAppService`): `GET /professional-app/agenda`, marcada com `@ProfessionalApp()` e `@Roles(PROFESSIONAL)`. Consulta direta ao Prisma com `select` enxuto (sem pagamento nem contato), filtrada pelo vínculo do usuário.
 - Testes: spec do service, a rota na lista exata do teste de cobertura e no e2e (400 com `professionalId`, 403 para os outros perfis).
 
+## 2.59 App do profissional (etapa 3: clientes)
+
+- `ProfessionalClientsService` (lista e ficha) e `ProfessionalLinkService` (o profissional do usuário logado, usado pelos três serviços do módulo); `presentService` e `presentOrigin` dão o mesmo formato de serviço e origem à agenda e ao histórico.
+- Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
+- Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
+
 ## 2.56 Fotos privadas por link assinado
 
 - **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.

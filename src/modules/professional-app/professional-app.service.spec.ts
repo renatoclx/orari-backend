@@ -5,6 +5,7 @@ import type { AuthenticatedUser } from "../../common/interfaces/authenticated-us
 import type { PrismaService } from "../../prisma/prisma.service";
 import type { CompanyService } from "../company/company.service";
 import { ProfessionalAppService } from "./professional-app.service";
+import { ProfessionalLinkService } from "./professional-link.service";
 
 const user = {
   id: "user-1",
@@ -32,6 +33,7 @@ describe("ProfessionalAppService", () => {
   const service = new ProfessionalAppService(
     prismaMock as unknown as PrismaService,
     companyMock as unknown as CompanyService,
+    new ProfessionalLinkService(prismaMock as unknown as PrismaService),
   );
 
   beforeEach(() => {

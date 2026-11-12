@@ -14,6 +14,7 @@ import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
 import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
 import { ProfessionalAppService } from "../src/modules/professional-app/professional-app.service";
+import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
@@ -158,6 +159,8 @@ describe("Rotas HTTP", () => {
       ).toEqual([
         "GET /auth/me (AuthController.me)",
         "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
+        "GET /professional-app/clients (ProfessionalAppController.findClients)",
+        "GET /professional-app/clients/:id (ProfessionalAppController.findClient)",
         "PATCH /auth/me/password (AuthController.changePassword)",
       ]);
     });
@@ -208,6 +211,41 @@ describe("Rotas HTTP", () => {
         .get("/professional-app/agenda?professionalId=outro")
         .set("Authorization", `Bearer ${token}`)
         .expect(400);
+    });
+
+    it("ele lê os próprios clientes; o id é validado e os demais perfis recebem 403", async () => {
+      const clients = http.mockOf(ProfessionalClientsService);
+      clients.findAll.mockResolvedValue({ items: [], total: 0 });
+      clients.findOne.mockResolvedValue({ id: ANY_UUID });
+      const token = http.tokenFor(USERS.professional);
+
+      await request(http.server())
+        .get("/professional-app/clients?search=ana&page=2")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      expect(clients.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        expect.objectContaining({ search: "ana", page: 2, limit: 20 }),
+      );
+      await request(http.server())
+        .get(`/professional-app/clients/${ANY_UUID}`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      await request(http.server())
+        .get("/professional-app/clients/nao-e-uuid")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+      // Não há como pedir os clientes de outro profissional.
+      await request(http.server())
+        .get("/professional-app/clients?professionalId=outro")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(400);
+      for (const user of [USERS.superAdmin, USERS.admin]) {
+        await request(http.server())
+          .get("/professional-app/clients")
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
+          .expect(403);
+      }
     });
 
     it("a agenda do app é só do profissional: os demais perfis recebem 403", async () => {
@@ -331,9 +369,11 @@ describe("Rotas HTTP", () => {
       expect([...(route?.roles ?? [])].sort()).toEqual([...expected].sort());
     });
 
-    // O PROFESSIONAL nunca está em @Roles (e o ProfessionalAppGuard o nega por
-    // padrão): é recusado em toda rota restrita.
-    it.each(restricted)("$label recusa PROFESSIONAL (403)", async (route) => {
+    // O PROFESSIONAL só está em @Roles nas rotas do app; nas demais o
+    // ProfessionalAppGuard o nega por padrão, mesmo sem o @Roles.
+    it.each(
+      restricted.filter((route) => !route.roles?.includes("PROFESSIONAL")),
+    )("$label recusa PROFESSIONAL (403)", async (route) => {
       const response = await send(
         http,
         route,

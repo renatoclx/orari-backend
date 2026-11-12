@@ -1,13 +1,10 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from "@nestjs/common";
-import { PeopleType } from "../../../generated/prisma/enums";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { toZonedParts, zonedToUtc } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
+import { presentOrigin, presentService } from "./professional-app-presenters";
+import { ProfessionalLinkService } from "./professional-link.service";
 
 type Day = { year: number; month: number; day: number };
 
@@ -70,6 +67,7 @@ export class ProfessionalAppService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly companyService: CompanyService,
+    private readonly link: ProfessionalLinkService,
   ) {}
 
   /**
@@ -82,7 +80,7 @@ export class ProfessionalAppService {
     dayInput?: string,
     now = new Date(),
   ) {
-    const professionalId = await this.requireProfessionalId(user);
+    const professionalId = await this.link.requireProfessionalId(user);
     const timeZone = await this.companyService.getTimeZone(user.companyId);
 
     const day = dayInput ? parseDay(dayInput) : toZonedParts(now, timeZone);
@@ -117,36 +115,11 @@ export class ProfessionalAppService {
       appointments: appointments.map(
         ({ recurringAppointment, service, ...appointment }) => ({
           ...appointment,
-          service: { ...service, price: service.price?.toNumber() ?? null },
-          // Origem: sessão de pacote, de recorrência ou avulso.
-          recurrence: recurringAppointment
-            ? { isPackage: recurringAppointment.clientPlanId !== null }
-            : null,
+          service: presentService(service),
+          recurrence: presentOrigin(recurringAppointment),
         }),
       ),
       blocks,
     };
-  }
-
-  /**
-   * O profissional do usuário logado. Cadastro inativado suspende o acesso
-   * (como o /auth/me, que o mostra sem vínculo).
-   */
-  private async requireProfessionalId(
-    user: AuthenticatedUser,
-  ): Promise<string> {
-    const found = await this.prisma.user.findFirst({
-      where: { id: user.id, companyId: user.companyId, deletedAt: null },
-      select: { people: { select: { id: true, type: true, deletedAt: true } } },
-    });
-    const person = found?.people;
-    if (
-      !person ||
-      person.deletedAt ||
-      person.type !== PeopleType.PROFESSIONAL
-    ) {
-      throw new ForbiddenException("O cadastro de profissional está inativo");
-    }
-    return person.id;
   }
 }
