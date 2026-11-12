@@ -45,6 +45,8 @@ describe("RecurringAppointmentService", () => {
   const serviceServiceMock = { findActive: vi.fn() };
   const appointmentServiceMock = {
     findOne: vi.fn(),
+    // Trava da agenda (pg_advisory_xact_lock); no teste, só registra a chamada.
+    lockAgenda: vi.fn(),
     rescheduleFromRecurrence: vi.fn(),
     cancelFromRecurrence: vi.fn(),
     createFromRecurrence: vi.fn(),

@@ -618,3 +618,9 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **`AuditEntry`** ganhou `details` (opcional); as outras auditorias não mudam.
 - **Testes:** 403 do USER sem gravar, auditoria do ADMIN (alteração e exclusão) e o pendente livre, sem auditoria.
 
+## 2.59 Trava da agenda em todos os caminhos
+
+- **`AppointmentService.lockAgenda(tx, { professionalIds, clientIds })`:** `pg_advisory_xact_lock` por chave (`appointment:<profissional>`, o mesmo prefixo da trava antiga, e `appointment-client:<cliente>`), sem repetir e em ordem, até o fim da transação.
+- **Onde:** `create` (agora também o cliente); `applyUpdate` (a conferência e a gravação passaram para uma transação travada; antes eram passos soltos); `rescheduleFromRecurrence` e `createFromRecurrence` (passam a exigir `Prisma.TransactionClient`); `RecurringAppointmentService.createSchedule` e `replaceInClassGroup`, e `ClassSessionService.enrollInClassGroup` e `enroll`, que travam a agenda **antes** da linha da sessão (`FOR UPDATE`), na ordem que evita deadlock.
+- **Testes:** ordem e repetição das chaves, a criação travando profissional e cliente, e os mocks dos services de recorrência e turma com `lockAgenda`. Na API real, cinco rodadas de cada corrida (mesmo cliente com dois profissionais, duas edições para o mesmo horário, duas recorrências, recorrência contra avulso, encaixe na turma contra avulso, recorrência na turma contra encaixe em lote): sempre um passa e o outro recebe 409, sem deadlock nem 500. Antes, não havia sobreposição gravada no banco local.
+

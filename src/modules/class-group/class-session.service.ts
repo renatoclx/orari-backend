@@ -221,6 +221,11 @@ export class ClassSessionService {
     );
 
     const sessionId = await this.prisma.$transaction(async (tx) => {
+      // A agenda vem antes da linha da sessão (ver AppointmentService.lockAgenda).
+      await this.appointmentService.lockAgenda(tx, {
+        professionalIds: [classGroup.professionalId],
+        clientIds: dto.clientIds,
+      });
       const locked = await this.lockClassGroupSession(
         tx,
         classGroup,
@@ -363,6 +368,11 @@ export class ClassSessionService {
     const refused = await this.findRefusedClients(dto.clientIds, companyId);
 
     await this.prisma.$transaction(async (tx) => {
+      // A agenda vem antes da linha da sessão (ver AppointmentService.lockAgenda).
+      await this.appointmentService.lockAgenda(tx, {
+        professionalIds: [session.professionalId],
+        clientIds: dto.clientIds,
+      });
       const locked = await this.lock(tx, id);
       await this.enrollLocked(tx, locked, dto, session, refused);
     });

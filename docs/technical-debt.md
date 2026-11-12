@@ -77,22 +77,22 @@ link assinado do próprio storage, e o porteiro do `/uploads` (`uploadsGate`, em
 
 ## Agenda sem trava contra marcações simultâneas
 
-**Onde:** `AppointmentService.ensureSlotIsFree` na edição, na recorrência e na
-contratação. **A criação avulsa já foi resolvida** (2026-11-04, com o portal do
-cliente): ela trava o profissional com `pg_advisory_xact_lock` antes de conferir e
-gravar, na mesma transação.
+**Resolvido em 2026-11-12.** Todo caminho que grava na agenda chama
+`AppointmentService.lockAgenda` (`pg_advisory_xact_lock` por profissional e por
+cliente) antes de conferir o horário e gravar, na mesma transação: criação avulsa,
+edição, recorrência e contratação, remanejamento e reposição, e encaixe em turma.
+As chaves são travadas em ordem, e sempre antes da linha da sessão de turma
+(`FOR UPDATE`), para não haver deadlock. Provado na API real com requisições
+simultâneas em cada caminho.
 
-**O que é:** a conferência de horário livre e a gravação são passos separados.
-Duas marcações do mesmo profissional ou cliente, no mesmo horário e no mesmo
-instante, passam pela conferência e são gravadas.
+**Por que não `EXCLUDE USING gist`:** a restrição compara uma linha com a outra e
+não expressa as exceções da agenda: os colegas da mesma sessão de turma não
+conflitam com o profissional, e o avulso em encaixe divide o horário com a
+turma. A regra depende do par de agendamentos e fica no `findSlotConflict`.
 
-**Impacto:** raro com poucos usuários por empresa; o resultado aparece na agenda
-e é corrigido à mão. Fica mais provável com agendamento online pelo cliente ou
-com mais volume.
-
-**Como resolver:** restrição de sobreposição no PostgreSQL (`EXCLUDE USING gist`,
-extensão `btree_gist`) por profissional e por cliente, ignorando cancelados, com o
-erro convertido em 409. Conferir antes se já existem sobreposições gravadas.
+**O que segue valendo:** a trava é por processo do banco, então vale para várias
+instâncias da API ligadas ao mesmo PostgreSQL. Uma rota nova que grave na agenda
+precisa chamar o `lockAgenda`.
 
 **Registrado em:** 2026-10-22.
 

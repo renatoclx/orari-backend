@@ -215,8 +215,11 @@ export class AppointmentService {
       dto.overBooking,
     );
     const created = await this.prisma.$transaction(async (tx) => {
-      // Trava por profissional até o fim da transação (advisory lock do Postgres).
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`appointment:${dto.professionalId}`}))`;
+      // Trava a agenda do profissional e do cliente até o fim da transação.
+      await this.lockAgenda(tx, {
+        professionalIds: [dto.professionalId],
+        clientIds: [dto.clientId],
+      });
       // Autorizado (encaixe), o avulso pode dividir o horário com uma turma.
       await this.ensureSlotIsFree(
         tx,
@@ -403,7 +406,9 @@ export class AppointmentService {
     // Um agendamento cancelado não disputa horário nem precisa caber na janela
     // de atendimento; os demais, sim. Marcar a falta só muda o status: o horário
     // (já passado) não é reavaliado.
-    if (status !== AppointmentStatus.CANCELLED && !marksNoShow) {
+    const checksSlot = status !== AppointmentStatus.CANCELLED && !marksNoShow;
+    let overClassSession = appointment.overBooking;
+    if (checksSlot) {
       if (dto.serviceId || dto.startAt) {
         overBooking = await this.resolveOverBooking(
           companyId,
@@ -415,24 +420,11 @@ export class AppointmentService {
         );
       }
 
-      // Na turma, os colegas da mesma sessão não conflitam com o profissional.
-      await this.ensureSlotIsFree(
-        this.prisma,
-        {
-          clientId,
-          professionalId,
-          startAt,
-          endAt,
-          classSessionId: appointment.classSessionId,
-          // Remarcado, vale a autorização do pedido; senão, a do encaixe gravado.
-          overClassSession:
-            dto.serviceId || dto.startAt
-              ? dto.overBooking === true
-              : appointment.overBooking,
-        },
-        companyId,
-        id,
-      );
+      // Remarcado, vale a autorização do pedido; senão, a do encaixe gravado.
+      overClassSession =
+        dto.serviceId || dto.startAt
+          ? dto.overBooking === true
+          : appointment.overBooking;
     }
 
     const data = { ...dto, endAt, overBooking, updatedAt: new Date() };
@@ -440,10 +432,34 @@ export class AppointmentService {
     // Cancelar e marcar a falta não cobram: o pagamento pendente é cancelado na
     // mesma transação.
     if (!cancels && !marksNoShow) {
-      return this.prisma.appointment.update({
-        where: { id },
-        data,
-        include: withRelations,
+      // A conferência do horário e a gravação rodam juntas, com a agenda
+      // travada: duas edições ao mesmo tempo não ocupam o mesmo horário.
+      return this.prisma.$transaction(async (tx) => {
+        if (checksSlot) {
+          await this.lockAgenda(tx, {
+            professionalIds: [professionalId],
+            clientIds: [clientId],
+          });
+          // Na turma, os colegas da mesma sessão não conflitam com o profissional.
+          await this.ensureSlotIsFree(
+            tx,
+            {
+              clientId,
+              professionalId,
+              startAt,
+              endAt,
+              classSessionId: appointment.classSessionId,
+              overClassSession,
+            },
+            companyId,
+            id,
+          );
+        }
+        return tx.appointment.update({
+          where: { id },
+          data,
+          include: withRelations,
+        });
       });
     }
 
@@ -504,7 +520,7 @@ export class AppointmentService {
    * profissional dela. Sem ela, vira atendimento individual.
    */
   async rescheduleFromRecurrence(
-    db: PrismaClientLike,
+    db: Prisma.TransactionClient,
     appointment: Appointment,
     startAt: Date,
     { allowReplacement = false, classSession }: RescheduleOptions = {},
@@ -535,6 +551,12 @@ export class AppointmentService {
       startAt,
       endAt,
     );
+    // Quem reserva vaga de turma trava a agenda antes (ver lockAgenda); aqui as
+    // mesmas chaves são retomadas, sem custo.
+    await this.lockAgenda(db, {
+      professionalIds: [professionalId],
+      clientIds: [clientId],
+    });
     // Na sessão de destino, os colegas dela não conflitam com o profissional.
     await this.ensureSlotIsFree(
       db,
@@ -938,6 +960,38 @@ export class AppointmentService {
   }
 
   /**
+   * Trava a agenda dos profissionais e clientes até o fim da transação
+   * (`pg_advisory_xact_lock`), para que a conferência de horário livre e a
+   * gravação não sejam intercaladas por outra marcação (ver
+   * docs/technical-debt.md, "Agenda sem trava").
+   *
+   * Regras para não haver deadlock:
+   * - as chaves de uma chamada são travadas sempre na mesma ordem (ordenadas);
+   * - a agenda é travada antes de qualquer linha (ex.: o FOR UPDATE da sessão
+   *   de turma), por isso quem reserva vaga chama esta função primeiro;
+   * - chamar de novo com chaves já travadas na transação não espera (a trava é
+   *   da própria sessão).
+   */
+  async lockAgenda(
+    tx: Prisma.TransactionClient,
+    {
+      professionalIds = [],
+      clientIds = [],
+    }: { professionalIds?: string[]; clientIds?: string[] },
+  ): Promise<void> {
+    // O prefixo do profissional é o mesmo da trava antiga da criação avulsa.
+    const keys = [
+      ...new Set([
+        ...professionalIds.map((id) => `appointment:${id}`),
+        ...clientIds.map((id) => `appointment-client:${id}`),
+      ]),
+    ].sort();
+    for (const key of keys) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    }
+  }
+
+  /**
    * Recusa sobreposição de horário do mesmo profissional ou do mesmo cliente.
    *
    * Dois intervalos se sobrepõem quando um começa antes de o outro terminar e
@@ -1057,12 +1111,17 @@ export class AppointmentService {
    * metade.
    */
   async createFromRecurrence(
-    db: PrismaClientLike,
+    db: Prisma.TransactionClient,
     data: RecurrenceAppointmentData,
     occurrences: AppointmentOccurrence[],
     timeZone: string,
     note?: string | null,
   ): Promise<Pick<Appointment, "id" | "startAt">[]> {
+    // Uma trava para a recorrência inteira (o mesmo profissional e cliente).
+    await this.lockAgenda(db, {
+      professionalIds: [data.professionalId],
+      clientIds: [data.clientId],
+    });
     for (const { startAt, endAt, classSessionId } of occurrences) {
       try {
         await this.businessHourService.ensureWithinBusinessHours(

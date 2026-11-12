@@ -146,6 +146,19 @@ describe("AppointmentService", () => {
       expect(prismaMock.$transaction).toHaveBeenCalled();
     });
 
+    it("trava a agenda do profissional e do cliente", async () => {
+      await appointmentService.create(dto, COMPANY_ID);
+
+      // $executeRaw é uma template tag: o segundo argumento é a chave.
+      const keys = prismaMock.$executeRaw.mock.calls.map(
+        (call) => call[1] as string,
+      );
+      expect(keys).toEqual([
+        `appointment-client:${dto.clientId}`,
+        `appointment:${dto.professionalId}`,
+      ]);
+    });
+
     it("pelo portal, grava a origem PORTAL", async () => {
       await appointmentService.create(dto, COMPANY_ID, "PORTAL");
 
@@ -1208,7 +1221,7 @@ describe("AppointmentService", () => {
           COMPANY_ID,
         ),
       ).resolves.toMatchObject({ id: "appointment-1" });
-      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      // Editar a observação não cancela nada: o pagamento fica como está.
       expect(prismaMock.payment.updateMany).not.toHaveBeenCalled();
     });
   });
@@ -2118,6 +2131,26 @@ describe("AppointmentService", () => {
         "client",
       );
       expect(eventsMock.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("lockAgenda", () => {
+    it("trava cada chave uma vez, sempre na mesma ordem (evita deadlock)", async () => {
+      const tx = { $executeRaw: vi.fn() };
+
+      await appointmentService.lockAgenda(tx as never, {
+        professionalIds: ["p-2", "p-1"],
+        clientIds: ["c-9", "c-1", "c-9"],
+      });
+
+      expect(
+        tx.$executeRaw.mock.calls.map((call) => call[1] as string),
+      ).toEqual([
+        "appointment-client:c-1",
+        "appointment-client:c-9",
+        "appointment:p-1",
+        "appointment:p-2",
+      ]);
     });
   });
 });
