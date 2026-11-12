@@ -230,7 +230,11 @@ describe("AppointmentService", () => {
           endAt: { gt: startAt },
           OR: [{ professionalId: "professional-1" }, { clientId: "client-1" }],
         },
-        select: { professionalId: true },
+        select: {
+          professionalId: true,
+          classSessionId: true,
+          overBooking: true,
+        },
       });
     });
 
@@ -1888,7 +1892,11 @@ describe("AppointmentService", () => {
           id: { not: "appointment-1" },
           OR: [professionalOutsideSession, { clientId: "client-1" }],
         }),
-        select: { professionalId: true },
+        select: {
+          professionalId: true,
+          classSessionId: true,
+          overBooking: true,
+        },
       });
       expect(prismaMock.appointment.update).toHaveBeenCalled();
     });
@@ -1957,7 +1965,11 @@ describe("AppointmentService", () => {
           where: containingWhere({
             OR: [professionalOutsideSession, { clientId: "client-1" }],
           }),
-          select: { professionalId: true },
+          select: {
+            professionalId: true,
+            classSessionId: true,
+            overBooking: true,
+          },
         });
         expect(conflicts).toEqual([
           {
@@ -1965,6 +1977,46 @@ describe("AppointmentService", () => {
             message: "O cliente já possui um agendamento neste horário",
           },
         ]);
+      });
+
+      it("o aluno que já está na mesma sessão é conflito do cliente, não do profissional", async () => {
+        // Mesmo profissional, mas é a própria sessão: bate pelo cliente.
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+          classSessionId: "session-1",
+          overBooking: false,
+        });
+
+        const conflicts = await appointmentService.findClassSessionConflicts(
+          prismaMock as never,
+          data,
+          ["client-1"],
+        );
+
+        expect(conflicts).toEqual([
+          {
+            clientId: "client-1",
+            message: "O cliente já possui um agendamento neste horário",
+          },
+        ]);
+      });
+
+      it("um avulso do profissional no horário é conflito do profissional", async () => {
+        prismaMock.appointment.findFirst.mockResolvedValueOnce({
+          professionalId: "professional-1",
+          classSessionId: null,
+          overBooking: false,
+        });
+
+        const conflicts = await appointmentService.findClassSessionConflicts(
+          prismaMock as never,
+          data,
+          ["client-1"],
+        );
+
+        expect(conflicts[0].message).toBe(
+          "O profissional já possui um agendamento neste horário",
+        );
       });
 
       it("cria um agendamento por cliente, ligados à sessão", async () => {
@@ -2056,7 +2108,11 @@ describe("AppointmentService", () => {
             { clientId: "client-1" },
           ],
         }),
-        select: { professionalId: true },
+        select: {
+          professionalId: true,
+          classSessionId: true,
+          overBooking: true,
+        },
       });
       expect(prismaMock.appointment.createManyAndReturn).toHaveBeenCalledWith({
         data: [

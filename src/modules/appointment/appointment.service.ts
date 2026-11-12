@@ -1090,15 +1090,45 @@ export class AppointmentService {
         endAt: { gt: startAt },
         OR: [professionalBusy, { clientId }],
       },
-      select: { professionalId: true },
+      select: { professionalId: true, classSessionId: true, overBooking: true },
     });
     if (!conflict) {
       return null;
     }
 
-    const who =
-      conflict.professionalId === professionalId ? "profissional" : "cliente";
+    // Quem está ocupado: o profissional só quando o agendamento achado conta
+    // para ele pela mesma regra da consulta (o aluno já na mesma sessão bate
+    // pelo cliente, não pelo profissional). Valendo para os dois, fica o profissional.
+    const busyProfessional =
+      conflict.professionalId === professionalId &&
+      this.countsForProfessional(conflict, {
+        classSessionId,
+        overClassSession,
+      });
+    const who = busyProfessional ? "profissional" : "cliente";
     return `O ${who} já possui um agendamento neste horário`;
+  }
+
+  // A regra do professionalBusy (findSlotConflict) aplicada a um agendamento já lido.
+  private countsForProfessional(
+    other: { classSessionId: string | null; overBooking: boolean },
+    {
+      classSessionId,
+      overClassSession,
+    }: { classSessionId?: string | null; overClassSession?: boolean },
+  ): boolean {
+    if (classSessionId) {
+      // Colegas da mesma sessão e o avulso em encaixe não contam.
+      return (
+        other.classSessionId !== classSessionId &&
+        !(other.classSessionId === null && other.overBooking)
+      );
+    }
+    if (overClassSession) {
+      // O encaixe divide o horário com as turmas: só os avulsos contam.
+      return other.classSessionId === null;
+    }
+    return true;
   }
 
   /**
