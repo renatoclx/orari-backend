@@ -7,6 +7,7 @@
 - **SUPER_ADMIN**: Cadastra, edita, inativa e reativa empresas, e gerencia usuários de qualquer empresa ativa.
 - **ADMIN**: administra a própria empresa. Gerencia os usuários dela.
 - **USER**: opera os dados da própria empresa (pessoas, contatos e endereços), sem gerenciar usuários.
+- **PROFESSIONAL**: profissional que usa só o app (`/app`), sem acesso ao sistema web. Veja "Profissional no app".
 
 ## Empresas
 
@@ -80,6 +81,14 @@
 - A exclusão é lógica (inativação): preenche o `deletedAt`. A listagem (`GET /users`) traz ativos e inativos e aceita o filtro opcional `name` (busca parcial, sem diferenciar maiúsculas; acentos contam), que respeita o que o usuário já enxerga; consultar, alterar, trocar a senha e excluir valem só para ativos (inativo responde 404).
 - Um usuário inativado pode ser reativado por `PATCH /users/:id/restore` (limpa o `deletedAt`), pelos mesmos perfis e com o mesmo alcance da gestão de usuários. Reativar um usuário já ativo responde 409; se o e-mail dele estiver em uso por outro usuário ativo, também responde 409.
 - Um usuário pode ser vinculado a uma pessoa ativa da mesma empresa, do tipo `PROFESSIONAL` ou `EMPLOYEE` (funcionário: recepção, secretaria). Só o vínculo com um **profissional** dá acesso às fichas de anamnese (ver Anamnese); o vínculo com funcionário identifica a função do usuário, e o acesso dele será tratado à parte. Uma pessoa se liga a no máximo um usuário ativo.
+
+## Profissional no app
+
+- Usuário `PROFESSIONAL` exige `peopleId` de um **profissional** ativo da mesma empresa (funcionário não serve) e `phone` (10 ou 11 dígitos, DDD + número). O telefone é o login e é **único entre os usuários ativos** (409 "Já existe um usuário profissional com este telefone"; checagem explícita no service e índice único parcial no banco para a corrida). Os demais tipos não têm telefone de acesso, e sair do tipo apaga o telefone. Não conta no limite de administradores.
+- Entra por `POST /auth/professional/login` (público, 5 tentativas por minuto por IP) com telefone e senha; credenciais inválidas, usuário excluído ou empresa inativa respondem a mesma mensagem genérica. O login do sistema web recusa esse tipo.
+- **Barreira que nega por padrão:** o `ProfessionalAppGuard` (global) bloqueia com 403 toda rota para o `PROFESSIONAL`, exceto as marcadas com `@ProfessionalApp()`: hoje só `GET /auth/me` e `PATCH /auth/me/password`. Um teste de cobertura fixa a lista exata, e o e2e confere o 403 nas demais. Rota nova para o app precisa ser marcada de propósito.
+- Funcionalidade `professional-app` (só Visualiza; exige Agenda), liberada em todos os planos e empresas. O app mostra apenas a consulta, só dos clientes do próprio profissional; sem anamnese e sem status de pagamento.
+- Troca a própria senha por `PATCH /auth/me/password` (senha atual + nova + confirmação); encerra as outras sessões.
 
 ## Senhas
 

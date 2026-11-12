@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
 } from "class-validator";
 import { UserType } from "../../../../generated/prisma/enums";
 import { Match } from "../../../common/validators/match.validator";
@@ -50,4 +51,14 @@ export class CreateUserDto {
   @IsOptional()
   @IsUUID()
   peopleId?: string | null;
+
+  /**
+   * Telefone com DDD (máscara e +55 são aceitos): o login do usuário
+   * PROFESSIONAL no app, como o cliente entra. Obrigatório nele e só dele; o
+   * formato e a unicidade são conferidos no UserService.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  phone?: string | null;
 }

@@ -19,6 +19,7 @@ import {
 import { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { isUniqueConstraintViolation } from "../../prisma/prisma-errors";
+import { normalizePortalPhone } from "../portal/portal-phone";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { PlanLimitService } from "../company-access/plan-limit.service";
@@ -46,6 +47,8 @@ const profileSelect = {
   id: true,
   name: true,
   email: true,
+  // O telefone de login do usuário PROFESSIONAL (null nos demais).
+  phone: true,
   type: true,
   // Pessoa vinculada (profissional ou funcionário); só vale enquanto ativa (o deletedAt decide no AuthService).
   people: {
@@ -93,6 +96,14 @@ export class UserService {
     return this.prisma.user.findFirst({ where: { email, deletedAt: null } });
   }
 
+  // Login do usuário PROFESSIONAL no app: pelo telefone (só dígitos). Só a
+  // autenticação usa; devolve o hash da senha.
+  findProfessionalByPhoneWithPassword(phone: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: { phone, type: UserType.PROFESSIONAL, deletedAt: null },
+    });
+  }
+
   // Uso do GET /auth/me: o usuário logado com os dados da empresa que o front exibe.
   findProfile(id: string): Promise<UserProfile | null> {
     return this.prisma.user.findFirst({
@@ -119,6 +130,9 @@ export class UserService {
     if (dto.peopleId) {
       await this.ensureLinkablePerson(dto.peopleId, companyId);
     }
+    await this.ensureProfessionalLink(dto.type, dto.peopleId, companyId);
+    const phone = this.resolvePhone(dto.type, dto.phone);
+    if (phone) await this.ensurePhoneFree(phone);
 
     try {
       // Usuário e auditoria do vínculo na mesma transação: sem rastro, sem vínculo.
@@ -139,6 +153,8 @@ export class UserService {
             type: dto.type,
             companyId,
             peopleId: dto.peopleId,
+            // Só o usuário profissional tem telefone (o login dele no app).
+            ...(phone && { phone }),
           },
           omit: omitPassword,
         });
@@ -238,6 +254,27 @@ export class UserService {
     if (linkChanged && dto.peopleId) {
       await this.ensureLinkablePerson(dto.peopleId, user.companyId, id);
     }
+    // O usuário só de app precisa continuar com um profissional vinculado: vale
+    // o tipo e o vínculo que ficarão depois desta alteração.
+    if (typeChanged || linkChanged) {
+      await this.ensureProfessionalLink(
+        dto.type ?? user.type,
+        dto.peopleId !== undefined ? dto.peopleId : user.peopleId,
+        user.companyId,
+      );
+    }
+    // E com o telefone de login: o enviado, ou o que já tem. Sair do tipo só
+    // de app apaga o telefone (os demais não têm).
+    const finalType = dto.type ?? user.type;
+    const phone =
+      finalType === UserType.PROFESSIONAL
+        ? this.resolvePhone(
+            finalType,
+            dto.phone !== undefined ? dto.phone : user.phone,
+          )
+        : this.resolvePhone(finalType, undefined);
+    const phoneChanged = phone !== (user.phone ?? null);
+    if (phoneChanged && phone) await this.ensurePhoneFree(phone, id);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -251,7 +288,11 @@ export class UserService {
         }
         const updated = await tx.user.update({
           where: { id },
-          data: { ...dto, updatedAt: new Date() },
+          data: {
+            ...dto,
+            ...(phoneChanged && { phone }),
+            updatedAt: new Date(),
+          },
           omit: omitPassword,
         });
 
@@ -303,6 +344,40 @@ export class UserService {
     ]);
 
     return updated;
+  }
+
+  /**
+   * Troca da própria senha, depois de conferir a atual. Como na redefinição pelo
+   * ADMIN, encerra as sessões abertas (os refresh tokens deixam de renovar).
+   */
+  async changeOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { password: true },
+    });
+    const matches =
+      user && (await bcrypt.compare(currentPassword, user.password));
+    if (!user || !matches) {
+      throw new BadRequestException("A senha atual está incorreta");
+    }
+    if (await bcrypt.compare(newPassword, user.password)) {
+      throw new BadRequestException(
+        "A nova senha precisa ser diferente da atual",
+      );
+    }
+
+    const password = await this.hashPassword(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { password, updatedAt: new Date() },
+      }),
+      this.revokeSessions(userId),
+    ]);
   }
 
   // Reativa um usuário inativado (limpa o deletedAt).
@@ -475,6 +550,58 @@ export class UserService {
    * requisições ao mesmo tempo), a violação pode ser do e-mail ou do vínculo, e
    * a mensagem cobre os dois quando o vínculo estava em jogo.
    */
+  /**
+   * Telefone de login do usuário só de app: obrigatório nele (10 ou 11 dígitos,
+   * com DDD; máscara e +55 são aceitos) e só dele. Devolve os dígitos, ou null
+   * nos demais tipos.
+   */
+  private resolvePhone(
+    type: UserType,
+    phone: string | null | undefined,
+  ): string | null {
+    const filled = typeof phone === "string" && phone.trim() !== "";
+    if (type !== UserType.PROFESSIONAL) {
+      if (filled) {
+        throw new BadRequestException(
+          "O telefone de acesso é só do usuário profissional",
+        );
+      }
+      return null;
+    }
+    const digits = filled ? normalizePortalPhone(phone) : undefined;
+    if (!digits) {
+      throw new BadRequestException(
+        filled
+          ? "phone deve conter 10 ou 11 dígitos numéricos (DDD + número)"
+          : "O usuário profissional precisa do telefone com que entra no aplicativo",
+      );
+    }
+    return digits;
+  }
+
+  /**
+   * O telefone é o login do profissional no app: dois com o mesmo o tornariam
+   * ambíguo. A checagem explícita dá a mensagem certa (o índice único parcial
+   * do banco não diz qual coluna falhou) e o índice cobre a corrida.
+   */
+  private async ensurePhoneFree(
+    phone: string,
+    exceptUserId?: string,
+  ): Promise<void> {
+    const taken = await this.prisma.user.count({
+      where: {
+        phone,
+        deletedAt: null,
+        ...(exceptUserId && { id: { not: exceptUserId } }),
+      },
+    });
+    if (taken > 0) {
+      throw new ConflictException(
+        "Já existe um usuário profissional com este telefone",
+      );
+    }
+  }
+
   private mapUniqueViolation(error: unknown, linkInvolved = false): unknown {
     if (!isUniqueConstraintViolation(error)) {
       return error;
@@ -500,6 +627,36 @@ export class UserService {
       where: { id: user.peopleId, type: PeopleType.PROFESSIONAL },
       data: { receivesCommission: false, commissionSince: null },
     });
+  }
+
+  /**
+   * O usuário PROFESSIONAL (só app) existe para um profissional: o vínculo é
+   * obrigatório e a pessoa precisa ser um profissional ativo da empresa
+   * (funcionário não vale: não tem agenda nem comissão). Outros tipos não
+   * mudam.
+   */
+  private async ensureProfessionalLink(
+    type: UserType,
+    peopleId: string | null | undefined,
+    companyId: string,
+  ): Promise<void> {
+    if (type !== UserType.PROFESSIONAL) return;
+    const professional = peopleId
+      ? await this.prisma.people.findFirst({
+          where: {
+            id: peopleId,
+            companyId,
+            type: PeopleType.PROFESSIONAL,
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : null;
+    if (!professional) {
+      throw new BadRequestException(
+        "O usuário profissional precisa estar vinculado a um profissional ativo da empresa",
+      );
+    }
   }
 
   /**
