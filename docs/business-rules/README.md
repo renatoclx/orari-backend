@@ -5,7 +5,7 @@ módulo, leia o arquivo da área dele (e os das áreas que ele toca).
 
 | Arquivo                                            | Seções                                                                                                                                                                                |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`empresa-e-acesso.md`](empresa-e-acesso.md)       | Tipos de usuário, Empresas, Acessos e limites da empresa, Usuários e acesso, Senhas                                                                                                   |
+| [`empresa-e-acesso.md`](empresa-e-acesso.md)       | Tipos de usuário, Empresas, Acessos e limites da empresa, Usuários e acesso, Profissional no app, Senhas                                                                                                   |
 | [`pessoas.md`](pessoas.md)                         | Pessoas, Contatos e endereços, Unicidade, Estados e cidades                                                                                                                           |
 | [`servicos.md`](servicos.md)                       | Serviços                                                                                                                                                                              |
 | [`agenda.md`](agenda.md)                           | Agendamentos, Status dos Agendamentos, Fuso horário, Horário de funcionamento, Bloqueio de horários                                                                                   |

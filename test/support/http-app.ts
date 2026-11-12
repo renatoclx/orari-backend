@@ -26,6 +26,7 @@ import {
 } from "../../src/modules/auth/auth-throttle";
 import { AuthController } from "../../src/modules/auth/auth.controller";
 import { ProfessionalAppController } from "../../src/modules/professional-app/professional-app.controller";
+import { ProfessionalCommissionController } from "../../src/modules/professional-app/professional-commission.controller";
 import { JwtAuthGuard } from "../../src/modules/auth/guards/jwt-auth.guard";
 import { ProfessionalAppGuard } from "../../src/modules/auth/guards/professional-app.guard";
 import { RolesGuard } from "../../src/modules/auth/guards/roles.guard";
@@ -88,6 +89,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   StockMovementController,
   ProductSaleController,
   ProfessionalAppController,
+  ProfessionalCommissionController,
   UserController,
 ];
 

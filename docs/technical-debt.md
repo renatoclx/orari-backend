@@ -372,3 +372,53 @@ ordenado por ele e o `balanceAfter` recalculado a partir da data, se a clínica
 precisar lançar no passado.
 
 **Registrado em:** 2026-11-11.
+
+## App do profissional: Início calculado em memória
+
+**Onde:** `ProfessionalHomeService` e `professional-home.ts`
+(`professional-app/`, 2026-11-12).
+
+**O que é:** o Início busca os agendamentos do profissional da semana, do mês e
+do mês anterior (teto de 5.000 linhas) e agrupa as turmas, conta e compara em
+memória, em vez de agregar no banco.
+
+**Impacto:** para um profissional com poucas centenas de atendimentos por mês é
+instantâneo; com volume muito alto (milhares), o trabalho cresce no servidor.
+
+**Como resolver:** `groupBy` por dia, status e sessão de turma no banco; manter
+a regra de agrupamento (a turma conta uma vez) em SQL.
+
+**Registrado em:** 2026-11-12.
+
+## App do profissional: fechamentos paginados no service
+
+**Onde:** `ProfessionalCommissionService.listClosings` (2026-11-12).
+
+**O que é:** `CommissionClosingService.list` devolve todos os fechamentos do
+profissional e a página é cortada depois, no service do app.
+
+**Impacto:** nenhum hoje (há um fechamento por período); com anos de histórico a
+lista de recibos cresce.
+
+**Como resolver:** `skip` e `take` na consulta do fechamento, usados pelas duas
+telas (ADMIN e app).
+
+**Registrado em:** 2026-11-12.
+
+## App do profissional: o dono não vê o que recebe de comissão do próprio atendimento
+
+**Onde:** `receivesCommission` e `ProfessionalCommissionService.summary`
+(2026-11-12).
+
+**O que é:** o profissional vinculado a um usuário ADMIN (o dono que atende)
+nasce sem comissão. Se ele entrar no app como PROFESSIONAL, a tela mostra
+"Você não recebe comissão"; não há como o dono, no app, ver a própria produção
+em dinheiro.
+
+**Impacto:** o Início e a Agenda funcionam para ele; só a aba de comissões é
+vazia. O dono usa o Dashboard e os relatórios no painel.
+
+**Como resolver:** se for pedido, um resumo de produção (atendimentos e faturado)
+no app para quem não recebe comissão.
+
+**Registrado em:** 2026-11-12.

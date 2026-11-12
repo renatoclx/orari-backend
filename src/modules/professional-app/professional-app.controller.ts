@@ -9,6 +9,7 @@ import type { AuthenticatedUser } from "../../common/interfaces/authenticated-us
 import { FindProfessionalAgendaQueryDto } from "./dto/find-professional-agenda-query.dto";
 import { FindProfessionalClientsQueryDto } from "./dto/find-professional-clients-query.dto";
 import { ProfessionalClientsService } from "./professional-clients.service";
+import { ProfessionalHomeService } from "./professional-home.service";
 import { ProfessionalAppService } from "./professional-app.service";
 
 // Rotas do app do profissional: só ele as acessa (@Roles) e só elas ficam
@@ -23,7 +24,21 @@ export class ProfessionalAppController {
   constructor(
     private readonly professionalApp: ProfessionalAppService,
     private readonly clients: ProfessionalClientsService,
+    private readonly home: ProfessionalHomeService,
   ) {}
+
+  @Get("home")
+  @ApiOperation({
+    summary: "Início do próprio profissional",
+    description:
+      "Hoje (total, o que resta e o próximo), a semana de segunda a domingo " +
+      "(atendimentos por dia), o mês (concluídos, faltas, cancelados e " +
+      "clientes, com os concluídos do mês anterior) e os próximos. Turma " +
+      "conta uma vez por sessão. Sem pagamento.",
+  })
+  findHome(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.home.find(currentUser);
+  }
 
   @Get("agenda")
   @ApiOperation({
