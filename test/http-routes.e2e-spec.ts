@@ -15,6 +15,7 @@ import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-tem
 import { AuditService } from "../src/modules/audit/audit.service";
 import { ProfessionalAppService } from "../src/modules/professional-app/professional-app.service";
 import { ProfessionalCommissionService } from "../src/modules/professional-app/professional-commission.service";
+import { ProfessionalHomeService } from "../src/modules/professional-app/professional-home.service";
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
@@ -166,6 +167,7 @@ describe("Rotas HTTP", () => {
         "GET /professional-app/commission-closings/:id (ProfessionalCommissionController.findClosing)",
         "GET /professional-app/commissions (ProfessionalCommissionController.findCommissions)",
         "GET /professional-app/commissions/summary (ProfessionalCommissionController.findSummary)",
+        "GET /professional-app/home (ProfessionalAppController.findHome)",
         "PATCH /auth/me/password (AuthController.changePassword)",
       ]);
     });
@@ -216,6 +218,24 @@ describe("Rotas HTTP", () => {
         .get("/professional-app/agenda?professionalId=outro")
         .set("Authorization", `Bearer ${token}`)
         .expect(400);
+    });
+
+    it("ele lê o próprio Início; os demais perfis recebem 403", async () => {
+      const home = http.mockOf(ProfessionalHomeService);
+      home.find.mockResolvedValue({ today: { total: 0 } });
+      await request(http.server())
+        .get("/professional-app/home")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.professional)}`)
+        .expect(200);
+      expect(home.find).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+      );
+      for (const user of [USERS.superAdmin, USERS.admin]) {
+        await request(http.server())
+          .get("/professional-app/home")
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
+          .expect(403);
+      }
     });
 
     it("ele lê os próprios clientes; o id é validado e os demais perfis recebem 403", async () => {

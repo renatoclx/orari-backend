@@ -7,6 +7,7 @@ import { ProfessionalAppService } from "./professional-app.service";
 import { ProfessionalCommissionController } from "./professional-commission.controller";
 import { ProfessionalCommissionService } from "./professional-commission.service";
 import { ProfessionalClientsService } from "./professional-clients.service";
+import { ProfessionalHomeService } from "./professional-home.service";
 import { ProfessionalLinkService } from "./professional-link.service";
 
 // Consultas do app do profissional (agenda, clientes e comissões).
@@ -16,6 +17,7 @@ import { ProfessionalLinkService } from "./professional-link.service";
   providers: [
     ProfessionalAppService,
     ProfessionalClientsService,
+    ProfessionalHomeService,
     ProfessionalCommissionService,
     ProfessionalLinkService,
   ],

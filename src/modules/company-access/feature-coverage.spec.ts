@@ -226,6 +226,7 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
       "ProfessionalAppController.findAgenda",
       "ProfessionalAppController.findClient",
       "ProfessionalAppController.findClients",
+      "ProfessionalAppController.findHome",
       "ProfessionalCommissionController.findClosing",
       "ProfessionalCommissionController.findClosings",
       "ProfessionalCommissionController.findCommissions",

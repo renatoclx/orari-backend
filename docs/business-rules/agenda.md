@@ -89,3 +89,12 @@
 - `GET /professional-app/agenda?day=AAAA-MM-DD` (dia no relógio da empresa; sem `day`, hoje; dia inexistente: 400) devolve os agendamentos do **próprio profissional** no dia, em ordem de horário, e os bloqueios do dia (valem para a empresa toda). Cancelados e faltas vêm, como na agenda da clínica; teto de 200 por dia.
 - Cada agendamento traz só o necessário para a tela: horário, status, observação, encaixe, cliente (`id` e nome), serviço (nome, cor, duração e preço), origem (`recurrence` com `isPackage`, ou nulo) e a sessão de turma (`id`, vagas, cancelamento). **Não traz** pagamento, comissão, foto nem contato do cliente.
 - Cadastro de profissional inativado, ou usuário sem vínculo com profissional: 403.
+
+## Início do profissional no app
+
+- `GET /professional-app/home` (só do tipo PROFESSIONAL; o profissional vem do vínculo do usuário) devolve, no fuso da empresa:
+  - `today`: `total` (atendimentos de hoje, sem os cancelados), `remaining` (agendado, confirmado ou em andamento que ainda não terminou) e `next` (o que está em andamento ou, sem ele, o próximo de hoje, com `inProgress`);
+  - `week`: os sete dias de **segunda a domingo** da semana de hoje, com a quantidade de atendimentos por dia (sem os cancelados);
+  - `month`: `completed`, `noShow`, `cancelled`, `clients` (clientes distintos com concluído) e `previousCompleted` (concluídos do mês anterior);
+  - `upcoming`: os 3 próximos atendimentos a partir de amanhã (agendado ou confirmado).
+- **Atendimento** conta como na agenda: o avulso, ou a **sessão de turma inteira** (os alunos são vários agendamentos, mas um atendimento; a sessão vale cancelada só se todos cancelaram, concluída ou em andamento se algum chegou lá). `noShow` e `cancelled` contam marcações (cada aluno é uma). Sem pagamento nem dado pessoal.

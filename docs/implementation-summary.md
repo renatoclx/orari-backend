@@ -609,6 +609,11 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Módulo `professional-app` (`ProfessionalAppController` e `ProfessionalAppService`): `GET /professional-app/agenda`, marcada com `@ProfessionalApp()` e `@Roles(PROFESSIONAL)`. Consulta direta ao Prisma com `select` enxuto (sem pagamento nem contato), filtrada pelo vínculo do usuário.
 - Testes: spec do service, a rota na lista exata do teste de cobertura e no e2e (400 com `professionalId`, 403 para os outros perfis).
 
+## 2.62 App do profissional: Início com números e gráfico
+
+- `GET /professional-app/home` (`ProfessionalHomeService`): duas consultas (a semana, o mês e o mês anterior numa só, e os próximos), com `select` enxuto. As regras ficam em `professional-home.ts`, função pura (`homeRanges` e `buildHome`) testada sem mock: agrupamento da turma em um atendimento, semana de segunda a domingo, limites do mês e da virada de ano no relógio da empresa.
+- Testes: spec da função pura (fuso, domingo, janeiro, turma), do service e a rota na lista exata do teste de cobertura e no e2e.
+
 ## 2.61 App do profissional (etapa 4: comissões)
 
 - `ProfessionalCommissionService` e `ProfessionalCommissionController`: reaproveitam `CommissionService` (resumo e lista) e `CommissionClosingService` (fechamentos e recibo, agora exportado pelo `CommissionModule`), sempre com o profissional do vínculo. O mês vira `from` e `to`; o `clientPaid` e os nomes de quem fechou não saem (o fechamento é montado campo a campo).
