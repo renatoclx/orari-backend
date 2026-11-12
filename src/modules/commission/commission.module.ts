@@ -23,6 +23,10 @@ import { CommissionJob } from "./jobs/commission.job";
     CommissionClosingService,
     CommissionJob,
   ],
-  exports: [CommissionService, CommissionAdvanceService],
+  exports: [
+    CommissionService,
+    CommissionAdvanceService,
+    CommissionClosingService,
+  ],
 })
 export class CommissionModule {}

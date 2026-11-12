@@ -14,6 +14,7 @@ import { AnamnesisService } from "../src/modules/anamnesis/anamnesis.service";
 import { AnamnesisTemplateService } from "../src/modules/anamnesis/anamnesis-template.service";
 import { AuditService } from "../src/modules/audit/audit.service";
 import { ProfessionalAppService } from "../src/modules/professional-app/professional-app.service";
+import { ProfessionalCommissionService } from "../src/modules/professional-app/professional-commission.service";
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { CompanyService } from "../src/modules/company/company.service";
@@ -161,6 +162,10 @@ describe("Rotas HTTP", () => {
         "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
         "GET /professional-app/clients (ProfessionalAppController.findClients)",
         "GET /professional-app/clients/:id (ProfessionalAppController.findClient)",
+        "GET /professional-app/commission-closings (ProfessionalCommissionController.findClosings)",
+        "GET /professional-app/commission-closings/:id (ProfessionalCommissionController.findClosing)",
+        "GET /professional-app/commissions (ProfessionalCommissionController.findCommissions)",
+        "GET /professional-app/commissions/summary (ProfessionalCommissionController.findSummary)",
         "PATCH /auth/me/password (AuthController.changePassword)",
       ]);
     });
@@ -225,7 +230,7 @@ describe("Rotas HTTP", () => {
         .expect(200);
       expect(clients.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ id: USERS.professional.id }),
-        expect.objectContaining({ search: "ana", page: 2, limit: 20 }),
+        expect.objectContaining({ search: "ana", page: 2, limit: 10 }),
       );
       await request(http.server())
         .get(`/professional-app/clients/${ANY_UUID}`)
@@ -245,6 +250,52 @@ describe("Rotas HTTP", () => {
           .get("/professional-app/clients")
           .set("Authorization", `Bearer ${http.tokenFor(user)}`)
           .expect(403);
+      }
+    });
+
+    it("ele lê as próprias comissões; mês e id são validados e os demais perfis recebem 403", async () => {
+      const commission = http.mockOf(ProfessionalCommissionService);
+      commission.summary.mockResolvedValue({ month: "2026-11" });
+      commission.list.mockResolvedValue({ items: [], total: 0 });
+      commission.listClosings.mockResolvedValue([]);
+      commission.receipt.mockResolvedValue({ id: ANY_UUID });
+      const token = http.tokenFor(USERS.professional);
+      const get = (path: string, bearer = token) =>
+        request(http.server())
+          .get(path)
+          .set("Authorization", `Bearer ${bearer}`);
+
+      await get("/professional-app/commissions/summary?month=2026-11").expect(
+        200,
+      );
+      expect(commission.summary).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        expect.objectContaining({ month: "2026-11" }),
+      );
+      await get("/professional-app/commissions?month=2026-11&page=2").expect(
+        200,
+      );
+      await get("/professional-app/commission-closings?page=2").expect(200);
+      expect(commission.listClosings).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        expect.objectContaining({ page: 2, limit: 10 }),
+      );
+      await get(`/professional-app/commission-closings/${ANY_UUID}`).expect(
+        200,
+      );
+      await get("/professional-app/commissions/summary?month=2026-13").expect(
+        400,
+      );
+      await get("/professional-app/commission-closings/nao-e-uuid").expect(400);
+      // Não há como pedir as de outro profissional.
+      await get("/professional-app/commissions?professionalId=outro").expect(
+        400,
+      );
+      for (const user of [USERS.superAdmin, USERS.admin]) {
+        await get(
+          "/professional-app/commissions/summary",
+          http.tokenFor(user),
+        ).expect(403);
       }
     });
 

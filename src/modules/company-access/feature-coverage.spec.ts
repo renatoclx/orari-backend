@@ -30,6 +30,7 @@ import { StockMovementController } from "../stock/stock-movement.controller";
 import { ProductSaleController } from "../product-sale/product-sale.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
 import { ProfessionalAppController } from "../professional-app/professional-app.controller";
+import { ProfessionalCommissionController } from "../professional-app/professional-commission.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
 import { CityController } from "../city/city.controller";
@@ -118,6 +119,7 @@ const CONTROLLERS: Controller[] = [
   PayableController,
   AgendaBlockController,
   ProfessionalAppController,
+  ProfessionalCommissionController,
   AuthController,
   BusinessHourController,
   CityController,
@@ -224,6 +226,10 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
       "ProfessionalAppController.findAgenda",
       "ProfessionalAppController.findClient",
       "ProfessionalAppController.findClients",
+      "ProfessionalCommissionController.findClosing",
+      "ProfessionalCommissionController.findClosings",
+      "ProfessionalCommissionController.findCommissions",
+      "ProfessionalCommissionController.findSummary",
     ]);
   });
 });

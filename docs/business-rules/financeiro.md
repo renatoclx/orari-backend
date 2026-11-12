@@ -27,6 +27,13 @@
   - `GET ?professionalId=`: os fechamentos do profissional (inclusive os desfeitos), do número maior para o menor. `GET /:id`: os dados do **recibo** (empresa com razão social, nome e documento; profissional com nome e CPF; pagamento; totais; detalhamento; quem fechou e, se desfeito, quem desfez).
   - `DELETE /:id` (desfazer, ação Exclui): só o **último fechamento não desfeito do profissional** (409); já desfeito: 409. O fechamento fica marcado como **cancelado** (o número não volta e o recibo continua consultável) e as comissões e os adiantamentos voltam ao em aberto; a conta paga do fechamento fica **cancelada**.
 
+### Comissões no app do profissional
+
+- Só consulta, só do **próprio profissional** (o do vínculo do usuário; `professionalId` na consulta é recusado, 400) e só em empresa com a funcionalidade `commissions` (sem ela, 403 "A empresa não usa comissões"). Reaproveita o resumo, a lista e os fechamentos do ADMIN, **sem** o "pago pelo cliente" e sem os nomes de quem fechou ou desfez.
+- `GET /professional-app/commissions/summary?month=AAAA-MM` (mês pela data do atendimento no fuso da empresa; padrão: o atual): `count`, `base` e `amount` do mês, `advanced` e `toPay` (em aberto, sem depender do mês) e `receivesCommission` (falso para quem não recebe, como o dono que atende).
+- `GET /professional-app/commissions?month=&page=`: atendimento a atendimento, 10 por página, com `startAt`, cliente, serviço, `fromPackage`, base, tipo, taxa, valor e `closingNumber` (nulo = em aberto).
+- `GET /professional-app/commission-closings?page=`: os fechamentos dele, do número maior para o menor, 10 por página (os desfeitos, com `cancelledAt`). `GET /professional-app/commission-closings/:id`: o recibo completo (empresa, nome e CPF dele, totais, atendimentos e adiantamentos); o de outro profissional responde 404.
+
 ## Categorias de despesa
 
 > **Estado:** 2026-11-10 (Contas a pagar, etapa 3). Funcionalidade `expense-categories`, marcada no modelo padrão.

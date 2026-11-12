@@ -30,7 +30,7 @@
 
 ## Clientes do profissional (app)
 
-- `GET /professional-app/clients?search=&page=` lista os clientes do **próprio profissional** (o do vínculo do usuário; `professionalId` na consulta é recusado, 400): clientes **ativos** com ao menos um agendamento **não cancelado** com ele, a mesma regra da Carteira de clientes. Ordem alfabética, 20 por página (`limit` até 100), busca pelo nome sem acento nem caixa. Cada item: `id`, `name`, `photoUrl` (assinada), `phone` (celular do contato principal), `lastCompleted` (`startAt` e `serviceName`) e `nextAt`.
+- `GET /professional-app/clients?search=&page=` lista os clientes do **próprio profissional** (o do vínculo do usuário; `professionalId` na consulta é recusado, 400): clientes **ativos** com ao menos um agendamento **não cancelado** com ele, a mesma regra da Carteira de clientes. Ordem alfabética, 10 por página (`limit` até 100), busca pelo nome sem acento nem caixa. Cada item: `id`, `name`, `photoUrl` (assinada), `phone` (celular do contato principal), `lastCompleted` (`startAt` e `serviceName`) e `nextAt`.
 - `GET /professional-app/clients/:id`: o mesmo cliente com o `history`, os 50 atendimentos mais recentes **dele** com esse cliente (horário, status, observação, encaixe, serviço com preço, origem e se foi em turma). Cliente que não é da carteira dele, ou inexistente: 404.
 - Não saem por estas rotas: pagamento, anamnese, e-mail, CPF, endereço, nascimento nem a conta do app.
 
