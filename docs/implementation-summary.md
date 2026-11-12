@@ -21,7 +21,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | State                | — (somente leitura, seed IBGE)               | 27 estados                                                                                       |
 | City                 | — (somente leitura, seed IBGE)               | 5.571 cidades; busca por nome sem acento                                                         |
 | Company              | **Não é excluída**, é inativada (`isActive`) | CNPJ numérico ou alfanumérico com dígitos verificadores                                          |
-| User                 | Soft delete                                  | Tipos `SUPER_ADMIN`, `ADMIN`, `USER`; vínculo opcional com um profissional (`peopleId`)          |
+| User                 | Soft delete                                  | Tipos `SUPER_ADMIN` (único), `ADMIN` e `PROFESSIONAL`; vínculo opcional com um profissional (`peopleId`)          |
 | AnamnesisTemplate    | **Sem exclusão** (`isActive`, reativável)    | Nome único na empresa (sem acento/maiúsculas); versões e perguntas imutáveis                     |
 | Anamnesis            | **Sem exclusão nem alteração**               | Ficha por cliente e modelo, presa à versão; registros imutáveis; respostas criptografadas        |
 | AuditLog             | **Sem exclusão nem alteração** (só insere)   | Registro de ações sensíveis; consulta só pelo ADMIN                                              |
@@ -598,6 +598,23 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Recorrência:** `buildOccurrences` e o calendário (`toDateParts`, `isBeforeOrSameDay`, `advanceOneDay`, `minutesBetween`) vão para `recurrence-occurrences.ts`, com spec próprio; o `weekDayIndex` local dá lugar ao `weekDayIndexOf`.
 - **Padrão:** a regra de quando separar um service entrou em `coding-standards.md` ("Organização").
 
+## 2.57 App do profissional (etapa 1: acesso)
+
+- **Perfil:** `UserType.PROFESSIONAL` (migração `professional_app`, que também cria a funcionalidade `professional-app` para todas as empresas) e `User.phone` (migração `user_phone`, índice único parcial entre ativos).
+- **Barreira:** decorator `@ProfessionalApp()` e `ProfessionalAppGuard` global; só `me` e `changePassword` liberados. `feature-coverage.spec` e o e2e fixam a lista.
+- **Login:** `AuthService.professionalLogin` (telefone normalizado, bcrypt com hash falso para tempo constante). `UserService`: `ensureProfessionalLink`, `resolvePhone`, `ensurePhoneFree`, `changeOwnPassword`.
+
+## 2.58 App do profissional (etapa 2: agenda)
+
+- Módulo `professional-app` (`ProfessionalAppController` e `ProfessionalAppService`): `GET /professional-app/agenda`, marcada com `@ProfessionalApp()` e `@Roles(PROFESSIONAL)`. Consulta direta ao Prisma com `select` enxuto (sem pagamento nem contato), filtrada pelo vínculo do usuário.
+- Testes: spec do service, a rota na lista exata do teste de cobertura e no e2e (400 com `professionalId`, 403 para os outros perfis).
+
+## 2.59 App do profissional (etapa 3: clientes)
+
+- `ProfessionalClientsService` (lista e ficha) e `ProfessionalLinkService` (o profissional do usuário logado, usado pelos três serviços do módulo); `presentService` e `presentOrigin` dão o mesmo formato de serviço e origem à agenda e ao histórico.
+- Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
+- Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
+
 ## 2.56 Fotos privadas por link assinado
 
 - **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.
@@ -605,22 +622,30 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Porteiro do `/uploads`** (`uploadsGate`, antes dos arquivos estáticos): só `companies` é pública; o resto exige assinatura válida (403). O caminho é decodificado e normalizado antes de olhar a pasta (`..` responde 404). A foto assinada sai com `Cache-Control: private, max-age=<até vencer>`.
 - **Testes:** specs da assinatura e do interceptor, e o `app.setup.spec` com uma pasta de uploads real (link assinado abre, puro e adulterado dão 403, travessia dá 404, logo abre). Verificado na API real: upload de pessoa e de produto, listagem, logo.
 
-## 2.57 Erros do Prisma sem tratamento
+## 2.60 Papéis do sistema: sem o tipo USER, um só SUPER_ADMIN
+
+- **Migração `remove_user_type`:** apaga os usuários `USER` (com as sessões e a auditoria deles, por causa das chaves `RESTRICT`), recria o enum `UserType` com `SUPER_ADMIN`, `ADMIN` e `PROFESSIONAL` e cria o índice único parcial `users_single_super_admin_key` (no máximo um SUPER_ADMIN ativo).
+- **`UserService.ensureCanAssignType`:** recusa (403) criar ou promover para `SUPER_ADMIN` pela API, para qualquer usuário; o seed segue criando o primeiro.
+- **Limites:** sem mudança. O ADMIN que atua como profissional ocupa uma vaga de `professionals`, e o usuário `PROFESSIONAL` do app já é contado pela pessoa a que se liga. O funcionário continua só como cadastro.
+- **Testes:** os specs e fixtures que usavam `USER` passaram a `ADMIN`/`PROFESSIONAL`; o e2e confere que o `PROFESSIONAL` e (onde não consta no `@Roles`) o `SUPER_ADMIN` recebem 403 nas rotas restritas. Verificado na API real: criar `SUPER_ADMIN` dá 403, `USER` dá 400 e um segundo SUPER_ADMIN no banco é recusado pelo índice.
+
+## 2.61 Erros do Prisma sem tratamento
 
 - **`PrismaExceptionFilter`** (`src/prisma/prisma-exception.filter.ts`, global em `configureApp`): recebe o `PrismaClientKnownRequestError` que nenhum service tratou. `P2025` vira 404 "Registro não encontrado"; `P2002`, 409 "Já existe um registro com estes dados"; `P2003` (chave estrangeira), 409 "A operação depende de um registro que não existe ou está em uso"; `P2034` (conflito entre transações), 409 "Outra operação mudou estes dados; tente novamente". Outro código continua 500, sem detalhes do banco na resposta.
 - Os tratamentos dos services continuam, com as mensagens precisas; o filtro registra um aviso com o código, para achar o caso que falta tratar.
 - **Testes:** `app.setup.spec` com uma rota que lança cada código.
 
-## 2.58 Pagamento pago: só o ADMIN, com auditoria
+## 2.62 Pagamento pago: só o ADMIN, com auditoria
 
 - **Banco** (migration `20261112113535_audit_payment_paid`): ações `PAYMENT_PAID_UPDATED` e `PAYMENT_PAID_REMOVED` no `AuditAction` e a coluna `audit_logs.details` (JSONB, opcional), com o antes e o depois.
 - **`PaymentService.update` e `remove`** passam a receber o usuário e o IP. `ensureCanChangePaid` recusa o `PAID` para quem não é ADMIN (403), antes de gravar. Com o ADMIN, a gravação e o `AuditService.record` rodam na mesma transação; `auditSnapshot` guarda valor (texto com duas casas), status, método, `paidAt` e vencimento.
 - **`AuditEntry`** ganhou `details` (opcional); as outras auditorias não mudam.
 - **Testes:** 403 do USER sem gravar, auditoria do ADMIN (alteração e exclusão) e o pendente livre, sem auditoria.
 
-## 2.59 Trava da agenda em todos os caminhos
+## 2.63 Trava da agenda em todos os caminhos
 
 - **`AppointmentService.lockAgenda(tx, { professionalIds, clientIds })`:** `pg_advisory_xact_lock` por chave (`appointment:<profissional>`, o mesmo prefixo da trava antiga, e `appointment-client:<cliente>`), sem repetir e em ordem, até o fim da transação.
 - **Onde:** `create` (agora também o cliente); `applyUpdate` (a conferência e a gravação passaram para uma transação travada; antes eram passos soltos); `rescheduleFromRecurrence` e `createFromRecurrence` (passam a exigir `Prisma.TransactionClient`); `RecurringAppointmentService.createSchedule` e `replaceInClassGroup`, e `ClassSessionService.enrollInClassGroup` e `enroll`, que travam a agenda **antes** da linha da sessão (`FOR UPDATE`), na ordem que evita deadlock.
 - **Testes:** ordem e repetição das chaves, a criação travando profissional e cliente, e os mocks dos services de recorrência e turma com `lockAgenda`. Na API real, cinco rodadas de cada corrida (mesmo cliente com dois profissionais, duas edições para o mesmo horário, duas recorrências, recorrência contra avulso, encaixe na turma contra avulso, recorrência na turma contra encaixe em lote): sempre um passa e o outro recebe 409, sem deadlock nem 500. Antes, não havia sobreposição gravada no banco local.
 - **Mensagem do conflito:** `findSlotConflict` passou a dizer "cliente" quando o agendamento achado não conta para o profissional pela regra da consulta (ex.: o aluno que já está na mesma sessão da turma). Antes, o mesmo profissional fazia a mensagem dizer "profissional". Valendo para os dois, continua "profissional".
+

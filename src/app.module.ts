@@ -44,6 +44,7 @@ import { StockModule } from "./modules/stock/stock.module";
 import { ProductSaleModule } from "./modules/product-sale/product-sale.module";
 import { PayableModule } from "./modules/payable/payable.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
+import { ProfessionalAppModule } from "./modules/professional-app/professional-app.module";
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
     ProductSaleModule,
     PayableModule,
     AgendaBlockModule,
+    ProfessionalAppModule,
     PeopleModule,
     ContactModule,
     AddressModule,

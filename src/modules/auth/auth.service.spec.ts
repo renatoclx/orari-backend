@@ -26,6 +26,7 @@ describe("AuthService", () => {
 
   const userServiceMock = {
     findByEmailWithPassword: vi.fn(),
+    findProfessionalByPhoneWithPassword: vi.fn(),
     findActiveById: vi.fn(),
     findProfile: vi.fn(),
   };
@@ -219,6 +220,89 @@ describe("AuthService", () => {
 
       await expect(authService.me("user-1")).rejects.toBeInstanceOf(
         UnauthorizedException,
+      );
+    });
+  });
+
+  describe("professionalLogin (telefone, o app)", () => {
+    const dto = { phone: "(11) 98888-0001", password: "senha-forte" };
+    const user = {
+      id: "user-9",
+      email: "pro@clinica.com",
+      password: "hashed",
+      companyId: "company-1",
+    };
+
+    it("entra pelo telefone (só os dígitos) e devolve os tokens", async () => {
+      userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
+        user,
+      );
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+      companyServiceMock.isActive.mockResolvedValue(true);
+      jwtServiceMock.signAsync.mockResolvedValue("signed-token");
+
+      const result = await authService.professionalLogin(dto);
+
+      expect(
+        userServiceMock.findProfessionalByPhoneWithPassword,
+      ).toHaveBeenCalledWith("11988880001");
+      expect(jwtServiceMock.signAsync).toHaveBeenCalledWith({
+        sub: "user-9",
+        email: "pro@clinica.com",
+      });
+      expect(result.accessToken).toBe("signed-token");
+    });
+
+    it("aceita o +55", async () => {
+      userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
+        null,
+      );
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+
+      await expect(
+        authService.professionalLogin({ ...dto, phone: "+5511988880001" }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(
+        userServiceMock.findProfessionalByPhoneWithPassword,
+      ).toHaveBeenCalledWith("11988880001");
+    });
+
+    it("telefone sem profissional, senha errada ou telefone inválido: a mesma recusa (401), com a comparação rodando", async () => {
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+      userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
+        null,
+      );
+      await expect(authService.professionalLogin(dto)).rejects.toThrow(
+        "Credenciais inválidas",
+      );
+
+      userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
+        user,
+      );
+      await expect(authService.professionalLogin(dto)).rejects.toThrow(
+        "Credenciais inválidas",
+      );
+
+      // Telefone fora do formato: nem consulta o banco, mas compara do mesmo jeito.
+      userServiceMock.findProfessionalByPhoneWithPassword.mockClear();
+      await expect(
+        authService.professionalLogin({ ...dto, phone: "123" }),
+      ).rejects.toThrow("Credenciais inválidas");
+      expect(
+        userServiceMock.findProfessionalByPhoneWithPassword,
+      ).not.toHaveBeenCalled();
+      expect(bcrypt.compare).toHaveBeenCalledTimes(3);
+    });
+
+    it("empresa inativa recusa com a mesma mensagem", async () => {
+      userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
+        user,
+      );
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+      companyServiceMock.isActive.mockResolvedValue(false);
+
+      await expect(authService.professionalLogin(dto)).rejects.toThrow(
+        "Credenciais inválidas",
       );
     });
   });

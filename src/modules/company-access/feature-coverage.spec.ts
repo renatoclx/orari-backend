@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { describe, expect, it } from "vitest";
+import { PROFESSIONAL_APP_KEY } from "../../common/decorators/professional-app.decorator";
 import {
   FEATURE_BY_PERSON_TYPE_KEY,
   FEATURE_KEY,
@@ -28,6 +29,7 @@ import { ProductController } from "../product/product.controller";
 import { StockMovementController } from "../stock/stock-movement.controller";
 import { ProductSaleController } from "../product-sale/product-sale.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
+import { ProfessionalAppController } from "../professional-app/professional-app.controller";
 import { AuthController } from "../auth/auth.controller";
 import { BusinessHourController } from "../business-hour/business-hour.controller";
 import { CityController } from "../city/city.controller";
@@ -115,6 +117,7 @@ const CONTROLLERS: Controller[] = [
   ExpenseCategoryController,
   PayableController,
   AgendaBlockController,
+  ProfessionalAppController,
   AuthController,
   BusinessHourController,
   CityController,
@@ -194,5 +197,33 @@ describe("cobertura da barreira por funcionalidade", () => {
         !known.has(key),
     );
     expect(stale).toEqual([]);
+  });
+});
+
+describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
+  // O PROFESSIONAL nega por padrão: só passa em rota marcada com
+  // @ProfessionalApp(). Marcar uma rota nova é decisão de segurança, então ela
+  // precisa entrar nesta lista de propósito.
+  it("só as rotas esperadas estão marcadas @ProfessionalApp()", () => {
+    const marked: string[] = [];
+    for (const controller of CONTROLLERS) {
+      for (const route of routesOf(controller)) {
+        const handler = (controller.prototype as Record<string, object>)[route];
+        if (
+          Reflect.getMetadata(PROFESSIONAL_APP_KEY, handler) === true ||
+          Reflect.getMetadata(PROFESSIONAL_APP_KEY, controller) === true
+        ) {
+          marked.push(`${controller.name}.${route}`);
+        }
+      }
+    }
+
+    expect(marked.sort()).toEqual([
+      "AuthController.changePassword",
+      "AuthController.me",
+      "ProfessionalAppController.findAgenda",
+      "ProfessionalAppController.findClient",
+      "ProfessionalAppController.findClients",
+    ]);
   });
 });

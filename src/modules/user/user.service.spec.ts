@@ -23,6 +23,7 @@ import { UserService } from "./user.service";
 
 vi.mock("bcrypt", () => ({
   hash: vi.fn(),
+  compare: vi.fn(),
 }));
 
 const anyDate: unknown = expect.any(Date);
@@ -82,13 +83,13 @@ describe("UserService", () => {
     email: "maria@orari.com",
     password: "senha-forte",
     passwordConfirmation: "senha-forte",
-    type: "USER",
+    type: "ADMIN",
   };
   const storedUser = {
     id: "user-2",
     name: dto.name,
     email: dto.email,
-    type: "USER",
+    type: "ADMIN",
     companyId: COMPANY_ID,
   };
   const resetDto = {
@@ -131,6 +132,7 @@ describe("UserService", () => {
           id: true,
           name: true,
           email: true,
+          phone: true,
           type: true,
           people: {
             select: {
@@ -177,10 +179,126 @@ describe("UserService", () => {
           name: dto.name,
           email: dto.email,
           password: "hashed",
-          type: "USER",
+          type: "ADMIN",
           companyId: COMPANY_ID,
         },
         omit,
+      });
+    });
+
+    describe("usuário PROFESSIONAL (só app)", () => {
+      const peopleId = "11111111-1111-4111-8111-111111111111";
+      const proDto = {
+        ...dto,
+        type: "PROFESSIONAL" as const,
+        peopleId,
+        phone: "(11) 98888-0001",
+      };
+
+      it("exige o vínculo", async () => {
+        await expect(
+          userService.create(
+            { ...dto, type: "PROFESSIONAL", phone: "11988880001" },
+            adminUser,
+          ),
+        ).rejects.toThrow("vinculado a um profissional ativo");
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("recusa funcionário: só o profissional ativo da empresa vale", async () => {
+        // O vínculo comum aceita funcionário (1ª consulta); a do app não (2ª).
+        prismaMock.people.findFirst
+          .mockResolvedValueOnce({ id: peopleId })
+          .mockResolvedValueOnce(null);
+        prismaMock.user.findFirst.mockResolvedValue(null);
+
+        await expect(
+          userService.create(proDto, adminUser),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.people.findFirst).toHaveBeenLastCalledWith({
+          where: {
+            id: peopleId,
+            companyId: COMPANY_ID,
+            type: "PROFESSIONAL",
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("exige o telefone de login e confere o formato", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+
+        await expect(
+          userService.create({ ...proDto, phone: undefined }, adminUser),
+        ).rejects.toThrow("precisa do telefone");
+        await expect(
+          userService.create({ ...proDto, phone: "123" }, adminUser),
+        ).rejects.toThrow("10 ou 11 dígitos");
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("aceita o +55 e a máscara, gravando só os dígitos", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.create.mockResolvedValue(storedUser);
+
+        await userService.create(
+          { ...proDto, phone: "+55 (11) 98888-0001" },
+          adminUser,
+        );
+
+        expect(prismaMock.user.create).toHaveBeenCalledWith(
+          containing({ data: containing({ phone: "11988880001" }) }),
+        );
+      });
+
+      it("telefone já usado por outro usuário ativo responde 409, sem gravar", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.count.mockResolvedValueOnce(1);
+
+        await expect(userService.create(proDto, adminUser)).rejects.toThrow(
+          "Já existe um usuário profissional com este telefone",
+        );
+        expect(prismaMock.user.count).toHaveBeenCalledWith({
+          where: { phone: "11988880001", deletedAt: null },
+        });
+        expect(prismaMock.user.create).not.toHaveBeenCalled();
+      });
+
+      it("os demais tipos não têm telefone de acesso (400 se enviado)", async () => {
+        await expect(
+          userService.create({ ...dto, phone: "11988880001" }, adminUser),
+        ).rejects.toThrow("só do usuário profissional");
+      });
+
+      it("cria vinculado ao profissional, sem ocupar vaga de administrador", async () => {
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        prismaMock.user.findFirst.mockResolvedValue(null);
+        prismaMock.user.create.mockResolvedValue({
+          ...storedUser,
+          type: "PROFESSIONAL",
+          peopleId,
+        });
+
+        await userService.create(proDto, adminUser);
+
+        expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
+        // O telefone é gravado só com os dígitos (é o login dele no app).
+        expect(prismaMock.user.create).toHaveBeenCalledWith(
+          containing({
+            data: containing({
+              type: "PROFESSIONAL",
+              peopleId,
+              phone: "11988880001",
+            }),
+          }),
+        );
+        // O profissional segue com a comissão como está (não é o dono que atende).
+        expect(prismaMock.people.updateMany).not.toHaveBeenCalled();
       });
     });
 
@@ -235,12 +353,19 @@ describe("UserService", () => {
         });
       });
 
-      it("usuário comum vinculado: a comissão do profissional não muda", async () => {
+      it("usuário PROFESSIONAL vinculado: a comissão do profissional não muda", async () => {
         prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
         prismaMock.user.findFirst.mockResolvedValue(null);
-        prismaMock.user.create.mockResolvedValue({ ...storedUser, peopleId });
+        prismaMock.user.create.mockResolvedValue({
+          ...storedUser,
+          type: "PROFESSIONAL",
+          peopleId,
+        });
 
-        await userService.create(linkedDto, adminUser);
+        await userService.create(
+          { ...linkedDto, type: "PROFESSIONAL", phone: "(11) 98888-0001" },
+          adminUser,
+        );
 
         expect(prismaMock.people.updateMany).not.toHaveBeenCalled();
       });
@@ -264,13 +389,18 @@ describe("UserService", () => {
         expect(prismaMock.user.create).not.toHaveBeenCalled();
       });
 
-      it("sem vínculo, não consulta profissional nem audita", async () => {
+      it("sem vínculo, não consulta profissional nem audita o vínculo", async () => {
         prismaMock.user.create.mockResolvedValue(storedUser);
 
         await userService.create(dto, adminUser);
 
         expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
-        expect(auditServiceMock.record).not.toHaveBeenCalled();
+        // Só a auditoria do tipo ADMIN; a do vínculo não existe sem peopleId.
+        expect(auditServiceMock.record).toHaveBeenCalledTimes(1);
+        expect(auditServiceMock.record).toHaveBeenCalledWith(
+          containing({ action: "USER_TYPE_CHANGED" }),
+          prismaMock,
+        );
       });
     });
 
@@ -281,10 +411,16 @@ describe("UserService", () => {
       expect(prismaMock.user.create).not.toHaveBeenCalled();
     });
 
-    it("ADMIN não pode criar SUPER_ADMIN", async () => {
-      await expect(
-        userService.create({ ...dto, type: "SUPER_ADMIN" }, adminUser),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+    it("ninguém cria SUPER_ADMIN pela API, nem o SUPER_ADMIN", async () => {
+      for (const user of [adminUser, superAdminUser]) {
+        await expect(
+          userService.create(
+            { ...dto, type: "SUPER_ADMIN", companyId: COMPANY_ID },
+            user,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
     });
 
     it("SUPER_ADMIN cria na empresa informada, que precisa estar ativa", async () => {
@@ -470,20 +606,128 @@ describe("UserService", () => {
       });
     });
 
-    describe("auditoria da mudança de tipo", () => {
-      it.each([
-        ["promove a ADMIN", "USER", "ADMIN"],
-        ["tira do ADMIN", "ADMIN", "USER"],
-      ])("%s e audita na mesma transação", async (_, from, to) => {
+    describe("usuário PROFESSIONAL (só app)", () => {
+      const peopleId = "11111111-1111-4111-8111-111111111111";
+      const professional = {
+        ...storedUser,
+        type: "PROFESSIONAL",
+        peopleId,
+        phone: "11988880001",
+      };
+
+      it("não perde o vínculo enquanto for só de app", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(professional);
+
+        await expect(
+          userService.update("user-2", { peopleId: null }, adminUser),
+        ).rejects.toThrow("vinculado a um profissional ativo");
+        expect(prismaMock.user.update).not.toHaveBeenCalled();
+      });
+
+      it("virar só de app sem profissional vinculado é recusado", async () => {
         prismaMock.user.findFirst.mockResolvedValue({
           ...storedUser,
-          type: from,
+          peopleId: null,
         });
+
+        await expect(
+          userService.update("user-2", { type: "PROFESSIONAL" }, adminUser),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it("virar só de app com um profissional ativo vinculado funciona", async () => {
+        prismaMock.user.findFirst.mockResolvedValue({
+          ...storedUser,
+          peopleId,
+        });
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+        // O beforeEach do bloco deixa count=1 (limite de admins); aqui o telefone está livre.
+        prismaMock.user.count.mockResolvedValue(0);
+        prismaMock.user.update.mockResolvedValue(professional);
+
+        await userService.update(
+          "user-2",
+          { type: "PROFESSIONAL", phone: "(11) 98888-0001" },
+          adminUser,
+        );
+
+        expect(prismaMock.user.update).toHaveBeenCalledWith(
+          containing({ data: containing({ phone: "11988880001" }) }),
+        );
+      });
+
+      it("trocar o telefone confere os outros usuários, menos ele mesmo", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(professional);
+        prismaMock.user.count.mockResolvedValueOnce(1);
+
+        await expect(
+          userService.update("user-2", { phone: "11977770002" }, adminUser),
+        ).rejects.toThrow(
+          "Já existe um usuário profissional com este telefone",
+        );
+        expect(prismaMock.user.count).toHaveBeenCalledWith({
+          where: {
+            phone: "11977770002",
+            deletedAt: null,
+            id: { not: "user-2" },
+          },
+        });
+      });
+
+      it("sair do tipo só de app apaga o telefone", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(professional);
+        prismaMock.user.update.mockResolvedValue({
+          ...professional,
+          type: "ADMIN",
+          phone: null,
+        });
+
+        await userService.update("user-2", { type: "ADMIN" }, adminUser);
+
+        expect(prismaMock.user.update).toHaveBeenCalledWith(
+          containing({ data: containing({ type: "ADMIN", phone: null }) }),
+        );
+      });
+
+      it("não deixa tirar o telefone enquanto for só de app (400)", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(professional);
+        prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+
+        await expect(
+          userService.update("user-2", { phone: null }, adminUser),
+        ).rejects.toThrow("precisa do telefone");
+      });
+
+      it("trocar outros dados não confere o vínculo de novo", async () => {
+        prismaMock.user.findFirst.mockResolvedValue(professional);
+        prismaMock.user.update.mockResolvedValue(professional);
+
+        await userService.update("user-2", { name: "Novo nome" }, adminUser);
+
+        expect(prismaMock.people.findFirst).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("auditoria da mudança de tipo", () => {
+      const appPeopleId = "11111111-1111-4111-8111-111111111111";
+
+      it.each([
+        ["promove a ADMIN", "PROFESSIONAL", "ADMIN"],
+        ["rebaixa a PROFESSIONAL", "ADMIN", "PROFESSIONAL"],
+      ])("%s e audita na mesma transação", async (_, from, to) => {
+        // 1ª consulta: o usuário; as demais (vínculo e telefone livres): nenhum.
+        prismaMock.user.findFirst
+          .mockResolvedValue(null)
+          .mockResolvedValueOnce({ ...storedUser, type: from });
+        // O usuário só de app precisa do profissional e do telefone.
+        prismaMock.people.findFirst.mockResolvedValue({ id: appPeopleId });
         prismaMock.user.update.mockResolvedValue({ ...storedUser, type: to });
 
         await userService.update(
           "user-2",
-          { type: to as "USER" | "ADMIN" },
+          to === "PROFESSIONAL"
+            ? { type: to, peopleId: appPeopleId, phone: "11988880001" }
+            : { type: to as "ADMIN" },
           adminUser,
           "10.0.0.1",
         );
@@ -505,14 +749,17 @@ describe("UserService", () => {
         prismaMock.user.findFirst.mockResolvedValue(storedUser);
         prismaMock.user.update.mockResolvedValue(storedUser);
 
-        await userService.update("user-2", { type: "USER" }, adminUser);
+        await userService.update("user-2", { type: "ADMIN" }, adminUser);
         await userService.update("user-2", { name: "Outro" }, adminUser);
 
         expect(auditServiceMock.record).not.toHaveBeenCalled();
       });
 
       it("não altera o tipo se a auditoria falhar", async () => {
-        prismaMock.user.findFirst.mockResolvedValue(storedUser);
+        prismaMock.user.findFirst.mockResolvedValue({
+          ...storedUser,
+          type: "PROFESSIONAL",
+        });
         prismaMock.user.update.mockResolvedValue({
           ...storedUser,
           type: "ADMIN",
@@ -635,7 +882,7 @@ describe("UserService", () => {
       });
 
       await expect(
-        userService.update(adminUser.id, { type: "USER" }, adminUser),
+        userService.update(adminUser.id, { type: "PROFESSIONAL" }, adminUser),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
@@ -656,25 +903,77 @@ describe("UserService", () => {
       expect(prismaMock.user.update).toHaveBeenCalled();
     });
 
-    it("ADMIN não pode promover alguém a SUPER_ADMIN", async () => {
+    it("ninguém promove alguém a SUPER_ADMIN pela API, nem o SUPER_ADMIN", async () => {
       prismaMock.user.findFirst.mockResolvedValue(storedUser);
 
+      for (const user of [adminUser, superAdminUser]) {
+        await expect(
+          userService.update("user-2", { type: "SUPER_ADMIN" }, user),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findProfessionalByPhoneWithPassword", () => {
+    it("só o usuário PROFESSIONAL ativo, pelo telefone", async () => {
+      await userService.findProfessionalByPhoneWithPassword("11988880001");
+
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          phone: "11988880001",
+          type: "PROFESSIONAL",
+          deletedAt: null,
+        },
+      });
+    });
+  });
+
+  describe("changeOwnPassword", () => {
+    it("confere a senha atual, grava o hash e encerra as sessões", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ password: "hash-atual" });
+      vi.mocked(bcrypt.compare)
+        .mockResolvedValueOnce(true as never) // a atual confere
+        .mockResolvedValueOnce(false as never); // a nova é outra
+
+      await userService.changeOwnPassword("user-2", "atual", "nova-senha");
+
+      expect(bcrypt.hash).toHaveBeenCalledWith("nova-senha", 10);
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: "user-2" },
+        data: { password: "hashed", updatedAt: anyDate },
+      });
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith(
+        revokeSessionsOf("user-2"),
+      );
+    });
+
+    it("recusa a senha atual errada (400) sem gravar", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ password: "hash-atual" });
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+
       await expect(
-        userService.update("user-2", { type: "SUPER_ADMIN" }, adminUser),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+        userService.changeOwnPassword("user-2", "errada", "nova-senha"),
+      ).rejects.toThrow("A senha atual está incorreta");
       expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
 
-    it("SUPER_ADMIN pode promover alguém a SUPER_ADMIN", async () => {
-      prismaMock.user.findFirst.mockResolvedValue(storedUser);
+    it("recusa a nova senha igual à atual (400)", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ password: "hash-atual" });
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
 
-      await userService.update(
-        "user-2",
-        { type: "SUPER_ADMIN" },
-        superAdminUser,
-      );
+      await expect(
+        userService.changeOwnPassword("user-2", "atual", "atual"),
+      ).rejects.toThrow("diferente da atual");
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
 
-      expect(prismaMock.user.update).toHaveBeenCalled();
+    it("usuário inexistente ou excluído responde como senha incorreta", async () => {
+      prismaMock.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        userService.changeOwnPassword("user-x", "atual", "nova-senha"),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -858,16 +1157,28 @@ describe("UserService", () => {
       expect(prismaMock.user.create).not.toHaveBeenCalled();
     });
 
-    it("criar usuário comum não confere o limite", async () => {
-      prismaMock.user.create.mockResolvedValue(storedUser);
+    it("criar usuário PROFESSIONAL não confere o limite de administradores", async () => {
+      const peopleId = "11111111-1111-4111-8111-111111111111";
+      prismaMock.people.findFirst.mockResolvedValue({ id: peopleId });
+      prismaMock.user.findFirst.mockResolvedValue(null);
+      prismaMock.user.create.mockResolvedValue({
+        ...storedUser,
+        type: "PROFESSIONAL",
+      });
 
-      await userService.create(dto, adminUser);
+      await userService.create(
+        { ...dto, type: "PROFESSIONAL", peopleId, phone: "11988880001" },
+        adminUser,
+      );
 
       expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
     });
 
-    it("promover a ADMIN confere o limite; mudar para outro tipo, não", async () => {
-      prismaMock.user.findFirst.mockResolvedValue(storedUser);
+    it("promover a ADMIN confere o limite; alterar só o nome, não", async () => {
+      prismaMock.user.findFirst.mockResolvedValue({
+        ...storedUser,
+        type: "PROFESSIONAL",
+      });
       prismaMock.user.update.mockResolvedValue({
         ...storedUser,
         type: "ADMIN",
@@ -881,11 +1192,12 @@ describe("UserService", () => {
       );
 
       planLimitMock.assertWithinLimit.mockClear();
+      prismaMock.user.findFirst.mockResolvedValue(storedUser);
       await userService.update("user-2", { name: "Maria Silva" }, adminUser);
       expect(planLimitMock.assertWithinLimit).not.toHaveBeenCalled();
     });
 
-    it("reativar ADMIN confere o limite; reativar usuário comum, não", async () => {
+    it("reativar ADMIN confere o limite; reativar PROFESSIONAL, não", async () => {
       prismaMock.user.update.mockResolvedValue(storedUser);
 
       prismaMock.user.findFirst.mockResolvedValue({
@@ -899,7 +1211,7 @@ describe("UserService", () => {
 
       prismaMock.user.findFirst.mockResolvedValue({
         deletedAt: new Date(),
-        type: "USER",
+        type: "PROFESSIONAL",
         peopleId: null,
         companyId: COMPANY_ID,
       });

@@ -13,6 +13,7 @@ import { vi, type Mock } from "vitest";
 import { UserType } from "../../generated/prisma/enums";
 import { AppController } from "../../src/app.controller";
 import { AppService } from "../../src/app.service";
+import { PROFESSIONAL_APP_KEY } from "../../src/common/decorators/professional-app.decorator";
 import { IS_PUBLIC_KEY } from "../../src/common/decorators/public.decorator";
 import { ROLES_KEY } from "../../src/common/decorators/roles.decorator";
 import { AddressController } from "../../src/modules/address/address.controller";
@@ -24,7 +25,9 @@ import {
   LOGIN_LIMIT,
 } from "../../src/modules/auth/auth-throttle";
 import { AuthController } from "../../src/modules/auth/auth.controller";
+import { ProfessionalAppController } from "../../src/modules/professional-app/professional-app.controller";
 import { JwtAuthGuard } from "../../src/modules/auth/guards/jwt-auth.guard";
+import { ProfessionalAppGuard } from "../../src/modules/auth/guards/professional-app.guard";
 import { RolesGuard } from "../../src/modules/auth/guards/roles.guard";
 import { JwtStrategy } from "../../src/modules/auth/strategies/jwt.strategy";
 import { AuditController } from "../../src/modules/audit/audit.controller";
@@ -84,6 +87,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   StateController,
   StockMovementController,
   ProductSaleController,
+  ProfessionalAppController,
   UserController,
 ];
 
@@ -113,10 +117,11 @@ export const USERS: Record<string, TestUser> = {
     type: "ADMIN",
     companyId: COMPANY_A,
   },
-  user: {
-    id: "aaaaaaaa-0000-4000-8000-000000000003",
-    email: "user@orari.test",
-    type: "USER",
+  // Só o app (PWA): nega por padrão (ver ProfessionalAppGuard).
+  professional: {
+    id: "aaaaaaaa-0000-4000-8000-000000000005",
+    email: "pro@orari.test",
+    type: "PROFESSIONAL",
     companyId: COMPANY_A,
   },
   otherCompanyAdmin: {
@@ -210,6 +215,7 @@ export async function createHttpApp(): Promise<HttpApp> {
       // A ordem importa: o RolesGuard depende do request.user do JwtAuthGuard.
       { provide: APP_GUARD, useClass: JwtAuthGuard },
       { provide: APP_GUARD, useClass: RolesGuard },
+      { provide: APP_GUARD, useClass: ProfessionalAppGuard },
       AppService,
     ],
   }).compile();
@@ -243,6 +249,8 @@ export interface RouteInfo {
   /** Caminho com os parâmetros trocados por um UUID. */
   path: string;
   isPublic: boolean;
+  /** Marcada com @ProfessionalApp(): o perfil só de app pode usar. */
+  professionalApp: boolean;
   roles: UserType[] | undefined;
   label: string;
 }
@@ -276,6 +284,9 @@ export function discoverRoutes(): RouteInfo[] {
       const isPublic = targets.some(
         (target) => Reflect.getMetadata(IS_PUBLIC_KEY, target) === true,
       );
+      const professionalApp = targets.some(
+        (target) => Reflect.getMetadata(PROFESSIONAL_APP_KEY, target) === true,
+      );
       const roles = targets
         .map(
           (target) =>
@@ -294,6 +305,7 @@ export function discoverRoutes(): RouteInfo[] {
         method: METHODS[requestMethod],
         path: full,
         isPublic,
+        professionalApp,
         roles,
         label: `${METHODS[requestMethod].toUpperCase()} ${full.replaceAll(ANY_UUID, ":id")} (${controller.name}.${name})`,
       });

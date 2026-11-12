@@ -83,3 +83,9 @@
   - `POST /agenda-blocks` (`date`, `startTime` e `endTime` em HH:MM no relógio da empresa, `confirmed` opcional): fim antes do início, data inexistente ou horário que já começou: 400; sobreposto a outro bloqueio: 409. Devolve o bloqueio e `appointments`;
   - `DELETE /agenda-blocks/:id` (204): desbloqueia (apaga o registro). Bloqueio que já terminou: 400; de outra empresa: 404.
 - Bloquear e desbloquear ficam na **auditoria** (`AGENDA_BLOCK_CREATED` e `AGENDA_BLOCK_REMOVED`, `entityType` `AGENDA_BLOCK`).
+
+## Agenda do profissional no app
+
+- `GET /professional-app/agenda?day=AAAA-MM-DD` (dia no relógio da empresa; sem `day`, hoje; dia inexistente: 400) devolve os agendamentos do **próprio profissional** no dia, em ordem de horário, e os bloqueios do dia (valem para a empresa toda). Cancelados e faltas vêm, como na agenda da clínica; teto de 200 por dia.
+- Cada agendamento traz só o necessário para a tela: horário, status, observação, encaixe, cliente (`id` e nome), serviço (nome, cor, duração e preço), origem (`recurrence` com `isPackage`, ou nulo) e a sessão de turma (`id`, vagas, cancelamento). **Não traz** pagamento, comissão, foto nem contato do cliente.
+- Cadastro de profissional inativado, ou usuário sem vínculo com profissional: 403.

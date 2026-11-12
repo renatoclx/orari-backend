@@ -12,7 +12,10 @@ import {
   type FeatureAccessEntry,
 } from "../company-access/company-access.service";
 import { UserService } from "../user/user.service";
+import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
+import { ProfessionalLoginDto } from "./dto/professional-login.dto";
+import { normalizePortalPhone } from "../portal/portal-phone";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { JwtPayload } from "./jwt-payload.interface";
 
@@ -89,6 +92,40 @@ export class AuthService {
     }
 
     return this.issueTokens(user.id, user.email);
+  }
+
+  /**
+   * Entrada do usuário PROFESSIONAL pelo telefone (o app). Mesma resposta
+   * genérica do login por e-mail: não revela se o telefone tem acesso, e a
+   * comparação roda mesmo sem usuário (ver TIMING_PLACEHOLDER_HASH).
+   */
+  async professionalLogin(dto: ProfessionalLoginDto): Promise<AuthTokens> {
+    const phone = normalizePortalPhone(dto.phone);
+    const user = phone
+      ? await this.userService.findProfessionalByPhoneWithPassword(phone)
+      : null;
+
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user?.password ?? TIMING_PLACEHOLDER_HASH,
+    );
+    if (!user || !passwordMatches) {
+      throw new UnauthorizedException("Credenciais inválidas");
+    }
+    if (!(await this.companyService.isActive(user.companyId))) {
+      throw new UnauthorizedException("Credenciais inválidas");
+    }
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  /** Troca da própria senha (ver UserService.changeOwnPassword). */
+  changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+    return this.userService.changeOwnPassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   /**

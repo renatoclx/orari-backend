@@ -35,7 +35,9 @@ describe("RolesGuard", () => {
   it("deve liberar rotas sem restrição de tipo", () => {
     metadata({});
 
-    expect(guard.canActivate(contextWithUser({ type: "USER" }))).toBe(true);
+    expect(guard.canActivate(contextWithUser({ type: "PROFESSIONAL" }))).toBe(
+      true,
+    );
   });
 
   it("deve liberar quando o tipo do usuário é permitido", () => {
@@ -47,7 +49,9 @@ describe("RolesGuard", () => {
   it("deve bloquear quando o tipo do usuário não é permitido", () => {
     metadata({ [ROLES_KEY]: ["ADMIN"] });
 
-    expect(guard.canActivate(contextWithUser({ type: "USER" }))).toBe(false);
+    expect(guard.canActivate(contextWithUser({ type: "PROFESSIONAL" }))).toBe(
+      false,
+    );
   });
 
   it("deve bloquear quando não há usuário na requisição", () => {

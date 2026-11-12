@@ -20,7 +20,7 @@ describe("recebe comissão (profissional)", () => {
 
   it("só o ADMIN envia o campo", () => {
     const admin = { type: "ADMIN" } as AuthenticatedUser;
-    const user = { type: "USER" } as AuthenticatedUser;
+    const user = { type: "PROFESSIONAL" } as AuthenticatedUser;
     expect(() =>
       ensureCanSetCommission({ receivesCommission: false }, user),
     ).toThrow(ForbiddenException);

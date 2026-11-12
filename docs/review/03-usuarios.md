@@ -8,8 +8,8 @@ Contas de acesso, sempre vinculadas a uma empresa.
 
 - **SUPER_ADMIN** gerencia usuários de qualquer empresa **ativa**, informando
   `companyId`. **ADMIN** gerencia só os da própria empresa e **não enxerga
-  contas SUPER_ADMIN**. **USER** recebe 403.
-- Só SUPER_ADMIN cria ou promove alguém a SUPER_ADMIN.
+  contas SUPER_ADMIN**. **PROFESSIONAL** recebe 403.
+- Há um único SUPER_ADMIN, criado pelo seed: a API não cria nem promove ninguém a esse tipo.
 - Ninguém exclui a própria conta nem altera o próprio tipo.
 - A empresa do usuário não muda depois de criada.
 - Senha: 8 a 72 caracteres, confirmada, gravada com bcrypt e **nunca retornada**

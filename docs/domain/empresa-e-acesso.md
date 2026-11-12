@@ -78,8 +78,8 @@
 ### Tipos de Usuário (UserTypes)
 
 - SUPER_ADMIN - Administrador da plataforma
-- ADMIN - Administrador da empresa
-- USER - Usuário
+- ADMIN - Administrador da empresa (o cliente)
+- PROFESSIONAL - Profissional que usa só o app (PWA)
 
 ### Atributos
 

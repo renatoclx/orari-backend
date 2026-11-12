@@ -26,6 +26,7 @@ export const FEATURE_KEYS = [
   "product-categories",
   "products",
   "product-sales",
+  "professional-app",
   "anamnesis",
   "anamnesis-templates",
   "anamnesis-audit",
@@ -96,6 +97,13 @@ export const FEATURE_CATALOG: readonly FeatureDefinition[] = [
     key: "product-sales",
     actions: ["view", "create", "remove"],
     requiresView: ["tabs", "products"],
+  },
+  // App do profissional (PWA, só leitura): a agenda, os clientes e as
+  // comissões dele. Vem em todos os planos; o SUPER_ADMIN pode desligar.
+  {
+    key: "professional-app",
+    actions: ["view"],
+    requiresView: ["appointments"],
   },
   { key: "anamnesis", actions: ALL, requiresView: BASE_REGISTRIES },
   { key: "anamnesis-templates", actions: ALL },
