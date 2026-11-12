@@ -611,3 +611,10 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Os tratamentos dos services continuam, com as mensagens precisas; o filtro registra um aviso com o código, para achar o caso que falta tratar.
 - **Testes:** `app.setup.spec` com uma rota que lança cada código.
 
+## 2.58 Pagamento pago: só o ADMIN, com auditoria
+
+- **Banco** (migration `20261112113535_audit_payment_paid`): ações `PAYMENT_PAID_UPDATED` e `PAYMENT_PAID_REMOVED` no `AuditAction` e a coluna `audit_logs.details` (JSONB, opcional), com o antes e o depois.
+- **`PaymentService.update` e `remove`** passam a receber o usuário e o IP. `ensureCanChangePaid` recusa o `PAID` para quem não é ADMIN (403), antes de gravar. Com o ADMIN, a gravação e o `AuditService.record` rodam na mesma transação; `auditSnapshot` guarda valor (texto com duas casas), status, método, `paidAt` e vencimento.
+- **`AuditEntry`** ganhou `details` (opcional); as outras auditorias não mudam.
+- **Testes:** 403 do USER sem gravar, auditoria do ADMIN (alteração e exclusão) e o pendente livre, sem auditoria.
+

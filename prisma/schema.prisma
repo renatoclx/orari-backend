@@ -725,6 +725,8 @@ enum AuditAction {
   PORTAL_CLIENT_CONFIRMED
   AGENDA_BLOCK_CREATED
   AGENDA_BLOCK_REMOVED
+  PAYMENT_PAID_UPDATED
+  PAYMENT_PAID_REMOVED
 }
 
 /**
@@ -743,6 +745,8 @@ model AuditLog {
   // Cliente a que a ação se refere, quando houver (sem relação: o registro vale mesmo se o cliente for removido).
   clientId   String?
   ip         String?
+  // Antes e depois da ação, quando ela altera valores (ex.: pagamento pago editado).
+  details    Json?
   createdAt  DateTime    @default(now())
 
   company Company @relation(fields: [companyId], references: [id])

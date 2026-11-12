@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -8,8 +9,11 @@ import { Decimal } from "../../../generated/prisma/internal/prismaNamespace";
 import { Payment, Prisma } from "../../../generated/prisma/client";
 import {
   AppointmentStatus,
+  AuditAction,
   PaymentStatus,
+  UserType,
 } from "../../../generated/prisma/enums";
+import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
 import { PaginatedResult } from "../../common/interfaces/paginated-result.interface";
 import { localDateOf } from "../../common/time/time-zone";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -17,6 +21,7 @@ import {
   AppointmentService,
   CompletedStandaloneAppointment,
 } from "../appointment/appointment.service";
+import { AuditService } from "../audit/audit.service";
 import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
@@ -86,6 +91,19 @@ const clientWhere = (clientId: string): Prisma.PaymentWhereInput => ({
     { clientPlan: { clientId } },
     { productSale: { clientId } },
   ],
+});
+
+// Pagamento pago só muda pelo ADMIN (ver business-rules/pagamentos.md).
+const PAID_PAYMENT_ADMIN_ONLY =
+  "Só o administrador altera ou exclui um pagamento pago";
+
+// Campos do pagamento guardados na auditoria (antes e depois).
+const auditSnapshot = (payment: Payment) => ({
+  amount: payment.amount.toFixed(2),
+  status: payment.status,
+  paymentMethodId: payment.paymentMethodId,
+  paidAt: payment.paidAt?.toISOString() ?? null,
+  dueDate: payment.dueDate?.toISOString().slice(0, 10) ?? null,
 });
 
 const SALE_PAYMENT_PROTECTED =
@@ -169,6 +187,7 @@ export class PaymentService {
     private readonly paymentMethodService: PaymentMethodService,
     private readonly serviceService: ServiceService,
     private readonly companyService: CompanyService,
+    private readonly auditService: AuditService,
   ) {}
 
   async create(
@@ -367,15 +386,23 @@ export class PaymentService {
     return payment;
   }
 
+  /**
+   * Edição do pagamento. O pago só é alterado pelo ADMIN (403 para os demais),
+   * e a alteração grava a auditoria com o antes e o depois, na mesma transação.
+   */
   async update(
     id: string,
     dto: UpdatePaymentDto,
-    companyId: string,
+    currentUser: AuthenticatedUser,
+    ip?: string,
   ): Promise<PaymentResponse> {
+    const { companyId } = currentUser;
     const payment = await this.findOwned(id, companyId);
     if (payment.productSaleId) {
       throw new ConflictException(SALE_PAYMENT_PROTECTED);
     }
+    const wasPaid = payment.status === PaymentStatus.PAID;
+    this.ensureCanChangePaid(payment, currentUser);
 
     // Cancelado é estado final: o cancelamento do agendamento, da recorrência ou
     // do plano não pode ser desfeito por aqui (reabrir a cobrança de algo que
@@ -409,25 +436,84 @@ export class PaymentService {
       dto.paymentMethodId ?? payment.paymentMethodId,
     );
 
-    const updated = await this.prisma.payment.update({
-      where: { id },
-      data: { ...dto, paidAt, updatedAt: new Date() },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.payment.update({
+        where: { id },
+        data: { ...dto, paidAt, updatedAt: new Date() },
+      });
+      if (wasPaid) {
+        await this.auditService.record(
+          {
+            companyId,
+            userId: currentUser.id,
+            action: AuditAction.PAYMENT_PAID_UPDATED,
+            entityType: "PAYMENT",
+            entityId: id,
+            ip,
+            details: {
+              before: auditSnapshot(payment),
+              after: auditSnapshot(saved),
+            },
+          },
+          tx,
+        );
+      }
+      return saved;
     });
 
     return this.toResponse(updated, await this.todayFor(companyId));
   }
 
-  async remove(id: string, companyId: string): Promise<void> {
+  /**
+   * Exclusão lógica. A do pagamento pago é só do ADMIN e grava a auditoria com
+   * o que foi excluído.
+   */
+  async remove(
+    id: string,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+  ): Promise<void> {
+    const { companyId } = currentUser;
     const payment = await this.findOwned(id, companyId);
     if (payment.productSaleId) {
       throw new ConflictException(SALE_PAYMENT_PROTECTED);
     }
+    this.ensureCanChangePaid(payment, currentUser);
 
     const now = new Date();
-    await this.prisma.payment.update({
-      where: { id },
-      data: { deletedAt: now, updatedAt: now },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id },
+        data: { deletedAt: now, updatedAt: now },
+      });
+      if (payment.status === PaymentStatus.PAID) {
+        await this.auditService.record(
+          {
+            companyId,
+            userId: currentUser.id,
+            action: AuditAction.PAYMENT_PAID_REMOVED,
+            entityType: "PAYMENT",
+            entityId: id,
+            ip,
+            details: { before: auditSnapshot(payment) },
+          },
+          tx,
+        );
+      }
     });
+  }
+
+  // Pagamento pago: só o ADMIN altera ou exclui.
+  private ensureCanChangePaid(
+    payment: Payment,
+    currentUser: AuthenticatedUser,
+  ): void {
+    if (
+      payment.status === PaymentStatus.PAID &&
+      currentUser.type !== UserType.ADMIN
+    ) {
+      throw new ForbiddenException(PAID_PAYMENT_ADMIN_ONLY);
+    }
   }
 
   /**

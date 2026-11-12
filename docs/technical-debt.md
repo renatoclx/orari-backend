@@ -122,9 +122,8 @@ conferir a documentação gerada.
 - **Excluir pessoa com agenda futura:** excluir um cliente ou profissional com
   agendamentos futuros, recorrência ou contratação ativos não mexe na agenda.
   Opções: recusar (409) ou cancelar o que é futuro.
-- **Pagamento pago:** qualquer tipo de usuário pode excluir ou alterar o valor de
-  um pagamento `PAID`, sem registro de quem fez. Opções: restringir a `ADMIN` ou
-  impedir a exclusão de pagamento pago.
+- **Pagamento pago:** resolvido em 2026-11-12. Só o ADMIN altera ou exclui, com
+  registro na auditoria (ver `business-rules/pagamentos.md`).
 - **Notificações:** o módulo lista e marca como lida, mas nada cria notificações;
   a rota responde sempre vazia.
 

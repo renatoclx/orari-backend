@@ -138,6 +138,7 @@
 | entityId   | Código do que foi acessado                                  |
 | clientId   | Código do cliente a que a ação se refere (opcional)         |
 | ip         | Endereço IP de quem fez a requisição (opcional)             |
+| details    | Antes e depois da ação, quando altera valores (opcional)    |
 | createdAt  | Data e hora da ação                                         |
 
 ### Relacionamentos
