@@ -471,6 +471,11 @@ export class RecurringAppointmentService {
     );
 
     const replaced = await this.prisma.$transaction(async (tx) => {
+      // A agenda vem antes da vaga (ver AppointmentService.lockAgenda).
+      await this.appointmentService.lockAgenda(tx, {
+        professionalIds: [slot.classGroup.professionalId],
+        clientIds: [appointment.clientId],
+      });
       // A vaga fica travada até o fim da transação.
       const classSession = await this.classSessionService.reserveSeat(
         tx,
@@ -637,6 +642,12 @@ export class RecurringAppointmentService {
     serviceDuration: number,
     timeZone: string,
   ) {
+    // A agenda é travada antes das vagas da turma (reserveForOccurrences), na
+    // ordem que evita deadlock (ver AppointmentService.lockAgenda).
+    await this.appointmentService.lockAgenda(tx, {
+      professionalIds: [data.professionalId],
+      clientIds: [data.clientId],
+    });
     const recurring = await tx.recurringAppointment.create({
       data: { ...data, days: { create: this.toDayRows(days) } },
       ...withDetails,

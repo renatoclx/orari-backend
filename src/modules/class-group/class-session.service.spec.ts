@@ -55,6 +55,8 @@ describe("ClassSessionService", () => {
   };
   const appointmentServiceMock = {
     findOne: vi.fn(),
+    // Trava da agenda (pg_advisory_xact_lock); no teste, só registra a chamada.
+    lockAgenda: vi.fn(),
     findClassSessionConflicts: vi.fn(),
     createManyInClassSession: vi.fn(),
     attachToClassSession: vi.fn(),

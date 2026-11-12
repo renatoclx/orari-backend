@@ -17,6 +17,8 @@ export interface AuditEntry {
   // Cliente a que a ação se refere, quando houver.
   clientId?: string;
   ip?: string;
+  // Antes e depois, quando a ação altera valores (ex.: pagamento pago editado).
+  details?: Prisma.InputJsonValue;
 }
 
 /**

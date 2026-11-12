@@ -622,10 +622,30 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Porteiro do `/uploads`** (`uploadsGate`, antes dos arquivos estáticos): só `companies` é pública; o resto exige assinatura válida (403). O caminho é decodificado e normalizado antes de olhar a pasta (`..` responde 404). A foto assinada sai com `Cache-Control: private, max-age=<até vencer>`.
 - **Testes:** specs da assinatura e do interceptor, e o `app.setup.spec` com uma pasta de uploads real (link assinado abre, puro e adulterado dão 403, travessia dá 404, logo abre). Verificado na API real: upload de pessoa e de produto, listagem, logo.
 
-
 ## 2.60 Papéis do sistema: sem o tipo USER, um só SUPER_ADMIN
 
 - **Migração `remove_user_type`:** apaga os usuários `USER` (com as sessões e a auditoria deles, por causa das chaves `RESTRICT`), recria o enum `UserType` com `SUPER_ADMIN`, `ADMIN` e `PROFESSIONAL` e cria o índice único parcial `users_single_super_admin_key` (no máximo um SUPER_ADMIN ativo).
 - **`UserService.ensureCanAssignType`:** recusa (403) criar ou promover para `SUPER_ADMIN` pela API, para qualquer usuário; o seed segue criando o primeiro.
 - **Limites:** sem mudança. O ADMIN que atua como profissional ocupa uma vaga de `professionals`, e o usuário `PROFESSIONAL` do app já é contado pela pessoa a que se liga. O funcionário continua só como cadastro.
 - **Testes:** os specs e fixtures que usavam `USER` passaram a `ADMIN`/`PROFESSIONAL`; o e2e confere que o `PROFESSIONAL` e (onde não consta no `@Roles`) o `SUPER_ADMIN` recebem 403 nas rotas restritas. Verificado na API real: criar `SUPER_ADMIN` dá 403, `USER` dá 400 e um segundo SUPER_ADMIN no banco é recusado pelo índice.
+
+## 2.61 Erros do Prisma sem tratamento
+
+- **`PrismaExceptionFilter`** (`src/prisma/prisma-exception.filter.ts`, global em `configureApp`): recebe o `PrismaClientKnownRequestError` que nenhum service tratou. `P2025` vira 404 "Registro não encontrado"; `P2002`, 409 "Já existe um registro com estes dados"; `P2003` (chave estrangeira), 409 "A operação depende de um registro que não existe ou está em uso"; `P2034` (conflito entre transações), 409 "Outra operação mudou estes dados; tente novamente". Outro código continua 500, sem detalhes do banco na resposta.
+- Os tratamentos dos services continuam, com as mensagens precisas; o filtro registra um aviso com o código, para achar o caso que falta tratar.
+- **Testes:** `app.setup.spec` com uma rota que lança cada código.
+
+## 2.62 Pagamento pago: só o ADMIN, com auditoria
+
+- **Banco** (migration `20261112113535_audit_payment_paid`): ações `PAYMENT_PAID_UPDATED` e `PAYMENT_PAID_REMOVED` no `AuditAction` e a coluna `audit_logs.details` (JSONB, opcional), com o antes e o depois.
+- **`PaymentService.update` e `remove`** passam a receber o usuário e o IP. `ensureCanChangePaid` recusa o `PAID` para quem não é ADMIN (403), antes de gravar. Com o ADMIN, a gravação e o `AuditService.record` rodam na mesma transação; `auditSnapshot` guarda valor (texto com duas casas), status, método, `paidAt` e vencimento.
+- **`AuditEntry`** ganhou `details` (opcional); as outras auditorias não mudam.
+- **Testes:** 403 do USER sem gravar, auditoria do ADMIN (alteração e exclusão) e o pendente livre, sem auditoria.
+
+## 2.63 Trava da agenda em todos os caminhos
+
+- **`AppointmentService.lockAgenda(tx, { professionalIds, clientIds })`:** `pg_advisory_xact_lock` por chave (`appointment:<profissional>`, o mesmo prefixo da trava antiga, e `appointment-client:<cliente>`), sem repetir e em ordem, até o fim da transação.
+- **Onde:** `create` (agora também o cliente); `applyUpdate` (a conferência e a gravação passaram para uma transação travada; antes eram passos soltos); `rescheduleFromRecurrence` e `createFromRecurrence` (passam a exigir `Prisma.TransactionClient`); `RecurringAppointmentService.createSchedule` e `replaceInClassGroup`, e `ClassSessionService.enrollInClassGroup` e `enroll`, que travam a agenda **antes** da linha da sessão (`FOR UPDATE`), na ordem que evita deadlock.
+- **Testes:** ordem e repetição das chaves, a criação travando profissional e cliente, e os mocks dos services de recorrência e turma com `lockAgenda`. Na API real, cinco rodadas de cada corrida (mesmo cliente com dois profissionais, duas edições para o mesmo horário, duas recorrências, recorrência contra avulso, encaixe na turma contra avulso, recorrência na turma contra encaixe em lote): sempre um passa e o outro recebe 409, sem deadlock nem 500. Antes, não havia sobreposição gravada no banco local.
+- **Mensagem do conflito:** `findSlotConflict` passou a dizer "cliente" quando o agendamento achado não conta para o profissional pela regra da consulta (ex.: o aluno que já está na mesma sessão da turma). Antes, o mesmo profissional fazia a mensagem dizer "profissional". Valendo para os dois, continua "profissional".
+

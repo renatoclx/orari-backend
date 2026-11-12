@@ -1,14 +1,20 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
+import {
+  adminUser,
+  COMPANY_ID,
+  regularUser,
+} from "../../../test/fixtures/authenticated-users";
 import { Prisma } from "../../../generated/prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AppointmentService } from "../appointment/appointment.service";
+import { AuditService } from "../audit/audit.service";
 import { CompanyService } from "../company/company.service";
 import { PaymentMethodService } from "../payment-method/payment-method.service";
 import { ServiceService } from "../service/service.service";
@@ -54,6 +60,7 @@ describe("PaymentService", () => {
   const appointmentServiceMock = { findDetail: vi.fn() };
   const paymentMethodServiceMock = { findOne: vi.fn() };
   const serviceServiceMock = { findOne: vi.fn() };
+  const auditServiceMock = { record: vi.fn() };
   // "Hoje" do atraso: os testes usam UTC e um relógio fixo.
   const companyServiceMock = { getTimeZone: vi.fn() };
 
@@ -90,6 +97,7 @@ describe("PaymentService", () => {
         { provide: PaymentMethodService, useValue: paymentMethodServiceMock },
         { provide: ServiceService, useValue: serviceServiceMock },
         { provide: CompanyService, useValue: companyServiceMock },
+        { provide: AuditService, useValue: auditServiceMock },
       ],
     }).compile();
 
@@ -554,7 +562,7 @@ describe("PaymentService", () => {
       await paymentService.update(
         "payment-1",
         { status: "PAID", paidAt },
-        COMPANY_ID,
+        adminUser,
       );
 
       expect(prismaMock.payment.update).toHaveBeenCalledWith({
@@ -573,7 +581,7 @@ describe("PaymentService", () => {
       await paymentService.update(
         "payment-1",
         { status: "CANCELLED" },
-        COMPANY_ID,
+        adminUser,
       );
 
       expect(prismaMock.payment.update).toHaveBeenCalledWith({
@@ -593,7 +601,7 @@ describe("PaymentService", () => {
         paymentService.update(
           "payment-1",
           { status: "CANCELLED", paidAt: new Date("2026-10-03") },
-          COMPANY_ID,
+          adminUser,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.payment.update).not.toHaveBeenCalled();
@@ -607,7 +615,7 @@ describe("PaymentService", () => {
         paidAt,
       });
 
-      await paymentService.update("payment-1", { amount: 99.9 }, COMPANY_ID);
+      await paymentService.update("payment-1", { amount: 99.9 }, adminUser);
 
       expect(prismaMock.payment.update).toHaveBeenCalledWith({
         where: { id: "payment-1" },
@@ -625,7 +633,7 @@ describe("PaymentService", () => {
         paymentService.update(
           "payment-1",
           { status: "PAID", paidAt: new Date("2026-10-02") },
-          COMPANY_ID,
+          adminUser,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.payment.update).not.toHaveBeenCalled();
@@ -641,7 +649,7 @@ describe("PaymentService", () => {
       await paymentService.update(
         "payment-1",
         { status: "PAID", paidAt, paymentMethodId: "method-1" },
-        COMPANY_ID,
+        adminUser,
       );
 
       expect(paymentMethodServiceMock.findOne).toHaveBeenCalledWith(
@@ -667,7 +675,7 @@ describe("PaymentService", () => {
               paidAt: new Date("2026-10-02"),
               paymentMethodId: "m",
             } as never,
-            COMPANY_ID,
+            adminUser,
           ),
         ).rejects.toThrow("Pagamento cancelado não pode mudar de status");
         expect(prismaMock.payment.update).not.toHaveBeenCalled();
@@ -681,7 +689,7 @@ describe("PaymentService", () => {
       });
 
       await expect(
-        paymentService.update("payment-1", { status: "CANCELLED" }, COMPANY_ID),
+        paymentService.update("payment-1", { status: "CANCELLED" }, adminUser),
       ).resolves.toBeDefined();
     });
 
@@ -692,7 +700,7 @@ describe("PaymentService", () => {
       });
 
       await expect(
-        paymentService.update("payment-1", { amount: 99.9 }, COMPANY_ID),
+        paymentService.update("payment-1", { amount: 99.9 }, adminUser),
       ).resolves.toBeDefined();
     });
 
@@ -700,9 +708,100 @@ describe("PaymentService", () => {
       prismaMock.payment.findFirst.mockResolvedValue(payment);
 
       await expect(
-        paymentService.update("payment-1", { status: "PAID" }, COMPANY_ID),
+        paymentService.update("payment-1", { status: "PAID" }, adminUser),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.payment.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("pagamento pago (só o ADMIN, com auditoria)", () => {
+    const paid = {
+      ...payment,
+      amount: new Decimal("120.50"),
+      status: "PAID",
+      paidAt: new Date("2026-10-02T10:00:00.000Z"),
+      dueDate: new Date("2026-10-02"),
+      productSaleId: null,
+    };
+
+    beforeEach(() => {
+      prismaMock.payment.findFirst.mockResolvedValue(paid);
+    });
+
+    it("recusa a alteração e a exclusão pelo USER (403), sem gravar", async () => {
+      await expect(
+        paymentService.update("payment-1", { amount: 99 }, regularUser),
+      ).rejects.toThrow(
+        "Só o administrador altera ou exclui um pagamento pago",
+      );
+      await expect(
+        paymentService.remove("payment-1", regularUser),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.payment.update).not.toHaveBeenCalled();
+      expect(auditServiceMock.record).not.toHaveBeenCalled();
+    });
+
+    it("o ADMIN altera e a auditoria guarda o antes e o depois, na transação", async () => {
+      prismaMock.payment.update.mockResolvedValue({
+        ...paid,
+        amount: new Decimal("99.00"),
+      });
+
+      await paymentService.update(
+        "payment-1",
+        { amount: 99 },
+        adminUser,
+        "10.0.0.1",
+      );
+
+      expect(auditServiceMock.record).toHaveBeenCalledWith(
+        {
+          companyId: COMPANY_ID,
+          userId: adminUser.id,
+          action: "PAYMENT_PAID_UPDATED",
+          entityType: "PAYMENT",
+          entityId: "payment-1",
+          ip: "10.0.0.1",
+          details: {
+            before: {
+              amount: "120.50",
+              status: "PAID",
+              paymentMethodId: "method-1",
+              paidAt: "2026-10-02T10:00:00.000Z",
+              dueDate: "2026-10-02",
+            },
+            after: expect.objectContaining({ amount: "99.00" }) as unknown,
+          },
+        },
+        prismaMock,
+      );
+    });
+
+    it("o ADMIN exclui e a auditoria guarda o pagamento excluído", async () => {
+      await paymentService.remove("payment-1", adminUser);
+
+      expect(auditServiceMock.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "PAYMENT_PAID_REMOVED",
+          details: {
+            before: expect.objectContaining({
+              amount: "120.50",
+              status: "PAID",
+            }) as unknown,
+          },
+        }),
+        prismaMock,
+      );
+    });
+
+    it("pagamento pendente segue livre para o USER, sem auditoria", async () => {
+      prismaMock.payment.findFirst.mockResolvedValue(payment);
+
+      await paymentService.update("payment-1", { amount: 99 }, regularUser);
+      await paymentService.remove("payment-1", regularUser);
+
+      expect(prismaMock.payment.update).toHaveBeenCalledTimes(2);
+      expect(auditServiceMock.record).not.toHaveBeenCalled();
     });
   });
 
@@ -710,7 +809,7 @@ describe("PaymentService", () => {
     it("deve excluir logicamente o pagamento", async () => {
       prismaMock.payment.findFirst.mockResolvedValue(payment);
 
-      await paymentService.remove("payment-1", COMPANY_ID);
+      await paymentService.remove("payment-1", adminUser);
 
       expect(prismaMock.payment.update).toHaveBeenCalledWith({
         where: { id: "payment-1" },
@@ -1152,10 +1251,10 @@ describe("PaymentService", () => {
       });
 
       await expect(
-        paymentService.update("payment-1", { amount: 10 }, COMPANY_ID),
+        paymentService.update("payment-1", { amount: 10 }, adminUser),
       ).rejects.toThrow("cancele a venda pela comanda");
       await expect(
-        paymentService.remove("payment-1", COMPANY_ID),
+        paymentService.remove("payment-1", adminUser),
       ).rejects.toThrow("cancele a venda pela comanda");
       expect(prismaMock.payment.update).not.toHaveBeenCalled();
     });

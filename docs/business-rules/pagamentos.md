@@ -21,6 +21,8 @@
 - Cancelar um agendamento avulso cancela o pagamento `PENDING` dele (ex.: um sinal lançado antes do atendimento); o `PAID` não muda.
 - Não é possível registrar pagamento para um agendamento cancelado (409): não há atendimento a cobrar.
 - Não é possível registrar pagamento para uma sessão de pacote (409): ela já é cobrada pela contratação. Agendamento de recorrência avulsa continua aceitando um novo pagamento quando o anterior foi excluído.
+- **Pagamento pago:** só o **ADMIN** altera (`PATCH /payments/:id`, inclusive tirar do `PAID`) ou exclui (`DELETE /payments/:id`) um pagamento `PAID`; os demais perfis recebem 403 "Só o administrador altera ou exclui um pagamento pago". O pendente e o cancelado seguem as regras de sempre para todos os perfis. A baixa (`PAID`) continua aberta a quem tem a funcionalidade.
+- Cada alteração ou exclusão de um pagamento pago fica na **auditoria** (`PAYMENT_PAID_UPDATED` e `PAYMENT_PAID_REMOVED`, `entityType` `PAYMENT`), na mesma transação, com quem fez, o IP e o `details`: `before` e `after` (valor, status, método, data do pagamento e vencimento); na exclusão, só `before`.
 - `CANCELLED` é o estado final do pagamento: um pagamento cancelado não volta a `PENDING` nem vai para `PAID` (409). Repetir `CANCELLED` é aceito, sem efeito, e os demais campos (ex.: valor) continuam editáveis.
   - O pagamento é gerado por um job de cobrança, que roda periodicamente; pode haver alguns minutos entre a conclusão e o pagamento.
   - O valor é o preço do serviço, e o vencimento é a data do agendamento no fuso da empresa.

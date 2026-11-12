@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Ip,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -96,8 +97,10 @@ export class PaymentController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body() dto: UpdatePaymentDto,
     @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
   ) {
-    return this.paymentService.update(id, dto, currentUser.companyId);
+    // Pago: só o ADMIN altera, com registro na auditoria (no service).
+    return this.paymentService.update(id, dto, currentUser, ip);
   }
 
   @Delete(":id")
@@ -105,7 +108,9 @@ export class PaymentController {
   remove(
     @Param("id", ParseUUIDPipe) id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
   ) {
-    return this.paymentService.remove(id, currentUser.companyId);
+    // Pago: só o ADMIN exclui, com registro na auditoria (no service).
+    return this.paymentService.remove(id, currentUser, ip);
   }
 }
