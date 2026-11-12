@@ -8,7 +8,7 @@ Login por JWT e controle de acesso por tipo de usuário.
 
 - Todas as rotas exigem token, exceto `GET /` e `POST /auth/login`.
 - **SUPER_ADMIN** administra a plataforma; **ADMIN**, a própria empresa;
-  **USER** opera os dados da empresa sem gerenciar usuários.
+  **PROFESSIONAL** usa só o app do profissional.
 - O login é recusado para usuário excluído e para usuário de empresa inativa,
   sempre com a mesma mensagem genérica.
 - O token carrega apenas `sub` e `email`. A cada requisição o usuário é

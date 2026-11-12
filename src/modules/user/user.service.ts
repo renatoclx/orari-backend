@@ -125,7 +125,7 @@ export class UserService {
     currentUser: AuthenticatedUser,
     ip?: string,
   ): Promise<PublicUser> {
-    this.ensureCanAssignType(dto.type, currentUser);
+    this.ensureCanAssignType(dto.type);
     const companyId = await this.resolveTargetCompany(dto, currentUser);
     if (dto.peopleId) {
       await this.ensureLinkablePerson(dto.peopleId, companyId);
@@ -245,7 +245,7 @@ export class UserService {
       if (id === currentUser.id) {
         throw new ForbiddenException("Não é possível alterar o próprio tipo");
       }
-      this.ensureCanAssignType(dto.type, currentUser);
+      this.ensureCanAssignType(dto.type);
     }
 
     // Enviar o mesmo vínculo que já existe não muda nada (e não gera auditoria).
@@ -532,11 +532,12 @@ export class UserService {
     return companyId;
   }
 
-  // Apenas SUPER_ADMIN pode criar ou promover contas SUPER_ADMIN.
-  private ensureCanAssignType(type: UserType, currentUser: AuthenticatedUser) {
-    if (type === UserType.SUPER_ADMIN && !isSuperAdmin(currentUser)) {
+  // Há um único SUPER_ADMIN (o admin da plataforma), criado pelo seed: a API não
+  // cria nem promove ninguém a esse tipo, nem mesmo o próprio SUPER_ADMIN.
+  private ensureCanAssignType(type: UserType) {
+    if (type === UserType.SUPER_ADMIN) {
       throw new ForbiddenException(
-        "Apenas SUPER_ADMIN pode atribuir o tipo SUPER_ADMIN",
+        "O tipo SUPER_ADMIN não pode ser atribuído pela API",
       );
     }
   }

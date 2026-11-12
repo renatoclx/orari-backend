@@ -4,17 +4,18 @@
 
 ## Tipos de usuário
 
-- **SUPER_ADMIN**: Cadastra, edita, inativa e reativa empresas, e gerencia usuários de qualquer empresa ativa.
-- **ADMIN**: administra a própria empresa. Gerencia os usuários dela.
-- **USER**: opera os dados da própria empresa (pessoas, contatos e endereços), sem gerenciar usuários.
+Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `remove_user_type` apagou os que havia):
+
+- **SUPER_ADMIN**: o administrador da plataforma (o Orari). **Existe um só**, criado pelo seed. Cadastra, edita, inativa e reativa empresas, define o plano de cada uma (acessos e limites) e gerencia usuários de qualquer empresa ativa.
+- **ADMIN**: o cliente, que usa o sistema web. Administra a própria empresa e gerencia os usuários dela. Cada administrador contratado é um usuário `ADMIN` (limite `admins`).
 - **PROFESSIONAL**: profissional que usa só o app (`/app`), sem acesso ao sistema web. Veja "Profissional no app".
 
 ## Empresas
 
 - Apenas SUPER_ADMIN cadastra e edita os dados cadastrais das empresas (razão social, documento, data de fundação, subdomínio, fuso e status).
-- O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O USER não altera nada. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
+- O ADMIN (e o SUPER_ADMIN, para a própria empresa) altera, na própria empresa, somente o nome fantasia e a logo. A empresa vem do token, nunca da URL. O nome fantasia tem até 100 caracteres; texto vazio ou nulo o remove, e então a razão social passa a ser o nome exibido.
 - A logo é opcional, em JPEG ou PNG, com até 2 MB; o formato é conferido pelo conteúdo do arquivo. É servida publicamente e o `logoUrl` guarda o caminho relativo. Enviar uma nova logo substitui a anterior, que é apagada; a logo também pode ser removida. Só se apaga do disco arquivo da pasta das logos: uma URL externa gravada no `logoUrl` pelo SUPER_ADMIN nunca é apagada.
-- ADMIN e USER consultam apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
+- O ADMIN consulta apenas a própria empresa. O filtro por status (`isActive`) é exclusivo do SUPER_ADMIN.
 - Uma empresa é criada ativa, salvo indicação contrária, e com o **modelo padrão de acessos** (ver "Acessos e limites da empresa").
 - Empresas não são excluídas: são inativadas.
 - Enquanto uma empresa estiver inativa, seus dados relacionados ficam inacessíveis:
@@ -35,7 +36,7 @@
 - **Ações** por funcionalidade: `view` (visualiza), `edit` (edita), `create` (cria) e `remove` (exclui ou inativa). Cada funcionalidade só aceita as ações que fazem sentido: `anamnesis-audit` só tem `view` e `settings` só tem `view` e `edit`.
 - **Sem linha, sem acesso:** uma funcionalidade nova nasce desmarcada em todas as empresas; o SUPER_ADMIN a libera.
 - **Regras da matriz** (400 ao gravar): chave conhecida e sem repetição; `edit`, `create` e `remove` exigem `view`; e algumas funcionalidades exigem ver outras, porque as telas delas listam esses cadastros: `appointments`, `recurrences`, `contracts`, `tabs`, `anamnesis` e `class-groups` exigem `view` em `clients`, `professionals` e `services`.
-- **Limites:** `professionals` (profissionais ativos, contando o administrador que atua) e `admins` (administradores), inteiros de 1 a 999. Funcionários (`EMPLOYEE`) não entram na conta. Só os ativos contam: inativar um profissional libera a vaga. Baixar o limite abaixo do uso é permitido: a empresa continua funcionando e apenas não cadastra novos.
+- **Limites:** `professionals` (profissionais ativos, contando o administrador que atua: o ADMIN que também atende ocupa uma vaga de profissional, porque para vinculá-lo se cadastra uma pessoa `PROFESSIONAL`; os usuários `PROFESSIONAL` do app já entram na conta, pois cada um é ligado a um profissional) e `admins` (administradores), inteiros de 1 a 999. Funcionários (`EMPLOYEE`) não entram na conta. Só os ativos contam: inativar um profissional libera a vaga. Baixar o limite abaixo do uso é permitido: a empresa continua funcionando e apenas não cadastra novos.
 - **Conferência dos limites:** só contam os **ativos** (profissional inativo é o excluído logicamente), e o administrador que atua entra como um dos profissionais. A conferência acontece **dentro da transação da gravação**, com a linha de limites da empresa **travada** (`SELECT ... FOR UPDATE`): dois cadastros simultâneos na última vaga não passam juntos (um é gravado e o outro é recusado). Estourado o limite: **403** com `code: "PLAN_LIMIT_REACHED"`, `resource` (`professionals` ou `admins`), `limit` e `used`. Vale para o SUPER_ADMIN também (ele eleva o limite no `PUT`). Sem registro de limites, valem os do modelo padrão.
   - **Profissionais** (`professionals`): criar uma pessoa do tipo `PROFESSIONAL`, **reativar** (`PATCH /people/:id/restore`) um profissional e **trocar o tipo** de uma pessoa para `PROFESSIONAL` (`PATCH /people/:id`). Criar ou reativar cliente ou funcionário não conta.
   - **Administradores** (`admins`): criar um usuário `ADMIN`, **reativar** um `ADMIN` (`PATCH /users/:id/restore`) e **promover** um usuário a `ADMIN` (`PATCH /users/:id` com `type`).
@@ -74,19 +75,20 @@
 - SUPER_ADMIN cria usuários informando a empresa, que deve estar ativa.
 - ADMIN cria usuários sempre na própria empresa; informar outra empresa responde 403.
 - ADMIN gerencia apenas usuários da própria empresa e não enxerga contas SUPER_ADMIN. Usuários fora do alcance respondem 404.
-- Apenas SUPER_ADMIN pode criar contas SUPER_ADMIN ou promover alguém a esse tipo.
+- **Um único SUPER_ADMIN:** a API não cria nem promove ninguém a esse tipo, nem o próprio SUPER_ADMIN (403 "O tipo SUPER_ADMIN não pode ser atribuído pela API"); quem cria é o seed. Um índice único parcial no banco (`users_single_super_admin_key`) garante no máximo um ativo, mesmo com requisições simultâneas.
 - Ninguém pode excluir a própria conta nem alterar o próprio tipo.
 - O login é recusado para usuários excluídos e para usuários de empresas inativas, sempre com a mesma mensagem genérica de credenciais inválidas.
 - Um usuário autenticado perde o acesso imediatamente quando é excluído ou quando sua empresa fica inativa.
 - A exclusão é lógica (inativação): preenche o `deletedAt`. A listagem (`GET /users`) traz ativos e inativos e aceita o filtro opcional `name` (busca parcial, sem diferenciar maiúsculas; acentos contam), que respeita o que o usuário já enxerga; consultar, alterar, trocar a senha e excluir valem só para ativos (inativo responde 404).
 - Um usuário inativado pode ser reativado por `PATCH /users/:id/restore` (limpa o `deletedAt`), pelos mesmos perfis e com o mesmo alcance da gestão de usuários. Reativar um usuário já ativo responde 409; se o e-mail dele estiver em uso por outro usuário ativo, também responde 409.
-- Um usuário pode ser vinculado a uma pessoa ativa da mesma empresa, do tipo `PROFESSIONAL` ou `EMPLOYEE` (funcionário: recepção, secretaria). Só o vínculo com um **profissional** dá acesso às fichas de anamnese (ver Anamnese); o vínculo com funcionário identifica a função do usuário, e o acesso dele será tratado à parte. Uma pessoa se liga a no máximo um usuário ativo.
+- Um usuário pode ser vinculado a uma pessoa ativa da mesma empresa, do tipo `PROFESSIONAL` ou `EMPLOYEE` (funcionário: recepção, secretaria). Só o vínculo com um **profissional** dá acesso às fichas de anamnese (ver Anamnese); o vínculo com funcionário identifica a função do usuário. O funcionário (`EMPLOYEE`) existe só como **cadastro** (contas a pagar e afins), sem login. Uma pessoa se liga a no máximo um usuário ativo.
 
 ## Profissional no app
 
 - Usuário `PROFESSIONAL` exige `peopleId` de um **profissional** ativo da mesma empresa (funcionário não serve) e `phone` (10 ou 11 dígitos, DDD + número). O telefone é o login e é **único entre os usuários ativos** (409 "Já existe um usuário profissional com este telefone"; checagem explícita no service e índice único parcial no banco para a corrida). Os demais tipos não têm telefone de acesso, e sair do tipo apaga o telefone. Não conta no limite de administradores.
 - Entra por `POST /auth/professional/login` (público, 5 tentativas por minuto por IP) com telefone e senha; credenciais inválidas, usuário excluído ou empresa inativa respondem a mesma mensagem genérica. O login do sistema web recusa esse tipo.
 - **Barreira que nega por padrão:** o `ProfessionalAppGuard` (global) bloqueia com 403 toda rota para o `PROFESSIONAL`, exceto as marcadas com `@ProfessionalApp()`: hoje só `GET /auth/me` e `PATCH /auth/me/password`. Um teste de cobertura fixa a lista exata, e o e2e confere o 403 nas demais. Rota nova para o app precisa ser marcada de propósito.
+- Rotas liberadas ao profissional (as únicas): `GET /auth/me`, `PATCH /auth/me/password`, `GET /professional-app/agenda`, `GET /professional-app/clients` e `GET /professional-app/clients/:id` (as três últimas só do tipo PROFESSIONAL). O profissional da consulta vem sempre do vínculo do usuário; o parâmetro `professionalId` é recusado (400).
 - Funcionalidade `professional-app` (só Visualiza; exige Agenda), liberada em todos os planos e empresas. O app mostra apenas a consulta, só dos clientes do próprio profissional; sem anamnese e sem status de pagamento.
 - Troca a própria senha por `PATCH /auth/me/password` (senha atual + nova + confirmação); encerra as outras sessões.
 

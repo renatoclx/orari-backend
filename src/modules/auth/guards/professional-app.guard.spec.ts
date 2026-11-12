@@ -40,7 +40,7 @@ describe("ProfessionalAppGuard", () => {
     ).toThrow(ForbiddenException);
   });
 
-  it.each([UserType.SUPER_ADMIN, UserType.ADMIN, UserType.USER])(
+  it.each([UserType.SUPER_ADMIN, UserType.ADMIN])(
     "%s não é afetado, com ou sem a marca",
     (type) => {
       expect(guard.canActivate(contextFor(open, type))).toBe(true);

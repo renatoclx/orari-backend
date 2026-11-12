@@ -80,11 +80,10 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// SUPER_ADMIN administra a plataforma (todas as empresas); ADMIN, apenas a própria empresa.
+// SUPER_ADMIN administra a plataforma (todas as empresas) e é único; ADMIN, apenas a própria empresa.
 enum UserType {
   SUPER_ADMIN
   ADMIN
-  USER
   // Só o app (PWA): vê a agenda, os clientes e as comissões do profissional
   // vinculado. Nega por padrão: só as rotas marcadas com @ProfessionalApp().
   PROFESSIONAL

@@ -12,7 +12,7 @@ const payload = {
   email: "maria@orari.com",
   password: "senha-forte",
   passwordConfirmation: "senha-forte",
-  type: "USER",
+  type: "ADMIN",
 };
 
 async function errorsFor<T extends object>(cls: new () => T, body: object) {
