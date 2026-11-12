@@ -21,7 +21,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | State                | — (somente leitura, seed IBGE)               | 27 estados                                                                                       |
 | City                 | — (somente leitura, seed IBGE)               | 5.571 cidades; busca por nome sem acento                                                         |
 | Company              | **Não é excluída**, é inativada (`isActive`) | CNPJ numérico ou alfanumérico com dígitos verificadores                                          |
-| User                 | Soft delete                                  | Tipos `SUPER_ADMIN`, `ADMIN`, `USER`; vínculo opcional com um profissional (`peopleId`)          |
+| User                 | Soft delete                                  | Tipos `SUPER_ADMIN` (único), `ADMIN` e `PROFESSIONAL`; vínculo opcional com um profissional (`peopleId`)          |
 | AnamnesisTemplate    | **Sem exclusão** (`isActive`, reativável)    | Nome único na empresa (sem acento/maiúsculas); versões e perguntas imutáveis                     |
 | Anamnesis            | **Sem exclusão nem alteração**               | Ficha por cliente e modelo, presa à versão; registros imutáveis; respostas criptografadas        |
 | AuditLog             | **Sem exclusão nem alteração** (só insere)   | Registro de ações sensíveis; consulta só pelo ADMIN                                              |
@@ -616,3 +616,10 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Porteiro do `/uploads`** (`uploadsGate`, antes dos arquivos estáticos): só `companies` é pública; o resto exige assinatura válida (403). O caminho é decodificado e normalizado antes de olhar a pasta (`..` responde 404). A foto assinada sai com `Cache-Control: private, max-age=<até vencer>`.
 - **Testes:** specs da assinatura e do interceptor, e o `app.setup.spec` com uma pasta de uploads real (link assinado abre, puro e adulterado dão 403, travessia dá 404, logo abre). Verificado na API real: upload de pessoa e de produto, listagem, logo.
 
+
+## 2.60 Papéis do sistema: sem o tipo USER, um só SUPER_ADMIN
+
+- **Migração `remove_user_type`:** apaga os usuários `USER` (com as sessões e a auditoria deles, por causa das chaves `RESTRICT`), recria o enum `UserType` com `SUPER_ADMIN`, `ADMIN` e `PROFESSIONAL` e cria o índice único parcial `users_single_super_admin_key` (no máximo um SUPER_ADMIN ativo).
+- **`UserService.ensureCanAssignType`:** recusa (403) criar ou promover para `SUPER_ADMIN` pela API, para qualquer usuário; o seed segue criando o primeiro.
+- **Limites:** sem mudança. O ADMIN que atua como profissional ocupa uma vaga de `professionals`, e o usuário `PROFESSIONAL` do app já é contado pela pessoa a que se liga. O funcionário continua só como cadastro.
+- **Testes:** os specs e fixtures que usavam `USER` passaram a `ADMIN`/`PROFESSIONAL`; o e2e confere que o `PROFESSIONAL` e (onde não consta no `@Roles`) o `SUPER_ADMIN` recebem 403 nas rotas restritas. Verificado na API real: criar `SUPER_ADMIN` dá 403, `USER` dá 400 e um segundo SUPER_ADMIN no banco é recusado pelo índice.

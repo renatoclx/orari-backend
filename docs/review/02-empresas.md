@@ -6,7 +6,7 @@ Cadastro das empresas (tenants) da plataforma.
 
 ## Regras em resumo
 
-- Só **SUPER_ADMIN** cadastra e edita. ADMIN e USER consultam apenas a própria.
+- Só **SUPER_ADMIN** cadastra e edita. O ADMIN consulta apenas a própria.
 - **Empresas não são excluídas: são inativadas** (`isActive`). A tabela não tem
   `deletedAt`.
 - Enquanto inativa, os dados ligados a ela ficam inacessíveis: os usuários não
