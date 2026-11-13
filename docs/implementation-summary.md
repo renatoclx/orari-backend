@@ -694,3 +694,9 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Testes:** ordem e repetição das chaves, a criação travando profissional e cliente, e os mocks dos services de recorrência e turma com `lockAgenda`. Na API real, cinco rodadas de cada corrida (mesmo cliente com dois profissionais, duas edições para o mesmo horário, duas recorrências, recorrência contra avulso, encaixe na turma contra avulso, recorrência na turma contra encaixe em lote): sempre um passa e o outro recebe 409, sem deadlock nem 500. Antes, não havia sobreposição gravada no banco local.
 - **Mensagem do conflito:** `findSlotConflict` passou a dizer "cliente" quando o agendamento achado não conta para o profissional pela regra da consulta (ex.: o aluno que já está na mesma sessão da turma). Antes, o mesmo profissional fazia a mensagem dizer "profissional". Valendo para os dois, continua "profissional".
 
+## 2.68 Login do profissional por e-mail e telefone
+
+- **`POST /auth/professional/login`:** o corpo passou de `phone` para `login` (telefone com DDD ou e-mail). Com `@`, `UserService.findProfessionalByEmailWithPassword` (só PROFESSIONAL ativo, e-mail exato após `trim`); sem, o telefone como antes. Mesma resposta genérica, mesmo limite de tentativas e a comparação de senha rodando mesmo sem usuário.
+- **`POST /auth/login`:** com a senha conferida e a empresa ativa, o tipo `PROFESSIONAL` recebe **403** e nenhum token (antes o frontend revogava o token depois). Quem erra a senha continua com o 401 genérico.
+- **Testes:** o login por e-mail (e a recusa com a comparação rodando), o 403 do login web, a consulta por e-mail no `UserService` e o corpo `login` no e2e.
+

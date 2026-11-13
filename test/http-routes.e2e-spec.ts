@@ -489,21 +489,21 @@ describe("Rotas HTTP", () => {
         .expect(400);
     });
 
-    it("o login por telefone é público e valida o corpo (400 sem a senha)", async () => {
+    it("o login do app é público e valida o corpo (400 sem a senha)", async () => {
       const auth = http.mockOf(AuthService);
       auth.professionalLogin.mockClear();
 
       await request(http.server())
         .post("/auth/professional/login")
-        .send({ phone: "(11) 98888-0001", password: "senha" })
+        .send({ login: "(11) 98888-0001", password: "senha" })
         .expect(200);
       expect(auth.professionalLogin).toHaveBeenCalledWith({
-        phone: "(11) 98888-0001",
+        login: "(11) 98888-0001",
         password: "senha",
       });
       await request(http.server())
         .post("/auth/professional/login")
-        .send({ phone: "(11) 98888-0001" })
+        .send({ login: "(11) 98888-0001" })
         .expect(400);
     });
 

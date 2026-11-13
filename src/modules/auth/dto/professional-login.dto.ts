@@ -1,11 +1,11 @@
 import { IsString, MaxLength } from "class-validator";
 
-/** Entrada do profissional no app: telefone e senha, como o cliente. */
+/** Entrada do profissional no app: telefone ou e-mail, e a senha. */
 export class ProfessionalLoginDto {
-  /** Telefone com DDD (máscara e +55 são aceitos). */
+  /** Telefone com DDD (máscara e +55 são aceitos) ou o e-mail do usuário. */
   @IsString()
-  @MaxLength(30)
-  phone!: string;
+  @MaxLength(254)
+  login!: string;
 
   // Sem regra de tamanho mínimo: o login só confere, não cadastra.
   @IsString()

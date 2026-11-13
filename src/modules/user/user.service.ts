@@ -104,6 +104,13 @@ export class UserService {
     });
   }
 
+  // Login do usuário PROFESSIONAL no app, pelo e-mail (o mesmo do cadastro).
+  findProfessionalByEmailWithPassword(email: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: { email, type: UserType.PROFESSIONAL, deletedAt: null },
+    });
+  }
+
   // Uso do GET /auth/me: o usuário logado com os dados da empresa que o front exibe.
   findProfile(id: string): Promise<UserProfile | null> {
     return this.prisma.user.findFirst({
