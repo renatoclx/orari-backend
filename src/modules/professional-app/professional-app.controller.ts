@@ -12,13 +12,15 @@ import { ProfessionalClientsService } from "./professional-clients.service";
 import { ProfessionalHomeService } from "./professional-home.service";
 import { ProfessionalAppService } from "./professional-app.service";
 
-// Rotas do app do profissional: só ele as acessa (@Roles) e só elas ficam
-// abertas a ele (@ProfessionalApp).
+// Rotas do app do profissional: o usuário PROFESSIONAL e o ADMIN que atua (o
+// vínculo com o profissional é conferido no ProfessionalLinkService; sem
+// vínculo, 403) as acessam (@Roles), e só elas ficam abertas ao PROFESSIONAL
+// (@ProfessionalApp).
 @ApiTags("App do profissional")
 @ApiBearerAuth()
 @Feature("professional-app")
 @ProfessionalApp()
-@Roles(UserType.PROFESSIONAL)
+@Roles(UserType.PROFESSIONAL, UserType.ADMIN)
 @Controller("professional-app")
 export class ProfessionalAppController {
   constructor(

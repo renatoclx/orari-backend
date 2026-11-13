@@ -104,10 +104,21 @@ export class UserService {
     });
   }
 
-  // Login do usuário PROFESSIONAL no app, pelo e-mail (o mesmo do cadastro).
+  // Login no app pelo e-mail (o mesmo do cadastro): o usuário PROFESSIONAL ou o
+  // ADMIN que atua, vinculado a um profissional ativo (o vínculo inativo recusa).
   findProfessionalByEmailWithPassword(email: string): Promise<User | null> {
     return this.prisma.user.findFirst({
-      where: { email, type: UserType.PROFESSIONAL, deletedAt: null },
+      where: {
+        email,
+        deletedAt: null,
+        OR: [
+          { type: UserType.PROFESSIONAL },
+          {
+            type: UserType.ADMIN,
+            people: { type: PeopleType.PROFESSIONAL, deletedAt: null },
+          },
+        ],
+      },
     });
   }
 

@@ -700,3 +700,9 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **`POST /auth/login`:** com a senha conferida e a empresa ativa, o tipo `PROFESSIONAL` recebe **403** e nenhum token (antes o frontend revogava o token depois). Quem erra a senha continua com o 401 genérico.
 - **Testes:** o login por e-mail (e a recusa com a comparação rodando), o 403 do login web, a consulta por e-mail no `UserService` e o corpo `login` no e2e.
 
+## 2.69 Administrador que atua no app
+
+- **`UserService.findProfessionalByEmailWithPassword`:** além do usuário PROFESSIONAL, devolve o **ADMIN** ativo cujo `people` seja um profissional ativo (`people: { type: PROFESSIONAL, deletedAt: null }`). O telefone continua só do PROFESSIONAL.
+- **Rotas do app:** `ProfessionalAppController` e `ProfessionalCommissionController` passam a `@Roles(PROFESSIONAL, ADMIN)`. O `ProfessionalLinkService` já recusava (403) o usuário sem vínculo ou com o profissional inativo, então o ADMIN sem vínculo não vê dado nenhum.
+- **Testes:** a consulta por e-mail com o ADMIN vinculado, e o e2e (o ADMIN chega ao service e o SUPER_ADMIN recebe 403 em Início, clientes, comissões e agenda).
+

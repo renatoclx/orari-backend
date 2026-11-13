@@ -19,7 +19,7 @@ import { ProfessionalCommissionService } from "./professional-commission.service
 @ApiBearerAuth()
 @Feature("professional-app")
 @ProfessionalApp()
-@Roles(UserType.PROFESSIONAL)
+@Roles(UserType.PROFESSIONAL, UserType.ADMIN)
 @Controller("professional-app")
 export class ProfessionalCommissionController {
   constructor(private readonly commission: ProfessionalCommissionService) {}
