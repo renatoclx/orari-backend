@@ -23,7 +23,7 @@ describe("WelcomeListener", () => {
     dispatcherMock.notify.mockResolvedValue(1);
   });
 
-  it("primeiro acesso do ADMIN: marca de forma atômica e manda as boas-vindas ao Dashboard", async () => {
+  it("primeiro acesso do ADMIN: marca de forma atômica e manda as boas-vindas, que abrem os primeiros passos", async () => {
     await listener.onLoggedIn({ userId: "user-1" });
 
     expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
@@ -36,7 +36,7 @@ describe("WelcomeListener", () => {
         userIds: ["user-1"],
         category: "WELCOME",
         title: "Boas-vindas ao Orari!",
-        url: "/dashboard",
+        url: "/dashboard?passos=1",
         dedupeKey: "welcome",
       }),
     );

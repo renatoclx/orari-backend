@@ -13,8 +13,8 @@ const TITLE = "Boas-vindas ao Orari!";
 // O texto de cada tipo: a caixa explica o que vem e aonde ir; o push é só o convite.
 const WELCOME = {
   [UserType.ADMIN]: {
-    body: "Veja os primeiros passos para deixar a clínica pronta, no Dashboard. Toda manhã você recebe o resumo das pendências do dia: em Mensagens → Ao administrador, escolha a hora e os itens.",
-    url: "/dashboard",
+    body: "Abra os primeiros passos para deixar a clínica pronta. Toda manhã você recebe o resumo das pendências do dia: em Mensagens → Ao administrador, escolha a hora e os itens.",
+    url: "/dashboard?passos=1",
   },
   [UserType.PROFESSIONAL]: {
     body: "Aqui você acompanha a sua agenda, os seus clientes e as suas comissões. Em Menu → Avisos no celular, ative os avisos e escolha o que quer receber: o lembrete de cada atendimento e o resumo da manhã.",

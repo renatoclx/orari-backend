@@ -449,7 +449,7 @@ mais de N dias; interruptor de silêncio por usuário.
 
 **Onde:** `OnboardingService.find` e `WelcomeListener` (2026-11-13).
 
-**O que é:** cada passo da lista é uma contagem no banco (horários, empresa, serviços, pessoas, agendamentos, portal), feita a cada abertura do Dashboard; a boas-vindas só sai no login (por e-mail ou pelo app), e quem foi criado antes da migração nunca a recebe.
+**O que é:** cada passo da lista é uma contagem no banco (horários, empresa, serviços, pessoas, agendamentos, portal), feita a cada abertura do dialog dos primeiros passos (e do sino, para o item do rodapé); a boas-vindas só sai no login (por e-mail ou pelo app), e quem foi criado antes da migração nunca a recebe.
 
 **Impacto:** sete consultas baratas por abertura (todas por `companyId`); uma clínica que já usa o sistema não vê a lista (os passos já estão feitos). Um usuário criado e que nunca entra nunca recebe.
 
