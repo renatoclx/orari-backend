@@ -444,3 +444,15 @@ painel; fila com repetição (BullMQ) para o despacho; rotina que apaga as lidas
 mais de N dias; interruptor de silêncio por usuário.
 
 **Registrado em:** 2026-11-13.
+
+## Primeiros passos: sete contagens por consulta e boas-vindas só no login
+
+**Onde:** `OnboardingService.find` e `WelcomeListener` (2026-11-13).
+
+**O que é:** cada passo da lista é uma contagem no banco (horários, empresa, serviços, pessoas, agendamentos, portal), feita a cada abertura do Dashboard; a boas-vindas só sai no login (por e-mail ou pelo app), e quem foi criado antes da migração nunca a recebe.
+
+**Impacto:** sete consultas baratas por abertura (todas por `companyId`); uma clínica que já usa o sistema não vê a lista (os passos já estão feitos). Um usuário criado e que nunca entra nunca recebe.
+
+**Como resolver:** guardar o progresso numa linha por empresa, atualizada pelos eventos de cadastro, se o Dashboard passar a pesar; ou um job que mande as boas-vindas ao criar o usuário.
+
+**Registrado em:** 2026-11-13.

@@ -5,7 +5,8 @@ import type {
 
 /**
  * Categorias de notificação e o padrão do push de cada uma. A caixa recebe
- * tudo; só o push tem interruptor. Uma fonte nova de aviso acrescenta a sua
+ * tudo; só o push tem interruptor. A boas-vindas (`WELCOME`) sai uma vez só e
+ * não tem interruptor: fica fora desta lista e, portanto, das preferências. Uma fonte nova de aviso acrescenta a sua
  * categoria aqui, no enum do Prisma e na tela de preferências.
  */
 export const NOTIFICATION_CATEGORIES: readonly NotificationCategory[] = [

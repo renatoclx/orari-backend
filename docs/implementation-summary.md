@@ -626,6 +626,14 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
 - Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
 
+## 2.67 Boas-vindas e primeiros passos
+
+- **Migração `welcome`:** categoria `WELCOME`; `User.welcomedAt` e `onboardingDismissedAt`. Os usuários existentes são marcados como já recebidos (só quem entra depois ganha as boas-vindas).
+- **Evento `user.logged-in`** (`common/events/user-events.ts`): o `AuthService` anuncia depois do login por e-mail e do login do app (`signedIn`). `WelcomeListener` grava `welcomedAt` de forma atômica (`updateMany ... welcomedAt: null`) e manda a notificação pelo despachante.
+- **`NotificationService.subscribe`:** aparelho novo para o usuário recebe o push "Avisos ativados".
+- **Módulo `onboarding`:** `OnboardingService.find` (sete passos a partir dos dados da clínica, cada um só se o plano libera), `dismiss` e `dismissed`; rotas `GET /onboarding` (ADMIN), `GET /onboarding/welcome` (PROFESSIONAL) e `PATCH /onboarding/dismiss` (ADMIN e PROFESSIONAL; as duas últimas marcadas `@ProfessionalApp()`).
+- **Testes:** o listener (atômico, por tipo, SUPER_ADMIN, falha), o serviço dos passos (dados, plano, dispensa), as regras puras, a confirmação do push, o evento no login e as três rotas no e2e.
+
 ## 2.66 Resumo de pendências do administrador
 
 - **Enums e colunas:** `NotificationCategory.PENDING_SUMMARY`, `AutoMessageKind.ADMIN_SUMMARY`, `AutoMessage.summaryHour` e `summaryItems` (migração `admin_pending_summary`; a lista tem padrão vazio no banco, para as linhas antigas). `categoriesFor`: o ADMIN vê `APPOINTMENT` e `PENDING_SUMMARY`.

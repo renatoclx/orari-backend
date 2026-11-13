@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import { Test, TestingModule } from "@nestjs/testing";
 import * as bcrypt from "bcrypt";
@@ -42,6 +43,7 @@ describe("AuthService", () => {
   const configServiceMock = {
     get: vi.fn(),
   };
+  const eventsMock = { emit: vi.fn() };
   const prismaMock = {
     refreshToken: {
       findUniqueOrThrow: vi.fn(),
@@ -68,6 +70,7 @@ describe("AuthService", () => {
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PrismaService, useValue: prismaMock },
+        { provide: EventEmitter2, useValue: eventsMock },
       ],
     }).compile();
 
@@ -308,6 +311,15 @@ describe("AuthService", () => {
   });
 
   describe("login", () => {
+    it("credenciais inválidas não anunciam a entrada (sem boas-vindas)", async () => {
+      userServiceMock.findByEmailWithPassword.mockResolvedValue(null);
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+      await expect(
+        authService.login({ email: "x@example.com", password: "errada1234" }),
+      ).rejects.toThrow();
+      expect(eventsMock.emit).not.toHaveBeenCalled();
+    });
+
     const dto = { email: "test@example.com", password: "123456" };
     const user = {
       id: "user-1",
@@ -334,6 +346,10 @@ describe("AuthService", () => {
         email: user.email,
       });
       expect(result.accessToken).toBe("signed-token");
+      // Entrou: anuncia (as boas-vindas do primeiro acesso escutam).
+      expect(eventsMock.emit).toHaveBeenCalledWith("user.logged-in", {
+        userId: "user-1",
+      });
 
       // O refresh token bruto nunca é persistido: só o seu hash.
       expect(prismaMock.refreshToken.create).toHaveBeenCalledWith({

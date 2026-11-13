@@ -15,20 +15,26 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  name      String
-  email     String
-  password  String
-  type      UserType
-  companyId String
+  id                    String    @id @default(uuid())
+  name                  String
+  email                 String
+  password              String
+  type                  UserType
+  companyId             String
   // Profissional (People do tipo PROFESSIONAL) que este usuário representa; dá acesso à anamnese.
-  peopleId  String?
+  peopleId              String?
   // Telefone com DDD, só dígitos (10 ou 11): o login do usuário PROFESSIONAL no
   // app (como o cliente entra). Só ele tem; único entre os ativos.
-  phone     String?   @db.VarChar(11)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime?
-  deletedAt DateTime?
+  phone                 String?   @db.VarChar(11)
+  // Boas-vindas do primeiro acesso: preenchido (de forma atômica) quando a
+  // notificação de boas-vindas é enviada, para sair uma vez só.
+  welcomedAt            DateTime?
+  // O usuário dispensou a lista de primeiros passos (ADMIN) ou o cartão de
+  // boas-vindas do app (PROFESSIONAL).
+  onboardingDismissedAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime?
+  deletedAt             DateTime?
 
   company                   Company                      @relation(fields: [companyId], references: [id])
   people                    People?                      @relation(fields: [peopleId], references: [id])
@@ -706,6 +712,8 @@ enum NotificationCategory {
   REMINDER
   DAILY_SUMMARY
   PENDING_SUMMARY
+  // Boas-vindas do primeiro acesso (uma vez só, sem interruptor).
+  WELCOME
 }
 
 /**

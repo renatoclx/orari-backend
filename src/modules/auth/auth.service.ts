@@ -1,10 +1,12 @@
 import { randomBytes, createHash } from "node:crypto";
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import ms, { type StringValue } from "ms";
 import { PeopleType, UserType } from "../../../generated/prisma/enums";
+import { USER_EVENTS } from "../../common/events/user-events";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import {
@@ -70,6 +72,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthTokens> {
@@ -91,7 +94,7 @@ export class AuthService {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.signedIn(user);
   }
 
   /**
@@ -116,6 +119,12 @@ export class AuthService {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
+    return this.signedIn(user);
+  }
+
+  // Entrou: anuncia (as boas-vindas do primeiro acesso escutam) e emite os tokens.
+  private signedIn(user: { id: string; email: string }): Promise<AuthTokens> {
+    this.events.emit(USER_EVENTS.loggedIn, { userId: user.id });
     return this.issueTokens(user.id, user.email);
   }
 

@@ -34,9 +34,17 @@ describe("NotificationService", () => {
       updateMany: vi.fn(),
     },
     userNotificationPreference: { findMany: vi.fn(), upsert: vi.fn() },
-    userPushSubscription: { upsert: vi.fn(), deleteMany: vi.fn() },
+    userPushSubscription: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+    },
   };
-  const pushMock = { enabled: true, publicKey: "chave-publica" };
+  const pushMock = {
+    enabled: true,
+    publicKey: "chave-publica",
+    send: vi.fn(),
+  };
   const service = new NotificationService(
     prismaMock as unknown as PrismaService,
     pushMock as unknown as PushSenderService,
@@ -45,6 +53,8 @@ describe("NotificationService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pushMock.enabled = true;
+    pushMock.send.mockResolvedValue("sent");
+    prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
     prismaMock.userNotification.findMany.mockResolvedValue([]);
     prismaMock.userNotification.count.mockResolvedValue(0);
     prismaMock.userNotificationPreference.findMany.mockResolvedValue([]);
@@ -254,6 +264,42 @@ describe("NotificationService", () => {
           userAgent: "Mozilla/5.0",
         },
       });
+    });
+
+    it('aparelho novo: confirma com um aviso ("Avisos ativados")', async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
+      pushMock.send.mockResolvedValue("sent");
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).toHaveBeenCalledWith(
+        { endpoint: ENDPOINT, p256dh: "p", auth: "a" },
+        expect.objectContaining({ title: "Avisos ativados" }),
+      );
+    });
+
+    it("o app reenvia a inscrição a cada abertura: só a primeira vez confirma", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue({
+        userId: "user-1",
+      });
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).not.toHaveBeenCalled();
+    });
+
+    it("aparelho que era de outro usuário: confirma para quem ativou agora", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue({
+        userId: "outro",
+      });
+      pushMock.send.mockResolvedValue("sent");
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("falha na confirmação não derruba a ativação", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
+      pushMock.send.mockRejectedValue(new Error("rede"));
+      await expect(
+        service.subscribe(user, subscription),
+      ).resolves.toBeUndefined();
+      expect(prismaMock.userPushSubscription.upsert).toHaveBeenCalled();
     });
 
     it("recusa endereço que não é de um serviço de push conhecido (nunca faz POST para qualquer endereço)", async () => {

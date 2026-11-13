@@ -9,6 +9,7 @@ import { NotificationDispatcher } from "./notification-dispatcher.service";
 import { NotificationController } from "./notification.controller";
 import { NotificationService } from "./notification.service";
 import { NotifierCompanies } from "./notifier-companies.service";
+import { WelcomeListener } from "./welcome.listener";
 import { PendingSummaryController } from "./pending-summary.controller";
 import { PendingSummaryService } from "./pending-summary.service";
 import { ProfessionalAppointmentListener } from "./professional-appointment.listener";
@@ -35,6 +36,7 @@ import { ProfessionalNotifierJob } from "./professional-notifier.job";
     NotifierCompanies,
     PendingSummaryService,
     AdminSummaryJob,
+    WelcomeListener,
   ],
   exports: [NotificationDispatcher],
 })

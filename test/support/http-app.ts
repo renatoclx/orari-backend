@@ -41,6 +41,7 @@ import { CompanyController } from "../../src/modules/company/company.controller"
 import { CompanyService } from "../../src/modules/company/company.service";
 import { ContactController } from "../../src/modules/contact/contact.controller";
 import { NotificationController } from "../../src/modules/notification/notification.controller";
+import { OnboardingController } from "../../src/modules/onboarding/onboarding.controller";
 import { PendingSummaryController } from "../../src/modules/notification/pending-summary.controller";
 import { PaymentMethodController } from "../../src/modules/payment-method/payment-method.controller";
 import { PaymentController } from "../../src/modules/payment/payment.controller";
@@ -78,6 +79,7 @@ export const CONTROLLERS: Type<unknown>[] = [
   CompanyController,
   ContactController,
   NotificationController,
+  OnboardingController,
   PendingSummaryController,
   PaymentMethodController,
   PaymentController,

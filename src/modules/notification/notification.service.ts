@@ -184,11 +184,34 @@ export class NotificationService {
       auth: dto.keys.auth,
       userAgent: userAgent?.slice(0, 300),
     };
+    const known = await this.prisma.userPushSubscription.findUnique({
+      where: { endpoint: dto.endpoint },
+      select: { userId: true },
+    });
     await this.prisma.userPushSubscription.upsert({
       where: { endpoint: dto.endpoint },
       create: { endpoint: dto.endpoint, ...data },
       update: data,
     });
+    // Aparelho novo para este usuário: confirma com um aviso ("Avisos ativados").
+    // O app reenvia a inscrição a cada abertura; só a primeira vale a confirmação.
+    // Falha de envio não derruba a ativação.
+    if (known?.userId !== user.id) {
+      await this.pushSender
+        .send(
+          {
+            endpoint: dto.endpoint,
+            p256dh: dto.keys.p256dh,
+            auth: dto.keys.auth,
+          },
+          {
+            title: "Avisos ativados",
+            body: "Você vai receber os avisos do Orari neste aparelho.",
+            url: "/app/menu/notificacoes",
+          },
+        )
+        .catch(() => undefined);
+    }
   }
 
   /** Desativa neste aparelho (só a inscrição do próprio usuário). */

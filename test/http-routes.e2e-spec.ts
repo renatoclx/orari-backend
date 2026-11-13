@@ -18,6 +18,7 @@ import { ProfessionalCommissionService } from "../src/modules/professional-app/p
 import { ProfessionalHomeService } from "../src/modules/professional-app/professional-home.service";
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
+import { OnboardingService } from "../src/modules/onboarding/onboarding.service";
 import { NotificationService } from "../src/modules/notification/notification.service";
 import { PendingSummaryService } from "../src/modules/notification/pending-summary.service";
 import { CompanyService } from "../src/modules/company/company.service";
@@ -167,6 +168,7 @@ describe("Rotas HTTP", () => {
         "GET /notifications (NotificationController.findAll)",
         "GET /notifications/preferences (NotificationController.preferences)",
         "GET /notifications/unread-count (NotificationController.unreadCount)",
+        "GET /onboarding/welcome (OnboardingController.welcome)",
         "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
         "GET /professional-app/clients (ProfessionalAppController.findClients)",
         "GET /professional-app/clients/:id (ProfessionalAppController.findClient)",
@@ -178,9 +180,41 @@ describe("Rotas HTTP", () => {
         "PATCH /auth/me/password (AuthController.changePassword)",
         "PATCH /notifications/:id/read (NotificationController.markAsRead)",
         "PATCH /notifications/read-all (NotificationController.markAllAsRead)",
+        "PATCH /onboarding/dismiss (OnboardingController.dismiss)",
         "POST /notifications/push/subscriptions (NotificationController.subscribe)",
         "PUT /notifications/preferences (NotificationController.updatePreferences)",
       ]);
+    });
+
+    it("primeiros passos: a lista é do ADMIN, o cartão do app é do profissional, e os dois dispensam o que é deles", async () => {
+      const onboarding = http.mockOf(OnboardingService);
+      onboarding.find.mockResolvedValue({
+        steps: [],
+        completed: 0,
+        total: 6,
+        dismissed: false,
+      });
+      onboarding.dismissed.mockResolvedValue(false);
+      onboarding.dismiss.mockResolvedValue(undefined);
+      const req = (
+        method: "get" | "patch",
+        path: string,
+        user: (typeof USERS)[string],
+      ) =>
+        request(http.server())
+          [method](path)
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`);
+
+      await req("get", "/onboarding", USERS.admin).expect(200);
+      await req("get", "/onboarding", USERS.professional).expect(403);
+      await req("get", "/onboarding/welcome", USERS.professional).expect(200);
+      await req("get", "/onboarding/welcome", USERS.admin).expect(403);
+      await req("patch", "/onboarding/dismiss", USERS.admin).expect(204);
+      await req("patch", "/onboarding/dismiss", USERS.professional).expect(204);
+      await req("patch", "/onboarding/dismiss", USERS.superAdmin).expect(403);
+      expect(onboarding.dismiss).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+      );
     });
 
     it("as pendências do dia são só do ADMIN (o profissional e o SUPER_ADMIN recebem 403)", async () => {

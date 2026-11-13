@@ -29,6 +29,7 @@ import { ProductController } from "../product/product.controller";
 import { StockMovementController } from "../stock/stock-movement.controller";
 import { ProductSaleController } from "../product-sale/product-sale.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
+import { OnboardingController } from "../onboarding/onboarding.controller";
 import { PendingSummaryController } from "../notification/pending-summary.controller";
 import { ProfessionalAppController } from "../professional-app/professional-app.controller";
 import { ProfessionalCommissionController } from "../professional-app/professional-commission.controller";
@@ -86,6 +87,8 @@ const EXEMPT: Record<string, string> = {
   StateController: "dado de referência (estados)",
   NotificationController:
     "a caixa e o push de cada usuário (só as próprias; vale para qualquer um da empresa)",
+  OnboardingController:
+    "primeiros passos do ADMIN e dispensa das boas-vindas (cada um só mexe na própria marca); cada passo confere o plano no service",
   PendingSummaryController:
     "só o ADMIN (@Roles); cada item confere a funcionalidade do plano no service",
   AddressController:
@@ -134,6 +137,7 @@ const CONTROLLERS: Controller[] = [
   CompanyController,
   ContactController,
   NotificationController,
+  OnboardingController,
   PendingSummaryController,
   PaymentController,
   PaymentMethodController,
@@ -237,6 +241,8 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
       "NotificationController.unreadCount",
       "NotificationController.unsubscribe",
       "NotificationController.updatePreferences",
+      "OnboardingController.dismiss",
+      "OnboardingController.welcome",
       "ProfessionalAppController.findAgenda",
       "ProfessionalAppController.findClient",
       "ProfessionalAppController.findClients",
