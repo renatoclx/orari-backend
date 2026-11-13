@@ -20,7 +20,7 @@ describe("AutoMessageService", () => {
     prismaMock.autoMessage.findMany.mockResolvedValue([]);
   });
 
-  it("quem nunca salvou recebe os seis padrões: lembrete e agendamentos ligados", async () => {
+  it("quem nunca salvou recebe os oito padrões: lembrete, agendamentos e avisos do profissional ligados", async () => {
     const all = await service.findAll(COMPANY);
     expect(all.map((item) => item.kind)).toEqual([...AUTO_MESSAGE_KINDS]);
     expect(
@@ -32,6 +32,8 @@ describe("AutoMessageService", () => {
       APPOINTMENT_CANCELLED: true,
       BIRTHDAY: false,
       MISS_YOU: false,
+      PROFESSIONAL_REMINDER: true,
+      PROFESSIONAL_SUMMARY: true,
     });
     expect(all[0].reminderOffsets).toEqual([1440, 30]);
     expect(all[5].missYouDays).toBe(30);
@@ -135,7 +137,75 @@ describe("AutoMessageService", () => {
             },
           ],
         }),
-      ).resolves.toHaveLength(6);
+      ).resolves.toHaveLength(8);
+    });
+
+    it("o lembrete e o resumo do profissional não têm opção: gravam só ligado e texto", async () => {
+      await service.replace(COMPANY, {
+        items: [
+          {
+            kind: "PROFESSIONAL_REMINDER",
+            enabled: false,
+            body: "Atendimento às {hora}.",
+            reminderOffsets: [30, 60],
+          },
+          {
+            kind: "PROFESSIONAL_SUMMARY",
+            enabled: true,
+            body: "Bom dia, {nome}! Hoje: {quantidade}.",
+          },
+        ],
+      });
+      const calls = prismaMock.autoMessage.upsert.mock.calls as unknown as [
+        {
+          create: {
+            kind: string;
+            reminderOffsets: number[];
+            missYouDays: number | null;
+          };
+        },
+      ][];
+      for (const [args] of calls) {
+        // O tempo (30 min) e a hora (7h30) são fixos: nada de opção gravada.
+        expect(args.create.reminderOffsets).toEqual([]);
+        expect(args.create.missYouDays).toBeNull();
+      }
+    });
+
+    it("o texto do profissional não aceita o nome do cliente; o resumo aceita {quantidade}, o lembrete não", async () => {
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_REMINDER",
+              enabled: true,
+              body: "Com {cliente}",
+            },
+          ],
+        }),
+      ).rejects.toThrow("{cliente} não existe nesta mensagem");
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_REMINDER",
+              enabled: true,
+              body: "Hoje: {quantidade}",
+            },
+          ],
+        }),
+      ).rejects.toThrow("{quantidade} não existe nesta mensagem");
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_SUMMARY",
+              enabled: true,
+              body: "Hoje: {quantidade}, às {hora}",
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(8);
     });
 
     it("a mesma situação duas vezes: 400", async () => {

@@ -626,6 +626,15 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
 - Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
 
+## 2.65 Avisos de agendamento ao profissional
+
+- **Enums:** `NotificationCategory` ganhou `REMINDER` e `DAILY_SUMMARY`; `AutoMessageKind`, `PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY` (migração `professional_notifications`). `categoriesFor(tipo)` diz quais categorias o usuário vê nas preferências (o ADMIN, só `APPOINTMENT`).
+- **`ProfessionalAppointmentListener`:** o que a clínica faz nos horários dele (eventos `created`, `rescheduled`, `cancelled` e `classSessionCancelled`), para o usuário PROFESSIONAL ligado; push sem o nome do cliente.
+- **`ProfessionalNotifierJob`:** o lembrete (30 min antes, a cada 5 min, uma sessão de turma = um lembrete) e o resumo da manhã (7h30 a 11h; reaproveita o `buildHome`). Configuração lida de `AutoMessageService` (agora exportado): liga/desliga e texto por clínica; empresas ativas com `messages` no plano, sem exigir o portal.
+- **`ClientAutoMessageKind`:** o `AutoMessageSender` passou a tipar só as situações do cliente.
+- **Regras puras** em `professional-notifier.ts` (`reminderUnits`, `summaryWindowOpen`, `attendanceCount`), testadas sem banco.
+- **Testes:** specs do listener, do job (janelas, turma, desligado, dia livre, cada profissional com o seu número), das regras puras, das preferências por tipo e das duas situações novas do `AutoMessageService`.
+
 ## 2.64 Notificações dos usuários (o sino)
 
 - **Troca do model:** a tabela `notifications` (por empresa, sem nenhum tipo em uso) saiu. Entraram `UserNotification` (a caixa de cada usuário, com `dedupeKey` único por usuário), `UserNotificationPreference` (o push por categoria) e `UserPushSubscription` (os aparelhos). Migração `user_notifications`.

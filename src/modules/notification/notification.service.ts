@@ -15,7 +15,7 @@ import {
 } from "../portal/push-sender.service";
 import type { FindNotificationsQueryDto } from "./dto/find-notifications-query.dto";
 import type { UpdateNotificationPreferencesDto } from "./dto/notification-preferences.dto";
-import { DEFAULT_PUSH, NOTIFICATION_CATEGORIES } from "./notification.catalog";
+import { categoriesFor, DEFAULT_PUSH } from "./notification.catalog";
 
 const PUSH_DISABLED = "Os avisos no celular não estão disponíveis no momento";
 
@@ -128,7 +128,8 @@ export class NotificationService {
     const byCategory = new Map(rows.map((row) => [row.category, row.push]));
     return {
       publicKey: this.pushSender.publicKey,
-      preferences: NOTIFICATION_CATEGORIES.map((category) => ({
+      // Só as categorias do tipo de usuário (o lembrete e o resumo são do profissional).
+      preferences: categoriesFor(user.type).map((category) => ({
         category,
         push: byCategory.get(category) ?? DEFAULT_PUSH,
       })),
@@ -143,6 +144,10 @@ export class NotificationService {
     const categories = dto.preferences.map((item) => item.category);
     if (new Set(categories).size !== categories.length) {
       throw new BadRequestException("Categoria repetida");
+    }
+    const allowed = categoriesFor(user.type);
+    if (categories.some((category) => !allowed.includes(category))) {
+      throw new BadRequestException("Categoria inválida para este usuário");
     }
     await this.prisma.$transaction(
       dto.preferences.map(({ category, push }) =>

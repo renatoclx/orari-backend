@@ -10,7 +10,11 @@ import type { PushSenderService } from "../portal/push-sender.service";
 import { FindNotificationsQueryDto } from "./dto/find-notifications-query.dto";
 import { NotificationService } from "./notification.service";
 
-const user = { id: "user-1", companyId: "company-1" } as AuthenticatedUser;
+const user = {
+  id: "user-1",
+  companyId: "company-1",
+  type: "PROFESSIONAL",
+} as AuthenticatedUser;
 const ENDPOINT = "https://fcm.googleapis.com/fcm/send/abc";
 const subscription = {
   endpoint: ENDPOINT,
@@ -150,19 +154,45 @@ describe("NotificationService", () => {
   });
 
   describe("preferências", () => {
-    it("sem linha, o push vale o padrão (ligado) e a chave pública vem junto", async () => {
-      const result = await service.preferences(user);
+    it("sem linha, o push vale o padrão (ligado) e a chave pública vem junto; o profissional vê as três categorias", async () => {
+      const result = await service.preferences({
+        ...user,
+        type: "PROFESSIONAL",
+      });
       expect(result).toEqual({
         publicKey: "chave-publica",
-        preferences: [{ category: "APPOINTMENT", push: true }],
+        preferences: [
+          { category: "APPOINTMENT", push: true },
+          { category: "REMINDER", push: true },
+          { category: "DAILY_SUMMARY", push: true },
+        ],
       });
+    });
+
+    it("quem administra só vê Agendamentos (lembrete e resumo são do profissional)", async () => {
+      const result = await service.preferences({ ...user, type: "ADMIN" });
+      expect(result.preferences.map((item) => item.category)).toEqual([
+        "APPOINTMENT",
+      ]);
+    });
+
+    it("quem administra não grava a preferência de uma categoria que não é dele", async () => {
+      await expect(
+        service.updatePreferences(
+          { ...user, type: "ADMIN" },
+          { preferences: [{ category: "REMINDER", push: false }] },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(
+        prismaMock.userNotificationPreference.upsert,
+      ).not.toHaveBeenCalled();
     });
 
     it("mostra o que o usuário gravou", async () => {
       prismaMock.userNotificationPreference.findMany.mockResolvedValue([
         { category: "APPOINTMENT", push: false },
       ]);
-      const result = await service.preferences(user);
+      const result = await service.preferences({ ...user, type: "ADMIN" });
       expect(result.preferences).toEqual([
         { category: "APPOINTMENT", push: false },
       ]);

@@ -19,6 +19,12 @@ export interface SendingCompany {
   timezone: string;
 }
 
+// As situações que vão ao cliente (as do profissional têm outro caminho).
+export type ClientAutoMessageKind = Exclude<
+  AutoMessageKind,
+  "PROFESSIONAL_REMINDER" | "PROFESSIONAL_SUMMARY"
+>;
+
 export type AppointmentKind = Extract<
   AutoMessageKind,
   | "REMINDER"
@@ -27,8 +33,9 @@ export type AppointmentKind = Extract<
   | "APPOINTMENT_CANCELLED"
 >;
 
-// Tipo do aviso na caixa do cliente (define o interruptor que vale).
-const NOTICE_KIND: Record<AutoMessageKind, ClientMessageKind> = {
+// Tipo do aviso na caixa do cliente (define o interruptor que vale). As
+// situações do profissional não passam por aqui (vão pela caixa dele).
+const NOTICE_KIND: Record<ClientAutoMessageKind, ClientMessageKind> = {
   REMINDER: "REMINDER",
   APPOINTMENT_CREATED: "APPOINTMENT",
   APPOINTMENT_RESCHEDULED: "APPOINTMENT",
@@ -182,7 +189,7 @@ export class AutoMessageSender {
    */
   private async deliver(message: {
     company: SendingCompany;
-    kind: AutoMessageKind;
+    kind: ClientAutoMessageKind;
     accountId: string;
     dedupKey: string;
     body: string;

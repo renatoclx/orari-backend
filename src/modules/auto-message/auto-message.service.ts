@@ -17,6 +17,8 @@ const KIND_LABEL: Record<AutoMessageKind, string> = {
   APPOINTMENT_CANCELLED: "Agendamento cancelado",
   BIRTHDAY: "Aniversário",
   MISS_YOU: "Sentimos sua falta",
+  PROFESSIONAL_REMINDER: "Lembrete do profissional",
+  PROFESSIONAL_SUMMARY: "Resumo da manhã do profissional",
 };
 
 const SELECT = {
@@ -36,7 +38,7 @@ const SELECT = {
 export class AutoMessageService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** As seis situações, na ordem do catálogo. */
+  /** As oito situações, na ordem do catálogo. */
   async findAll(companyId: string): Promise<AutoMessageSettings[]> {
     const rows = await this.prisma.autoMessage.findMany({
       where: { companyId },
@@ -60,7 +62,7 @@ export class AutoMessageService {
     return row ?? defaultSettings(kind);
   }
 
-  /** Grava as situações enviadas (tudo ou nada) e devolve as seis. */
+  /** Grava as situações enviadas (tudo ou nada) e devolve as oito. */
   async replace(
     companyId: string,
     dto: UpdateAutoMessagesDto,

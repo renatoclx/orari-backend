@@ -14,6 +14,13 @@ profissional), com o push por categoria.
 - Fonte atual: o cliente marca ou cancela pelo app (avisa os ADMIN e o
   profissional do horário).
 
+## Avisos ao profissional
+
+O que a clínica faz nos horários dele (`professional-appointment.listener.ts`),
+o lembrete de 30 minutos e o resumo das 7h30 (`professional-notifier.job.ts`,
+regras puras em `professional-notifier.ts`). Texto e liga/desliga em Mensagens →
+Automáticas (`PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY`).
+
 ## Onde está
 
 | Arquivo | Responsabilidade |

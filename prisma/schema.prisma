@@ -703,6 +703,8 @@ model BusinessHour {
 // não existe: a caixa recebe tudo). Cresce junto com as fontes de aviso.
 enum NotificationCategory {
   APPOINTMENT
+  REMINDER
+  DAILY_SUMMARY
 }
 
 /**
@@ -1303,6 +1305,9 @@ enum AutoMessageKind {
   APPOINTMENT_CANCELLED
   BIRTHDAY
   MISS_YOU
+  // Avisos ao profissional que usa o app (a clínica liga e edita o texto).
+  PROFESSIONAL_REMINDER
+  PROFESSIONAL_SUMMARY
 }
 
 // Configuração de uma situação numa clínica. Sem linha, valem os padrões
