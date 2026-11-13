@@ -361,7 +361,7 @@ describe("Rotas HTTP", () => {
         .expect(400);
     });
 
-    it("ele lê o próprio Início; os demais perfis recebem 403", async () => {
+    it("ele lê o próprio Início; o ADMIN chega ao service (que confere o vínculo) e o SUPER_ADMIN recebe 403", async () => {
       const home = http.mockOf(ProfessionalHomeService);
       home.find.mockResolvedValue({ today: { total: 0 } });
       await request(http.server())
@@ -371,15 +371,22 @@ describe("Rotas HTTP", () => {
       expect(home.find).toHaveBeenCalledWith(
         expect.objectContaining({ id: USERS.professional.id }),
       );
-      for (const user of [USERS.superAdmin, USERS.admin]) {
-        await request(http.server())
-          .get("/professional-app/home")
-          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
-          .expect(403);
-      }
+      // O administrador que atua (vinculado a um profissional) usa o app; o
+      // service recusa o ADMIN sem vínculo. O SUPER_ADMIN nunca entra.
+      await request(http.server())
+        .get("/professional-app/home")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.admin)}`)
+        .expect(200);
+      expect(home.find).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: USERS.admin.id }),
+      );
+      await request(http.server())
+        .get("/professional-app/home")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.superAdmin)}`)
+        .expect(403);
     });
 
-    it("ele lê os próprios clientes; o id é validado e os demais perfis recebem 403", async () => {
+    it("ele lê os próprios clientes; o id é validado, o ADMIN chega ao service e o SUPER_ADMIN recebe 403", async () => {
       const clients = http.mockOf(ProfessionalClientsService);
       clients.findAll.mockResolvedValue({ items: [], total: 0 });
       clients.findOne.mockResolvedValue({ id: ANY_UUID });
@@ -406,15 +413,17 @@ describe("Rotas HTTP", () => {
         .get("/professional-app/clients?professionalId=outro")
         .set("Authorization", `Bearer ${token}`)
         .expect(400);
-      for (const user of [USERS.superAdmin, USERS.admin]) {
-        await request(http.server())
-          .get("/professional-app/clients")
-          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
-          .expect(403);
-      }
+      await request(http.server())
+        .get("/professional-app/clients")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.admin)}`)
+        .expect(200);
+      await request(http.server())
+        .get("/professional-app/clients")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.superAdmin)}`)
+        .expect(403);
     });
 
-    it("ele lê as próprias comissões; mês e id são validados e os demais perfis recebem 403", async () => {
+    it("ele lê as próprias comissões; mês e id são validados, o ADMIN chega ao service e o SUPER_ADMIN recebe 403", async () => {
       const commission = http.mockOf(ProfessionalCommissionService);
       commission.summary.mockResolvedValue({ month: "2026-11" });
       commission.list.mockResolvedValue({ items: [], total: 0 });
@@ -452,21 +461,28 @@ describe("Rotas HTTP", () => {
       await get("/professional-app/commissions?professionalId=outro").expect(
         400,
       );
-      for (const user of [USERS.superAdmin, USERS.admin]) {
-        await get(
-          "/professional-app/commissions/summary",
-          http.tokenFor(user),
-        ).expect(403);
-      }
+      await get(
+        "/professional-app/commissions/summary",
+        http.tokenFor(USERS.admin),
+      ).expect(200);
+      await get(
+        "/professional-app/commissions/summary",
+        http.tokenFor(USERS.superAdmin),
+      ).expect(403);
     });
 
-    it("a agenda do app é só do profissional: os demais perfis recebem 403", async () => {
-      for (const user of [USERS.admin, USERS.superAdmin]) {
-        await request(http.server())
-          .get("/professional-app/agenda")
-          .set("Authorization", `Bearer ${http.tokenFor(user)}`)
-          .expect(403);
-      }
+    it("a agenda do app é do profissional e do ADMIN que atua; o SUPER_ADMIN recebe 403", async () => {
+      http.mockOf(ProfessionalAppService).findAgenda.mockResolvedValue({
+        items: [],
+      });
+      await request(http.server())
+        .get("/professional-app/agenda")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.admin)}`)
+        .expect(200);
+      await request(http.server())
+        .get("/professional-app/agenda")
+        .set("Authorization", `Bearer ${http.tokenFor(USERS.superAdmin)}`)
+        .expect(403);
     });
 
     it("a troca de senha recusa confirmação diferente e senha fraca (400)", async () => {

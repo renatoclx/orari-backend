@@ -916,14 +916,20 @@ describe("UserService", () => {
   });
 
   describe("findProfessionalByEmailWithPassword", () => {
-    it("só o usuário PROFESSIONAL ativo, pelo e-mail", async () => {
+    it("o usuário PROFESSIONAL ou o ADMIN vinculado a um profissional ativo, pelo e-mail", async () => {
       await userService.findProfessionalByEmailWithPassword("pro@clinica.com");
 
       expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
         where: {
           email: "pro@clinica.com",
-          type: "PROFESSIONAL",
           deletedAt: null,
+          OR: [
+            { type: "PROFESSIONAL" },
+            {
+              type: "ADMIN",
+              people: { type: "PROFESSIONAL", deletedAt: null },
+            },
+          ],
         },
       });
     });
