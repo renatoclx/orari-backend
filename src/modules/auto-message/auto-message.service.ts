@@ -19,6 +19,7 @@ const KIND_LABEL: Record<AutoMessageKind, string> = {
   MISS_YOU: "Sentimos sua falta",
   PROFESSIONAL_REMINDER: "Lembrete do profissional",
   PROFESSIONAL_SUMMARY: "Resumo da manhã do profissional",
+  ADMIN_SUMMARY: "Resumo de pendências do administrador",
 };
 
 const SELECT = {
@@ -27,6 +28,8 @@ const SELECT = {
   body: true,
   reminderOffsets: true,
   missYouDays: true,
+  summaryHour: true,
+  summaryItems: true,
 } as const;
 
 /**
@@ -38,7 +41,7 @@ const SELECT = {
 export class AutoMessageService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** As oito situações, na ordem do catálogo. */
+  /** As nove situações, na ordem do catálogo. */
   async findAll(companyId: string): Promise<AutoMessageSettings[]> {
     const rows = await this.prisma.autoMessage.findMany({
       where: { companyId },
@@ -62,7 +65,7 @@ export class AutoMessageService {
     return row ?? defaultSettings(kind);
   }
 
-  /** Grava as situações enviadas (tudo ou nada) e devolve as oito. */
+  /** Grava as situações enviadas (tudo ou nada) e devolve as nove. */
   async replace(
     companyId: string,
     dto: UpdateAutoMessagesDto,
@@ -88,6 +91,15 @@ export class AutoMessageService {
           "Lembrete: escolha ao menos um tempo antes do horário",
         );
       }
+      if (
+        item.kind === "ADMIN_SUMMARY" &&
+        item.enabled &&
+        !item.summaryItems?.length
+      ) {
+        throw new BadRequestException(
+          "Resumo de pendências: escolha ao menos um item",
+        );
+      }
     }
 
     await this.prisma.$transaction(
@@ -105,6 +117,15 @@ export class AutoMessageService {
             item.kind === "MISS_YOU"
               ? (item.missYouDays ?? defaults.missYouDays)
               : null,
+          // A hora e os itens só existem no resumo do administrador.
+          summaryHour:
+            item.kind === "ADMIN_SUMMARY"
+              ? (item.summaryHour ?? defaults.summaryHour)
+              : null,
+          summaryItems:
+            item.kind === "ADMIN_SUMMARY"
+              ? (item.summaryItems ?? defaults.summaryItems)
+              : [],
         };
         return this.prisma.autoMessage.upsert({
           where: { companyId_kind: { companyId, kind: item.kind } },

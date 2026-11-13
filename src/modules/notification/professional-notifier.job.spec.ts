@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaService } from "../../prisma/prisma.service";
 import type { AutoMessageService } from "../auto-message/auto-message.service";
 import type { NotificationDispatcher } from "./notification-dispatcher.service";
+import { NotifierCompanies } from "./notifier-companies.service";
 import { ProfessionalNotifierJob } from "./professional-notifier.job";
 
 // 16/11/2026 às 08:00 em São Paulo (UTC-3).
@@ -30,6 +31,7 @@ describe("ProfessionalNotifierJob", () => {
     prismaMock as unknown as PrismaService,
     autoMock as unknown as AutoMessageService,
     dispatcherMock as unknown as NotificationDispatcher,
+    new NotifierCompanies(prismaMock as unknown as PrismaService),
   );
 
   beforeEach(() => {

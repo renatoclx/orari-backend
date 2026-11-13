@@ -22,7 +22,7 @@ export interface SendingCompany {
 // As situações que vão ao cliente (as do profissional têm outro caminho).
 export type ClientAutoMessageKind = Exclude<
   AutoMessageKind,
-  "PROFESSIONAL_REMINDER" | "PROFESSIONAL_SUMMARY"
+  "PROFESSIONAL_REMINDER" | "PROFESSIONAL_SUMMARY" | "ADMIN_SUMMARY"
 >;
 
 export type AppointmentKind = Extract<

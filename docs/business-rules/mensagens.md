@@ -57,3 +57,16 @@
 - **Resumo da manhã:** às **7h30** no relógio da clínica (e até as 11h: um reinício da API ainda entrega o do dia), com o número de atendimentos (a mesma conta do Início: turma conta uma vez, cancelado fora) e o primeiro horário. **Dia sem atendimento não manda nada.** Chave `summary:AAAA-MM-DD`.
 - **Quem configura (Mensagens → Automáticas):** são duas situações novas, `PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY` (agora **oito** situações no `GET` e no `PUT /auto-messages`): a clínica **liga ou desliga** e **edita o texto** (padrão: ligadas). O tempo (30 min) e a hora (7h30) são **fixos**, sem opção. Variáveis: as do agendamento no lembrete (`{nome}` e `{profissional}` são o nome do profissional; **não há** `{cliente}`) e, no resumo, `{nome}`, `{estabelecimento}`, `{data}`, `{hora}` e `{quantidade}` ("5 atendimentos"). O texto não leva o nome do cliente: serve à caixa e ao push.
 - **Quem envia:** só **clínicas ativas com a funcionalidade Mensagens no plano**; **não dependem do portal do cliente ligado**. Cada profissional ainda tem o interruptor do push dele por categoria (Agendamentos, Lembretes e Resumo da manhã).
+
+### Resumo de pendências do administrador (2026-11-13)
+
+- **Situação `ADMIN_SUMMARY`** em Mensagens (agora **nove** situações no `GET` e no `PUT /auto-messages`): a clínica liga ou desliga, edita o texto (padrão ligado), escolhe a **hora do envio** (`summaryHour`: 7, 8, 9 ou 10; padrão **8**) e os **itens** que entram (`summaryItems`; padrão: todos). Ligado sem nenhum item: 400. As opções só existem nesta situação (as outras gravam hora nula e itens vazios).
+- **Itens** (calendário e fuso da clínica; cada um só conta se o plano libera a funcionalidade que o alimenta, `payables`, `payments`, `tabs` ou `clients`):
+  - `PAYABLE_TODAY`: contas a pagar **pendentes com vencimento hoje**;
+  - `PAYABLE_OVERDUE`: contas a pagar pendentes com vencimento **antes de hoje**;
+  - `RECEIVABLE_OVERDUE`: pagamentos de clientes `PENDING`, não excluídos, com vencimento antes de hoje (a regra da Análise de recebíveis);
+  - `OPEN_TABS`: **comandas do dia**, os clientes distintos com atendimento hoje em `SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED` (a regra da tela Comandas);
+  - `BIRTHDAYS`: clientes **ativos** que fazem aniversário hoje.
+- **Envio:** o job confere a cada 5 minutos e manda **uma vez por dia** a cada usuário **ADMIN** ativo, a partir da hora escolhida e **até o meio-dia** (um reinício da API ainda entrega). **Se nenhum item tem número, não manda nada.** Chave `pending:AAAA-MM-DD`. Categoria `PENDING_SUMMARY`, só do ADMIN nas preferências de push.
+- **Texto:** variáveis `{nome}`, `{estabelecimento}`, `{data}` e `{resumo}` (a frase pronta: "3 contas a pagar hoje, 5 recebimentos atrasados e 2 comandas hoje"; só os itens com número). O **push é genérico** ("Há itens para ver hoje no painel.", sem números nem dinheiro); a caixa leva o resumo. Destino: o Dashboard.
+- **Bloco do Dashboard:** `GET /pending-summary` (só **ADMIN**) devolve `date` e `items` (`item` e `count`), **na hora** e com todos os itens que o plano libera (independe das opções do resumo enviado). Sem a funcionalidade, o item não vem.

@@ -705,6 +705,7 @@ enum NotificationCategory {
   APPOINTMENT
   REMINDER
   DAILY_SUMMARY
+  PENDING_SUMMARY
 }
 
 /**
@@ -1308,6 +1309,8 @@ enum AutoMessageKind {
   // Avisos ao profissional que usa o app (a clínica liga e edita o texto).
   PROFESSIONAL_REMINDER
   PROFESSIONAL_SUMMARY
+  // Resumo de pendências do dia para quem administra a clínica.
+  ADMIN_SUMMARY
 }
 
 // Configuração de uma situação numa clínica. Sem linha, valem os padrões
@@ -1323,6 +1326,10 @@ model AutoMessage {
   reminderOffsets Int[]
   // Sentimos sua falta: dias sem vir depois do último atendimento.
   missYouDays     Int?
+  // Resumo de pendências do administrador: a hora (no relógio da clínica) e os
+  // itens que entram (PAYABLE_TODAY, PAYABLE_OVERDUE...).
+  summaryHour     Int?
+  summaryItems    String[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime?
 

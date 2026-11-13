@@ -626,6 +626,14 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
 - Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
 
+## 2.66 Resumo de pendências do administrador
+
+- **Enums e colunas:** `NotificationCategory.PENDING_SUMMARY`, `AutoMessageKind.ADMIN_SUMMARY`, `AutoMessage.summaryHour` e `summaryItems` (migração `admin_pending_summary`; a lista tem padrão vazio no banco, para as linhas antigas). `categoriesFor`: o ADMIN vê `APPOINTMENT` e `PENDING_SUMMARY`.
+- **`PendingSummaryService.compute`:** os cinco itens de hoje (contas a pagar de hoje e atrasadas, recebimentos atrasados, comandas do dia e aniversariantes), cada um só se o plano libera a funcionalidade (`CompanyAccessService.can`). Serve ao job e ao `GET /pending-summary` (só ADMIN).
+- **`AdminSummaryJob`:** a cada 5 min, a partir da hora escolhida e até o meio-dia; só os itens marcados; sem número, não manda; chave `pending:AAAA-MM-DD`; push genérico.
+- **`NotifierCompanies`:** as clínicas ativas com Mensagens no plano, extraído do job do profissional e usado pelos dois.
+- **Testes:** regras puras (`pending-summary.spec`), o service (cada item, plano, `only`), o job (hora, meio-dia, sem número, desligado) e as opções novas do `AutoMessageService`; a rota no e2e (ADMIN 200; profissional e SUPER_ADMIN 403).
+
 ## 2.65 Avisos de agendamento ao profissional
 
 - **Enums:** `NotificationCategory` ganhou `REMINDER` e `DAILY_SUMMARY`; `AutoMessageKind`, `PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY` (migração `professional_notifications`). `categoriesFor(tipo)` diz quais categorias o usuário vê nas preferências (o ADMIN, só `APPOINTMENT`).

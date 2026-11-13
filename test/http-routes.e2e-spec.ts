@@ -19,6 +19,7 @@ import { ProfessionalHomeService } from "../src/modules/professional-app/profess
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
 import { NotificationService } from "../src/modules/notification/notification.service";
+import { PendingSummaryService } from "../src/modules/notification/pending-summary.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
 import { PaymentService } from "../src/modules/payment/payment.service";
@@ -180,6 +181,25 @@ describe("Rotas HTTP", () => {
         "POST /notifications/push/subscriptions (NotificationController.subscribe)",
         "PUT /notifications/preferences (NotificationController.updatePreferences)",
       ]);
+    });
+
+    it("as pendências do dia são só do ADMIN (o profissional e o SUPER_ADMIN recebem 403)", async () => {
+      const summary = http.mockOf(PendingSummaryService);
+      summary.compute.mockResolvedValue({
+        date: "2026-11-13",
+        items: [{ item: "PAYABLE_TODAY", count: 2 }],
+      });
+      const get = (user: (typeof USERS)[string]) =>
+        request(http.server())
+          .get("/pending-summary")
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`);
+      const ok = await get(USERS.admin).expect(200);
+      expect(ok.body).toEqual({
+        date: "2026-11-13",
+        items: [{ item: "PAYABLE_TODAY", count: 2 }],
+      });
+      await get(USERS.professional).expect(403);
+      await get(USERS.superAdmin).expect(403);
     });
 
     it("o sino: o profissional e o administrador leem só as próprias notificações", async () => {

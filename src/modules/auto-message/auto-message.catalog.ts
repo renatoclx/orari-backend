@@ -13,6 +13,8 @@ export const AUTO_MESSAGE_KINDS = [
   // Avisos ao profissional que usa o app, não ao cliente.
   "PROFESSIONAL_REMINDER",
   "PROFESSIONAL_SUMMARY",
+  // Ao administrador da clínica.
+  "ADMIN_SUMMARY",
 ] as const satisfies readonly AutoMessageKind[];
 
 // As situações que vão ao cliente (as de sempre) e as que vão ao profissional.
@@ -38,8 +40,27 @@ const SUMMARY_VARIABLES = [
   "hora",
   "quantidade",
 ] as const;
+// O resumo de pendências do administrador: {resumo} é a frase pronta
+// ("3 contas a pagar hoje, 2 recebimentos atrasados e 4 aniversariantes").
+const ADMIN_VARIABLES = [...PERSON_VARIABLES, "data", "resumo"] as const;
 export type MessageVariable =
-  (typeof APPOINTMENT_VARIABLES)[number] | (typeof SUMMARY_VARIABLES)[number];
+  | (typeof APPOINTMENT_VARIABLES)[number]
+  | (typeof SUMMARY_VARIABLES)[number]
+  | (typeof ADMIN_VARIABLES)[number];
+
+// Itens do resumo de pendências do administrador (cada um confere a
+// funcionalidade do plano que o alimenta) e as horas possíveis do envio.
+export const SUMMARY_ITEMS = [
+  "PAYABLE_TODAY",
+  "PAYABLE_OVERDUE",
+  "RECEIVABLE_OVERDUE",
+  "OPEN_TABS",
+  "BIRTHDAYS",
+] as const;
+export type SummaryItem = (typeof SUMMARY_ITEMS)[number];
+export const SUMMARY_HOURS = [7, 8, 9, 10] as const;
+// O resumo do administrador pode sair até o meio-dia (um reinício da API ainda entrega).
+export const ADMIN_SUMMARY_LAST_HOUR = 12;
 
 // O lembrete do profissional sai sempre 30 minutos antes (fixo, sem opção).
 export const PROFESSIONAL_REMINDER_MINUTES = 30;
@@ -58,11 +79,16 @@ export interface AutoMessageSettings {
   body: string;
   reminderOffsets: number[];
   missYouDays: number | null;
+  /** Resumo do administrador: a hora do envio e os itens que entram. */
+  summaryHour: number | null;
+  summaryItems: string[];
 }
 
 interface KindDefinition {
   variables: readonly MessageVariable[];
-  defaults: Omit<AutoMessageSettings, "kind">;
+  // As opções do resumo do administrador só existem nele.
+  defaults: Omit<AutoMessageSettings, "kind" | "summaryHour" | "summaryItems"> &
+    Partial<Pick<AutoMessageSettings, "summaryHour" | "summaryItems">>;
 }
 
 /**
@@ -145,8 +171,25 @@ export const AUTO_MESSAGE_CATALOG: Record<AutoMessageKind, KindDefinition> = {
       missYouDays: null,
     },
   },
+  // Ao administrador: ligado, às 8h, com todos os itens que o plano libera.
+  ADMIN_SUMMARY: {
+    variables: ADMIN_VARIABLES,
+    defaults: {
+      enabled: true,
+      body: "Bom dia, {nome}! Hoje: {resumo}.",
+      reminderOffsets: [],
+      missYouDays: null,
+      summaryHour: 8,
+      summaryItems: [...SUMMARY_ITEMS],
+    },
+  },
 };
 
 export function defaultSettings(kind: AutoMessageKind): AutoMessageSettings {
-  return { kind, ...AUTO_MESSAGE_CATALOG[kind].defaults };
+  return {
+    kind,
+    summaryHour: null,
+    summaryItems: [],
+    ...AUTO_MESSAGE_CATALOG[kind].defaults,
+  };
 }

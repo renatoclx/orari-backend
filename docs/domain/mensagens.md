@@ -34,6 +34,8 @@
 | body            | Texto com as variáveis (até 500)                                                                               |
 | reminderOffsets | Lembrete: minutos antes do horário (ex.: 1440 e 30)                                                            |
 | missYouDays     | Sentimos sua falta: dias sem vir                                                                               |
+| summaryHour     | Resumo do administrador: a hora do envio (7 a 10)                                                              |
+| summaryItems    | Resumo do administrador: os itens que entram (`PAYABLE_TODAY`, `PAYABLE_OVERDUE`, `RECEIVABLE_OVERDUE`, `OPEN_TABS`, `BIRTHDAYS`) |
 | createdAt, updatedAt | Criação e última alteração                                                                                |
 
 - Uma por situação em cada clínica (único: `companyId` + `kind`).

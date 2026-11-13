@@ -29,6 +29,7 @@ import { ProductController } from "../product/product.controller";
 import { StockMovementController } from "../stock/stock-movement.controller";
 import { ProductSaleController } from "../product-sale/product-sale.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
+import { PendingSummaryController } from "../notification/pending-summary.controller";
 import { ProfessionalAppController } from "../professional-app/professional-app.controller";
 import { ProfessionalCommissionController } from "../professional-app/professional-commission.controller";
 import { AuthController } from "../auth/auth.controller";
@@ -85,6 +86,8 @@ const EXEMPT: Record<string, string> = {
   StateController: "dado de referência (estados)",
   NotificationController:
     "a caixa e o push de cada usuário (só as próprias; vale para qualquer um da empresa)",
+  PendingSummaryController:
+    "só o ADMIN (@Roles); cada item confere a funcionalidade do plano no service",
   AddressController:
     "endereços de pessoas e da empresa: escopo da empresa (ver technical-debt.md)",
   ContactController:
@@ -131,6 +134,7 @@ const CONTROLLERS: Controller[] = [
   CompanyController,
   ContactController,
   NotificationController,
+  PendingSummaryController,
   PaymentController,
   PaymentMethodController,
   PeopleController,

@@ -167,12 +167,17 @@ describe("NotificationService", () => {
           { category: "DAILY_SUMMARY", push: true },
         ],
       });
+      // As pendências do dia são de quem administra.
+      expect(result.preferences.map((item) => item.category)).not.toContain(
+        "PENDING_SUMMARY",
+      );
     });
 
-    it("quem administra só vê Agendamentos (lembrete e resumo são do profissional)", async () => {
+    it("quem administra vê Agendamentos e Pendências do dia (lembrete e resumo da manhã são do profissional)", async () => {
       const result = await service.preferences({ ...user, type: "ADMIN" });
       expect(result.preferences.map((item) => item.category)).toEqual([
         "APPOINTMENT",
+        "PENDING_SUMMARY",
       ]);
     });
 
@@ -195,6 +200,8 @@ describe("NotificationService", () => {
       const result = await service.preferences({ ...user, type: "ADMIN" });
       expect(result.preferences).toEqual([
         { category: "APPOINTMENT", push: false },
+        // Sem linha gravada, vale o padrão (ligado).
+        { category: "PENDING_SUMMARY", push: true },
       ]);
     });
 

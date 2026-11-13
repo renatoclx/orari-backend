@@ -11,6 +11,10 @@ import {
 } from "../auto-message/auto-message-schedule";
 import { PROFESSIONAL_REMINDER_MINUTES } from "../auto-message/auto-message.catalog";
 import { firstName, renderMessage } from "../auto-message/auto-message-text";
+import {
+  NotifierCompanies,
+  type NotifierCompany,
+} from "./notifier-companies.service";
 import { NotificationDispatcher } from "./notification-dispatcher.service";
 import {
   attendanceCount,
@@ -19,12 +23,6 @@ import {
   UPCOMING_STATUSES,
 } from "./professional-notifier";
 import { buildHome, homeRanges } from "../professional-app/professional-home";
-
-interface Company {
-  id: string;
-  name: string;
-  timezone: string;
-}
 
 interface ProfessionalUser {
   id: string;
@@ -49,29 +47,8 @@ export class ProfessionalNotifierJob {
     private readonly prisma: PrismaService,
     private readonly autoMessageService: AutoMessageService,
     private readonly dispatcher: NotificationDispatcher,
+    private readonly directory: NotifierCompanies,
   ) {}
-
-  /** Clínicas ativas com Mensagens no plano. */
-  private async companies(): Promise<Company[]> {
-    const access = await this.prisma.companyFeatureAccess.findMany({
-      where: { feature: "messages", canView: true },
-      select: { companyId: true },
-    });
-    const rows = await this.prisma.company.findMany({
-      where: { id: { in: access.map((row) => row.companyId) }, isActive: true },
-      select: {
-        id: true,
-        fantasyName: true,
-        corporateReason: true,
-        timezone: true,
-      },
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.fantasyName ?? row.corporateReason,
-      timezone: row.timezone,
-    }));
-  }
 
   // Os usuários só-app (PROFESSIONAL) da clínica, com o profissional de cada um.
   private async professionalUsers(
@@ -97,7 +74,7 @@ export class ProfessionalNotifierJob {
     this.runningReminders = true;
     let sent = 0;
     try {
-      for (const company of await this.companies()) {
+      for (const company of await this.directory.list()) {
         sent += await this.remindersOf(company, now);
       }
       if (sent > 0) this.logger.log(`Lembretes ao profissional: ${sent}`);
@@ -109,7 +86,10 @@ export class ProfessionalNotifierJob {
     return sent;
   }
 
-  private async remindersOf(company: Company, now: Date): Promise<number> {
+  private async remindersOf(
+    company: NotifierCompany,
+    now: Date,
+  ): Promise<number> {
     const settings = await this.autoMessageService.findOne(
       company.id,
       "PROFESSIONAL_REMINDER",
@@ -183,7 +163,7 @@ export class ProfessionalNotifierJob {
     this.runningSummary = true;
     let sent = 0;
     try {
-      for (const company of await this.companies()) {
+      for (const company of await this.directory.list()) {
         if (!summaryWindowOpen(now, company.timezone)) continue;
         sent += await this.summaryOf(company, now);
       }
@@ -196,7 +176,10 @@ export class ProfessionalNotifierJob {
     return sent;
   }
 
-  private async summaryOf(company: Company, now: Date): Promise<number> {
+  private async summaryOf(
+    company: NotifierCompany,
+    now: Date,
+  ): Promise<number> {
     const settings = await this.autoMessageService.findOne(
       company.id,
       "PROFESSIONAL_SUMMARY",
