@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import { Test, TestingModule } from "@nestjs/testing";
 import * as bcrypt from "bcrypt";
@@ -27,6 +28,7 @@ describe("AuthService", () => {
   const userServiceMock = {
     findByEmailWithPassword: vi.fn(),
     findProfessionalByPhoneWithPassword: vi.fn(),
+    findProfessionalByEmailWithPassword: vi.fn(),
     findActiveById: vi.fn(),
     findProfile: vi.fn(),
   };
@@ -42,6 +44,7 @@ describe("AuthService", () => {
   const configServiceMock = {
     get: vi.fn(),
   };
+  const eventsMock = { emit: vi.fn() };
   const prismaMock = {
     refreshToken: {
       findUniqueOrThrow: vi.fn(),
@@ -68,6 +71,7 @@ describe("AuthService", () => {
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PrismaService, useValue: prismaMock },
+        { provide: EventEmitter2, useValue: eventsMock },
       ],
     }).compile();
 
@@ -224,8 +228,8 @@ describe("AuthService", () => {
     });
   });
 
-  describe("professionalLogin (telefone, o app)", () => {
-    const dto = { phone: "(11) 98888-0001", password: "senha-forte" };
+  describe("professionalLogin (telefone ou e-mail, o app)", () => {
+    const dto = { login: "(11) 98888-0001", password: "senha-forte" };
     const user = {
       id: "user-9",
       email: "pro@clinica.com",
@@ -253,6 +257,40 @@ describe("AuthService", () => {
       expect(result.accessToken).toBe("signed-token");
     });
 
+    it("com @ entra pelo e-mail do usuário profissional", async () => {
+      userServiceMock.findProfessionalByEmailWithPassword.mockResolvedValue(
+        user,
+      );
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+      companyServiceMock.isActive.mockResolvedValue(true);
+      jwtServiceMock.signAsync.mockResolvedValue("signed-token");
+
+      const result = await authService.professionalLogin({
+        ...dto,
+        login: " pro@clinica.com ",
+      });
+
+      expect(
+        userServiceMock.findProfessionalByEmailWithPassword,
+      ).toHaveBeenCalledWith("pro@clinica.com");
+      expect(
+        userServiceMock.findProfessionalByPhoneWithPassword,
+      ).not.toHaveBeenCalled();
+      expect(result.accessToken).toBe("signed-token");
+    });
+
+    it("e-mail sem profissional: a mesma recusa (401), com a comparação rodando", async () => {
+      userServiceMock.findProfessionalByEmailWithPassword.mockResolvedValue(
+        null,
+      );
+      vi.mocked(bcrypt.compare).mockClear();
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+      await expect(
+        authService.professionalLogin({ ...dto, login: "x@clinica.com" }),
+      ).rejects.toThrow("Credenciais inválidas");
+      expect(bcrypt.compare).toHaveBeenCalledTimes(1);
+    });
+
     it("aceita o +55", async () => {
       userServiceMock.findProfessionalByPhoneWithPassword.mockResolvedValue(
         null,
@@ -260,7 +298,7 @@ describe("AuthService", () => {
       vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
 
       await expect(
-        authService.professionalLogin({ ...dto, phone: "+5511988880001" }),
+        authService.professionalLogin({ ...dto, login: "+5511988880001" }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(
         userServiceMock.findProfessionalByPhoneWithPassword,
@@ -286,7 +324,7 @@ describe("AuthService", () => {
       // Telefone fora do formato: nem consulta o banco, mas compara do mesmo jeito.
       userServiceMock.findProfessionalByPhoneWithPassword.mockClear();
       await expect(
-        authService.professionalLogin({ ...dto, phone: "123" }),
+        authService.professionalLogin({ ...dto, login: "123" }),
       ).rejects.toThrow("Credenciais inválidas");
       expect(
         userServiceMock.findProfessionalByPhoneWithPassword,
@@ -308,6 +346,15 @@ describe("AuthService", () => {
   });
 
   describe("login", () => {
+    it("credenciais inválidas não anunciam a entrada (sem boas-vindas)", async () => {
+      userServiceMock.findByEmailWithPassword.mockResolvedValue(null);
+      vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
+      await expect(
+        authService.login({ email: "x@example.com", password: "errada1234" }),
+      ).rejects.toThrow();
+      expect(eventsMock.emit).not.toHaveBeenCalled();
+    });
+
     const dto = { email: "test@example.com", password: "123456" };
     const user = {
       id: "user-1",
@@ -315,6 +362,20 @@ describe("AuthService", () => {
       password: "hashed-password",
       companyId: "company-1",
     };
+
+    it("o profissional não entra pelo login do sistema web: 403 depois da senha conferida", async () => {
+      userServiceMock.findByEmailWithPassword.mockResolvedValue({
+        ...user,
+        type: "PROFESSIONAL",
+      });
+      vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
+      companyServiceMock.isActive.mockResolvedValue(true);
+      await expect(authService.login(dto)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(eventsMock.emit).not.toHaveBeenCalled();
+      expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
+    });
 
     it("deve retornar accessToken e refreshToken quando as credenciais são válidas", async () => {
       userServiceMock.findByEmailWithPassword.mockResolvedValue(user);
@@ -334,6 +395,10 @@ describe("AuthService", () => {
         email: user.email,
       });
       expect(result.accessToken).toBe("signed-token");
+      // Entrou: anuncia (as boas-vindas do primeiro acesso escutam).
+      expect(eventsMock.emit).toHaveBeenCalledWith("user.logged-in", {
+        userId: "user-1",
+      });
 
       // O refresh token bruto nunca é persistido: só o seu hash.
       expect(prismaMock.refreshToken.create).toHaveBeenCalledWith({

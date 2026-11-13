@@ -15,24 +15,33 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  name      String
-  email     String
-  password  String
-  type      UserType
-  companyId String
+  id                    String    @id @default(uuid())
+  name                  String
+  email                 String
+  password              String
+  type                  UserType
+  companyId             String
   // Profissional (People do tipo PROFESSIONAL) que este usuário representa; dá acesso à anamnese.
-  peopleId  String?
+  peopleId              String?
   // Telefone com DDD, só dígitos (10 ou 11): o login do usuário PROFESSIONAL no
   // app (como o cliente entra). Só ele tem; único entre os ativos.
-  phone     String?   @db.VarChar(11)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime?
-  deletedAt DateTime?
+  phone                 String?   @db.VarChar(11)
+  // Boas-vindas do primeiro acesso: preenchido (de forma atômica) quando a
+  // notificação de boas-vindas é enviada, para sair uma vez só.
+  welcomedAt            DateTime?
+  // O usuário dispensou a lista de primeiros passos (ADMIN) ou o cartão de
+  // boas-vindas do app (PROFESSIONAL).
+  onboardingDismissedAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime?
+  deletedAt             DateTime?
 
-  company                   Company                    @relation(fields: [companyId], references: [id])
-  people                    People?                    @relation(fields: [peopleId], references: [id])
+  company                   Company                      @relation(fields: [companyId], references: [id])
+  people                    People?                      @relation(fields: [peopleId], references: [id])
   refreshTokens             RefreshToken[]
+  notifications             UserNotification[]
+  notificationPreferences   UserNotificationPreference[]
+  pushSubscriptions         UserPushSubscription[]
   auditLogs                 AuditLog[]
   messageCampaigns          MessageCampaign[]
   agendaBlocks              AgendaBlock[]
@@ -41,15 +50,15 @@ model User {
   // Adiantamentos de comissão que este usuário lançou.
   commissionAdvances        CommissionAdvance[]
   // Fechamentos de comissão que este usuário fez e os que desfez.
-  closingsCreated           CommissionClosing[]        @relation("CommissionClosingCreatedBy")
-  closingsCancelled         CommissionClosing[]        @relation("CommissionClosingCancelledBy")
+  closingsCreated           CommissionClosing[]          @relation("CommissionClosingCreatedBy")
+  closingsCancelled         CommissionClosing[]          @relation("CommissionClosingCancelledBy")
   // Contas a pagar que este usuário lançou.
-  payablesCreated           Payable[]                  @relation("PayableCreatedBy")
+  payablesCreated           Payable[]                    @relation("PayableCreatedBy")
   // Movimentações de estoque que este usuário lançou.
   stockMovements            StockMovement[]
   // Vendas de produto que este usuário lançou e as que cancelou.
-  productSalesCreated       ProductSale[]              @relation("ProductSaleCreatedBy")
-  productSalesCancelled     ProductSale[]              @relation("ProductSaleCancelledBy")
+  productSalesCreated       ProductSale[]                @relation("ProductSaleCreatedBy")
+  productSalesCancelled     ProductSale[]                @relation("ProductSaleCancelledBy")
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -167,7 +176,7 @@ model Company {
   services              Service[]
   paymentMethods        PaymentMethod[]
   businessHours         BusinessHour[]
-  notifications         Notification[]
+  userNotifications     UserNotification[]
   auditLogs             AuditLog[]
   anamnesisTemplates    AnamnesisTemplate[]
   anamneses             Anamnesis[]
@@ -696,23 +705,77 @@ model BusinessHour {
   @@map("business_hours")
 }
 
+// Categoria da notificação: define qual interruptor de push vale (o da caixa
+// não existe: a caixa recebe tudo). Cresce junto com as fontes de aviso.
+enum NotificationCategory {
+  APPOINTMENT
+  REMINDER
+  DAILY_SUMMARY
+  PENDING_SUMMARY
+  // Boas-vindas do primeiro acesso (uma vez só, sem interruptor).
+  WELCOME
+}
+
 /**
- * Aviso para a empresa agir. Ainda não há tipos em uso: a entidade é mantida para
- * implementações futuras. Notificações não são excluídas: são resolvidas (ver docs/database.md).
+ * Notificação de um usuário do sistema (o sino do painel e do app do
+ * profissional). Gravada sempre, mesmo sem push: é a caixa dele. A chave de
+ * deduplicação é única por usuário, então um evento repetido (job rodando de
+ * novo, API reiniciada) nunca duplica o aviso.
  */
-model Notification {
-  id         String    @id @default(uuid())
-  companyId  String
-  message    String
-  readAt     DateTime?
-  resolvedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime?
+model UserNotification {
+  id        String               @id @default(uuid())
+  companyId String
+  userId    String
+  category  NotificationCategory
+  title     String               @db.VarChar(100)
+  body      String               @db.VarChar(500)
+  // Caminho aberto ao tocar (do painel ou do app, conforme quem recebe).
+  url       String?
+  dedupeKey String               @db.VarChar(200)
+  readAt    DateTime?
+  // Limpa da caixa: some da lista e do contador, mas a linha fica, para a chave
+  // de deduplicação continuar valendo (um evento repetido não volta a avisar).
+  clearedAt DateTime?
+  createdAt DateTime             @default(now())
 
   company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
 
-  @@index([companyId, resolvedAt])
-  @@map("notifications")
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("user_notifications")
+}
+
+// O que vira push para o usuário, por categoria. Sem linha, vale o padrão
+// (ligado). A caixa de notificações não tem interruptor.
+model UserNotificationPreference {
+  id       String               @id @default(uuid())
+  userId   String
+  category NotificationCategory
+  push     Boolean              @default(true)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category])
+  @@map("user_notification_preferences")
+}
+
+// Aparelho do usuário com o push ativado (Web Push). O endereço é único por
+// aparelho: quem entra depois no mesmo aparelho e ativa de novo fica com ele.
+model UserPushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("user_push_subscriptions")
 }
 
 // Ações sensíveis registradas na auditoria. Cresce junto com as funcionalidades
@@ -1251,6 +1314,11 @@ enum AutoMessageKind {
   APPOINTMENT_CANCELLED
   BIRTHDAY
   MISS_YOU
+  // Avisos ao profissional que usa o app (a clínica liga e edita o texto).
+  PROFESSIONAL_REMINDER
+  PROFESSIONAL_SUMMARY
+  // Resumo de pendências do dia para quem administra a clínica.
+  ADMIN_SUMMARY
 }
 
 // Configuração de uma situação numa clínica. Sem linha, valem os padrões
@@ -1266,6 +1334,10 @@ model AutoMessage {
   reminderOffsets Int[]
   // Sentimos sua falta: dias sem vir depois do último atendimento.
   missYouDays     Int?
+  // Resumo de pendências do administrador: a hora (no relógio da clínica) e os
+  // itens que entram (PAYABLE_TODAY, PAYABLE_OVERDUE...).
+  summaryHour     Int?
+  summaryItems    String[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime?
 

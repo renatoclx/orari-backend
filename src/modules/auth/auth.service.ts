@@ -1,10 +1,16 @@
 import { randomBytes, createHash } from "node:crypto";
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import ms, { type StringValue } from "ms";
 import { PeopleType, UserType } from "../../../generated/prisma/enums";
+import { USER_EVENTS } from "../../common/events/user-events";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import {
@@ -70,6 +76,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly events: EventEmitter2,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthTokens> {
@@ -91,19 +98,37 @@ export class AuthService {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
-    return this.issueTokens(user.id, user.email);
+    // O profissional entra só pelo app (professionalLogin). A recusa vem depois
+    // da senha conferida: quem erra a senha recebe a mensagem genérica.
+    if (user.type === UserType.PROFESSIONAL) {
+      throw new ForbiddenException(
+        "Profissionais entram pelo aplicativo do Orari, não pelo sistema web.",
+      );
+    }
+
+    return this.signedIn(user);
   }
 
   /**
-   * Entrada do usuário PROFESSIONAL pelo telefone (o app). Mesma resposta
+   * Entrada do usuário PROFESSIONAL pelo telefone ou pelo e-mail (o app). Mesma resposta
    * genérica do login por e-mail: não revela se o telefone tem acesso, e a
    * comparação roda mesmo sem usuário (ver TIMING_PLACEHOLDER_HASH).
    */
   async professionalLogin(dto: ProfessionalLoginDto): Promise<AuthTokens> {
-    const phone = normalizePortalPhone(dto.phone);
-    const user = phone
-      ? await this.userService.findProfessionalByPhoneWithPassword(phone)
-      : null;
+    const login = dto.login.trim();
+    // Com "@" é e-mail; sem, telefone (só os dígitos; fora do formato, nem consulta).
+    let user: Awaited<
+      ReturnType<UserService["findProfessionalByEmailWithPassword"]>
+    > = null;
+    if (login.includes("@")) {
+      user = await this.userService.findProfessionalByEmailWithPassword(login);
+    } else {
+      const phone = normalizePortalPhone(login);
+      if (phone) {
+        user =
+          await this.userService.findProfessionalByPhoneWithPassword(phone);
+      }
+    }
 
     const passwordMatches = await bcrypt.compare(
       dto.password,
@@ -116,6 +141,12 @@ export class AuthService {
       throw new UnauthorizedException("Credenciais inválidas");
     }
 
+    return this.signedIn(user);
+  }
+
+  // Entrou: anuncia (as boas-vindas do primeiro acesso escutam) e emite os tokens.
+  private signedIn(user: { id: string; email: string }): Promise<AuthTokens> {
+    this.events.emit(USER_EVENTS.loggedIn, { userId: user.id });
     return this.issueTokens(user.id, user.email);
   }
 

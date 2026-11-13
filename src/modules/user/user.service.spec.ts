@@ -915,6 +915,20 @@ describe("UserService", () => {
     });
   });
 
+  describe("findProfessionalByEmailWithPassword", () => {
+    it("só o usuário PROFESSIONAL ativo, pelo e-mail", async () => {
+      await userService.findProfessionalByEmailWithPassword("pro@clinica.com");
+
+      expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          email: "pro@clinica.com",
+          type: "PROFESSIONAL",
+          deletedAt: null,
+        },
+      });
+    });
+  });
+
   describe("findProfessionalByPhoneWithPassword", () => {
     it("só o usuário PROFESSIONAL ativo, pelo telefone", async () => {
       await userService.findProfessionalByPhoneWithPassword("11988880001");

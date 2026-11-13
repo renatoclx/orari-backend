@@ -36,7 +36,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Plan                 | **Sem exclusão** (`isActive`, reativável)    | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco               |
 | Payment              | Soft delete                                  | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
 | BusinessHour         | Soft delete                                  | Janelas de atendimento por dia da semana                                                         |
-| Notification         | **Sem exclusão** (resolvida)                 | Sem tipos em uso (entidade mantida para o futuro)                                                |
+| UserNotification     | **Sem exclusão** (lida: `readAt`)            | Notificações por usuário (o sino); chave de deduplicação única por usuário                       |
 
 ### Rotas
 
@@ -626,6 +626,40 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
 - Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
 
+## 2.67 Boas-vindas e primeiros passos
+
+- **Migração `welcome`:** categoria `WELCOME`; `User.welcomedAt` e `onboardingDismissedAt`. Os usuários existentes são marcados como já recebidos (só quem entra depois ganha as boas-vindas).
+- **Evento `user.logged-in`** (`common/events/user-events.ts`): o `AuthService` anuncia depois do login por e-mail e do login do app (`signedIn`). `WelcomeListener` grava `welcomedAt` de forma atômica (`updateMany ... welcomedAt: null`) e manda a notificação pelo despachante.
+- **`NotificationService.subscribe`:** aparelho novo para o usuário recebe o push "Avisos ativados".
+- **Módulo `onboarding`:** `OnboardingService.find` (sete passos a partir dos dados da clínica, cada um só se o plano libera), `dismiss` e `dismissed`; rotas `GET /onboarding` (ADMIN), `GET /onboarding/welcome` (PROFESSIONAL) e `PATCH /onboarding/dismiss` (ADMIN e PROFESSIONAL; as duas últimas marcadas `@ProfessionalApp()`).
+- **Testes:** o listener (atômico, por tipo, SUPER_ADMIN, falha), o serviço dos passos (dados, plano, dispensa), as regras puras, a confirmação do push, o evento no login e as três rotas no e2e.
+
+## 2.66 Resumo de pendências do administrador
+
+- **Enums e colunas:** `NotificationCategory.PENDING_SUMMARY`, `AutoMessageKind.ADMIN_SUMMARY`, `AutoMessage.summaryHour` e `summaryItems` (migração `admin_pending_summary`; a lista tem padrão vazio no banco, para as linhas antigas). `categoriesFor`: o ADMIN vê `APPOINTMENT` e `PENDING_SUMMARY`.
+- **`PendingSummaryService.compute`:** os cinco itens de hoje (contas a pagar de hoje e atrasadas, recebimentos atrasados, comandas do dia e aniversariantes), cada um só se o plano libera a funcionalidade (`CompanyAccessService.can`). Serve ao job (a rota `GET /pending-summary` foi retirada: o Dashboard não mostra mais as pendências).
+- **`AdminSummaryJob`:** a cada 5 min, a partir da hora escolhida e até o meio-dia; só os itens marcados; sem número, não manda; chave `pending:AAAA-MM-DD`; push genérico.
+- **`NotifierCompanies`:** as clínicas ativas com Mensagens no plano, extraído do job do profissional e usado pelos dois.
+- **Testes:** regras puras (`pending-summary.spec`), o service (cada item, plano, `only`), o job (hora, meio-dia, sem número, desligado) e as opções novas do `AutoMessageService`; 
+
+## 2.65 Avisos de agendamento ao profissional
+
+- **Enums:** `NotificationCategory` ganhou `REMINDER` e `DAILY_SUMMARY`; `AutoMessageKind`, `PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY` (migração `professional_notifications`). `categoriesFor(tipo)` diz quais categorias o usuário vê nas preferências (o ADMIN, só `APPOINTMENT`).
+- **`ProfessionalAppointmentListener`:** o que a clínica faz nos horários dele (eventos `created`, `rescheduled`, `cancelled` e `classSessionCancelled`), para o usuário PROFESSIONAL ligado; push sem o nome do cliente.
+- **`ProfessionalNotifierJob`:** o lembrete (30 min antes, a cada 5 min, uma sessão de turma = um lembrete) e o resumo da manhã (7h30 a 11h; reaproveita o `buildHome`). Configuração lida de `AutoMessageService` (agora exportado): liga/desliga e texto por clínica; empresas ativas com `messages` no plano, sem exigir o portal.
+- **`ClientAutoMessageKind`:** o `AutoMessageSender` passou a tipar só as situações do cliente.
+- **Regras puras** em `professional-notifier.ts` (`reminderUnits`, `summaryWindowOpen`, `attendanceCount`), testadas sem banco.
+- **Testes:** specs do listener, do job (janelas, turma, desligado, dia livre, cada profissional com o seu número), das regras puras, das preferências por tipo e das duas situações novas do `AutoMessageService`.
+
+## 2.64 Notificações dos usuários (o sino)
+
+- **Troca do model:** a tabela `notifications` (por empresa, sem nenhum tipo em uso) saiu. Entraram `UserNotification` (a caixa de cada usuário, com `dedupeKey` único por usuário), `UserNotificationPreference` (o push por categoria) e `UserPushSubscription` (os aparelhos). Migração `user_notifications`.
+- **`NotificationDispatcher`:** o ponto único de envio. Grava na caixa (sempre) e, se o usuário quer e tem aparelho, manda o push (`PushSenderService`, o mesmo do cliente, agora exportado pelo `PortalModule`). O texto do push pode ser genérico, sem o nome do cliente. Falha de push não derruba a notificação.
+- **Primeira fonte (`AppointmentNotifierListener`):** o cliente marca ou cancela pelo app (`appointment.created-by-client` e `appointment.cancelled-by-client`, eventos novos; as mensagens automáticas não os escutam) e avisam os ADMIN (destino `/`) e o usuário ligado ao profissional (destino `/app/agenda?dia=`).
+- **Rotas** (`/notifications`, de qualquer usuário da empresa, marcadas `@ProfessionalApp()`): lista (10 por página, `onlyUnread`, com o total de não lidas), `unread-count`, `read-all`, `:id/read`, `preferences` (GET e PUT) e `push/subscriptions` (POST e DELETE). Cada um só lê e altera as próprias.
+- **Limpar a caixa:** `DELETE /notifications` marca `clearedAt` (migração `user_notification_cleared`); a linha fica e a chave de deduplicação continua valendo. `GET /notifications/unread-count` devolve também `latestAt` (a mais nova que não foi limpa), para o painel mostrar o aviso na tela.
+- **Testes:** specs do service, do despachante (deduplicação, preferências, push que falha, aparelho que sumiu) e do ouvinte, a lista de rotas do profissional e o e2e.
+
 ## 2.56 Fotos privadas por link assinado
 
 - **Assinatura** (`common/storage/signed-upload-url.ts`): `signUploadPath` acrescenta `?exp=…&sig=…` ao caminho, com HMAC-SHA256 de uma chave derivada do `JWT_SECRET` (rótulo próprio, sem variável nova). A validade vai até o fim da hora seguinte, então o link é o mesmo dentro da hora e o navegador aproveita o cache. `isValidUploadSignature` compara em tempo constante.
@@ -659,4 +693,10 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **Onde:** `create` (agora também o cliente); `applyUpdate` (a conferência e a gravação passaram para uma transação travada; antes eram passos soltos); `rescheduleFromRecurrence` e `createFromRecurrence` (passam a exigir `Prisma.TransactionClient`); `RecurringAppointmentService.createSchedule` e `replaceInClassGroup`, e `ClassSessionService.enrollInClassGroup` e `enroll`, que travam a agenda **antes** da linha da sessão (`FOR UPDATE`), na ordem que evita deadlock.
 - **Testes:** ordem e repetição das chaves, a criação travando profissional e cliente, e os mocks dos services de recorrência e turma com `lockAgenda`. Na API real, cinco rodadas de cada corrida (mesmo cliente com dois profissionais, duas edições para o mesmo horário, duas recorrências, recorrência contra avulso, encaixe na turma contra avulso, recorrência na turma contra encaixe em lote): sempre um passa e o outro recebe 409, sem deadlock nem 500. Antes, não havia sobreposição gravada no banco local.
 - **Mensagem do conflito:** `findSlotConflict` passou a dizer "cliente" quando o agendamento achado não conta para o profissional pela regra da consulta (ex.: o aluno que já está na mesma sessão da turma). Antes, o mesmo profissional fazia a mensagem dizer "profissional". Valendo para os dois, continua "profissional".
+
+## 2.68 Login do profissional por e-mail e telefone
+
+- **`POST /auth/professional/login`:** o corpo passou de `phone` para `login` (telefone com DDD ou e-mail). Com `@`, `UserService.findProfessionalByEmailWithPassword` (só PROFESSIONAL ativo, e-mail exato após `trim`); sem, o telefone como antes. Mesma resposta genérica, mesmo limite de tentativas e a comparação de senha rodando mesmo sem usuário.
+- **`POST /auth/login`:** com a senha conferida e a empresa ativa, o tipo `PROFESSIONAL` recebe **403** e nenhum token (antes o frontend revogava o token depois). Quem erra a senha continua com o 401 genérico.
+- **Testes:** o login por e-mail (e a recusa com a comparação rodando), o 403 do login web, a consulta por e-mail no `UserService` e o corpo `login` no e2e.
 

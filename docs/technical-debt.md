@@ -422,3 +422,37 @@ vazia. O dono usa o Dashboard e os relatórios no painel.
 no app para quem não recebe comissão.
 
 **Registrado em:** 2026-11-12.
+
+## Notificações: contador por consulta, push só no app e sem limpeza
+
+**Onde:** `NotificationService`, `NotificationDispatcher` e o sino (2026-11-13).
+
+**O que é:** (1) o número do sino é conferido pelo navegador a cada minuto (e ao
+voltar para a aba), não em tempo real; (2) o push só existe no app do profissional
+(PWA com service worker): o painel da clínica tem o sino e a caixa, mas não recebe
+push no navegador; (3) o despachante envia o push em série, dentro do evento; (4)
+as notificações limpas continuam gravadas (`clearedAt`), e as lidas ficam para sempre; (5) não há horário de silêncio nem limite
+de frequência; (6) ao sair do app, o aparelho é desligado na API pelo próprio app:
+se essa chamada falhar, o aparelho segue recebendo até outro usuário ativar o push
+nele.
+
+**Impacto:** o atraso do sino é de até 1 minuto; um administrador com a clínica
+aberta em outra aba não é chamado por push; a tabela cresce sem limite.
+
+**Como resolver:** SSE ou WebSocket para o contador; service worker próprio do
+painel; fila com repetição (BullMQ) para o despacho; rotina que apaga as lidas com
+mais de N dias; interruptor de silêncio por usuário.
+
+**Registrado em:** 2026-11-13.
+
+## Primeiros passos: sete contagens por consulta e boas-vindas só no login
+
+**Onde:** `OnboardingService.find` e `WelcomeListener` (2026-11-13).
+
+**O que é:** cada passo da lista é uma contagem no banco (horários, empresa, serviços, pessoas, agendamentos, portal), feita a cada abertura do dialog dos primeiros passos (e do sino, para o item do rodapé); a boas-vindas só sai no login (por e-mail ou pelo app), e quem foi criado antes da migração nunca a recebe.
+
+**Impacto:** sete consultas baratas por abertura (todas por `companyId`); uma clínica que já usa o sistema não vê a lista (os passos já estão feitos). Um usuário criado e que nunca entra nunca recebe.
+
+**Como resolver:** guardar o progresso numa linha por empresa, atualizada pelos eventos de cadastro, se o Dashboard passar a pesar; ou um job que mande as boas-vindas ao criar o usuário.
+
+**Registrado em:** 2026-11-13.

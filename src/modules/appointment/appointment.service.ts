@@ -176,7 +176,12 @@ export class AppointmentService {
 
   /** Anuncia o que a clínica fez (ver common/events/appointment-events.ts). */
   private announce(
-    event: (typeof APPOINTMENT_EVENTS)["created" | "rescheduled" | "cancelled"],
+    event: (typeof APPOINTMENT_EVENTS)[
+      | "created"
+      | "rescheduled"
+      | "cancelled"
+      | "createdByClient"
+      | "cancelledByClient"],
     { id, companyId }: { id: string; companyId: string },
   ): void {
     const payload: AppointmentEvent = { appointmentId: id, companyId };
@@ -233,10 +238,14 @@ export class AppointmentService {
         include: withRelations,
       });
     });
-    // Depois de gravado: o que o cliente marca pelo app não é anunciado.
-    if (source === AppointmentSource.CLINIC) {
-      this.announce(APPOINTMENT_EVENTS.created, created);
-    }
+    // Depois de gravado: o da clínica vira mensagem para o cliente; o que o
+    // cliente marca pelo app avisa a equipe (não há mensagem para ele).
+    this.announce(
+      source === AppointmentSource.CLINIC
+        ? APPOINTMENT_EVENTS.created
+        : APPOINTMENT_EVENTS.createdByClient,
+      created,
+    );
     return created;
   }
 
@@ -316,7 +325,8 @@ export class AppointmentService {
 
   /**
    * `actor`: quem pediu a mudança. A da clínica é anunciada (mudou a data ou
-   * cancelou); a do cliente pelo app, não.
+   * cancelou) e vira mensagem para o cliente; o cancelamento do cliente pelo
+   * app avisa a equipe.
    */
   async update(
     id: string,
@@ -336,6 +346,11 @@ export class AppointmentService {
       } else if (updated.startAt.getTime() !== appointment.startAt.getTime()) {
         this.announce(APPOINTMENT_EVENTS.rescheduled, updated);
       }
+    } else if (
+      updated.status === AppointmentStatus.CANCELLED &&
+      appointment.status !== AppointmentStatus.CANCELLED
+    ) {
+      this.announce(APPOINTMENT_EVENTS.cancelledByClient, updated);
     }
     return updated;
   }

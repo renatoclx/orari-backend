@@ -67,6 +67,6 @@ import { PortalSettingsService } from "./portal-settings.service";
   ],
   // Os avisos automáticos e as mensagens da clínica (módulo Mensagens) usam o
   // mesmo ponto de envio.
-  exports: [ClientNotifierService],
+  exports: [ClientNotifierService, PushSenderService],
 })
 export class PortalModule {}

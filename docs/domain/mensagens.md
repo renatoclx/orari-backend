@@ -34,6 +34,8 @@
 | body            | Texto com as variáveis (até 500)                                                                               |
 | reminderOffsets | Lembrete: minutos antes do horário (ex.: 1440 e 30)                                                            |
 | missYouDays     | Sentimos sua falta: dias sem vir                                                                               |
+| summaryHour     | Resumo do administrador: a hora do envio (7 a 10)                                                              |
+| summaryItems    | Resumo do administrador: os itens que entram (`PAYABLE_TODAY`, `PAYABLE_OVERDUE`, `RECEIVABLE_OVERDUE`, `OPEN_TABS`, `BIRTHDAYS`) |
 | createdAt, updatedAt | Criação e última alteração                                                                                |
 
 - Uma por situação em cada clínica (único: `companyId` + `kind`).
@@ -75,23 +77,24 @@
 
 ---
 
-## Notification
+## UserNotification
 
-- Representa um aviso para a empresa agir.
-- Ainda não há tipos de notificação em uso. A entidade é mantida para implementações futuras.
+- A notificação de um usuário do sistema (ADMIN ou PROFESSIONAL): o sino do painel e do app do profissional. Substitui a antiga `Notification` por empresa, que nunca teve tipo em uso.
+- Fica na caixa do usuário mesmo sem push. A mesma `dedupeKey` para o mesmo usuário grava uma só vez (um job rodando de novo, ou a API reiniciada, não duplica).
 
 ### Atributos
 
-| Nome       | Descrição                                      |
-| ---------- | ---------------------------------------------- |
-| id         | Identificador único                            |
-| companyId  | Código da empresa                              |
-| message    | Texto do aviso                                 |
-| readAt     | Data da leitura (opcional)                     |
-| resolvedAt | Data em que o aviso deixou de valer (opcional) |
+| Nome      | Descrição                                                           |
+| --------- | ------------------------------------------------------------------- |
+| id        | Identificador único                                                 |
+| companyId | Código da empresa                                                   |
+| userId    | Usuário que recebe                                                  |
+| category  | `APPOINTMENT` (cresce com as fontes de aviso)                       |
+| title     | Título (até 100 caracteres)                                         |
+| body      | Texto (até 500 caracteres)                                          |
+| url       | Caminho aberto ao tocar (do painel ou do app, conforme quem recebe) |
+| dedupeKey | Chave do evento, única por usuário                                  |
+| readAt    | Data da leitura (opcional)                                          |
+| clearedAt | Data em que o usuário limpou a caixa (opcional): some da lista e do contador, a linha fica |
 
-### Relacionamentos
-
-- Uma notificação pertence a uma empresa.
-
----
+`UserNotificationPreference` (usuário × categoria × `push`) e `UserPushSubscription` (aparelho do usuário: endereço e chaves) completam o conjunto.

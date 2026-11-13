@@ -20,7 +20,7 @@ describe("AutoMessageService", () => {
     prismaMock.autoMessage.findMany.mockResolvedValue([]);
   });
 
-  it("quem nunca salvou recebe os seis padrões: lembrete e agendamentos ligados", async () => {
+  it("quem nunca salvou recebe os nove padrões: lembrete, agendamentos e avisos do profissional e do administrador ligados", async () => {
     const all = await service.findAll(COMPANY);
     expect(all.map((item) => item.kind)).toEqual([...AUTO_MESSAGE_KINDS]);
     expect(
@@ -32,6 +32,9 @@ describe("AutoMessageService", () => {
       APPOINTMENT_CANCELLED: true,
       BIRTHDAY: false,
       MISS_YOU: false,
+      PROFESSIONAL_REMINDER: true,
+      PROFESSIONAL_SUMMARY: true,
+      ADMIN_SUMMARY: true,
     });
     expect(all[0].reminderOffsets).toEqual([1440, 30]);
     expect(all[5].missYouDays).toBe(30);
@@ -83,6 +86,9 @@ describe("AutoMessageService", () => {
           body: "Oi {nome}",
           reminderOffsets: [1440, 30],
           missYouDays: null,
+          // A hora e os itens só existem no resumo do administrador.
+          summaryHour: null,
+          summaryItems: [],
         },
         update: expect.objectContaining({
           reminderOffsets: [1440, 30],
@@ -135,7 +141,141 @@ describe("AutoMessageService", () => {
             },
           ],
         }),
-      ).resolves.toHaveLength(6);
+      ).resolves.toHaveLength(9);
+    });
+
+    it("o lembrete e o resumo do profissional não têm opção: gravam só ligado e texto", async () => {
+      await service.replace(COMPANY, {
+        items: [
+          {
+            kind: "PROFESSIONAL_REMINDER",
+            enabled: false,
+            body: "Atendimento às {hora}.",
+            reminderOffsets: [30, 60],
+          },
+          {
+            kind: "PROFESSIONAL_SUMMARY",
+            enabled: true,
+            body: "Bom dia, {nome}! Hoje: {quantidade}.",
+          },
+        ],
+      });
+      const calls = prismaMock.autoMessage.upsert.mock.calls as unknown as [
+        {
+          create: {
+            kind: string;
+            reminderOffsets: number[];
+            missYouDays: number | null;
+          };
+        },
+      ][];
+      for (const [args] of calls) {
+        // O tempo (30 min) e a hora (7h30) são fixos: nada de opção gravada.
+        expect(args.create.reminderOffsets).toEqual([]);
+        expect(args.create.missYouDays).toBeNull();
+      }
+    });
+
+    it("o texto do profissional não aceita o nome do cliente; o resumo aceita {quantidade}, o lembrete não", async () => {
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_REMINDER",
+              enabled: true,
+              body: "Com {cliente}",
+            },
+          ],
+        }),
+      ).rejects.toThrow("{cliente} não existe nesta mensagem");
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_REMINDER",
+              enabled: true,
+              body: "Hoje: {quantidade}",
+            },
+          ],
+        }),
+      ).rejects.toThrow("{quantidade} não existe nesta mensagem");
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "PROFESSIONAL_SUMMARY",
+              enabled: true,
+              body: "Hoje: {quantidade}, às {hora}",
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(9);
+    });
+
+    it("o resumo do administrador guarda a hora e os itens; ligado sem item: 400", async () => {
+      await service.replace(COMPANY, {
+        items: [
+          {
+            kind: "ADMIN_SUMMARY",
+            enabled: true,
+            body: "Hoje: {resumo}",
+            summaryHour: 9,
+            summaryItems: ["PAYABLE_TODAY", "BIRTHDAYS"],
+          },
+        ],
+      });
+      const calls = prismaMock.autoMessage.upsert.mock.calls as unknown as [
+        {
+          create: {
+            summaryHour: number | null;
+            summaryItems: string[];
+            reminderOffsets: number[];
+          };
+        },
+      ][];
+      expect(calls.at(-1)?.[0].create).toMatchObject({
+        summaryHour: 9,
+        summaryItems: ["PAYABLE_TODAY", "BIRTHDAYS"],
+        reminderOffsets: [],
+      });
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "ADMIN_SUMMARY",
+              enabled: true,
+              body: "Hoje: {resumo}",
+              summaryItems: [],
+            },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Desligado, pode ficar sem item.
+      await expect(
+        service.replace(COMPANY, {
+          items: [
+            {
+              kind: "ADMIN_SUMMARY",
+              enabled: false,
+              body: "Hoje: {resumo}",
+              summaryItems: [],
+            },
+          ],
+        }),
+      ).resolves.toHaveLength(9);
+    });
+
+    it("as outras situações não guardam hora nem itens do resumo", async () => {
+      await service.replace(COMPANY, {
+        items: [{ kind: "BIRTHDAY", enabled: true, body: "Parabéns, {nome}!" }],
+      });
+      const calls = prismaMock.autoMessage.upsert.mock.calls as unknown as [
+        { create: { summaryHour: number | null; summaryItems: string[] } },
+      ][];
+      expect(calls.at(-1)?.[0].create).toMatchObject({
+        summaryHour: null,
+        summaryItems: [],
+      });
     });
 
     it("a mesma situação duas vezes: 400", async () => {

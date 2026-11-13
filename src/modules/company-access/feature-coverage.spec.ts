@@ -29,6 +29,7 @@ import { ProductController } from "../product/product.controller";
 import { StockMovementController } from "../stock/stock-movement.controller";
 import { ProductSaleController } from "../product-sale/product-sale.controller";
 import { AgendaBlockController } from "../agenda-block/agenda-block.controller";
+import { OnboardingController } from "../onboarding/onboarding.controller";
 import { ProfessionalAppController } from "../professional-app/professional-app.controller";
 import { ProfessionalCommissionController } from "../professional-app/professional-commission.controller";
 import { AuthController } from "../auth/auth.controller";
@@ -83,7 +84,10 @@ const EXEMPT: Record<string, string> = {
     "avisos do app e caixa de Avisos do cliente (PortalAuthGuard, token do portal)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
-  NotificationController: "ainda sem uso (ver technical-debt.md)",
+  NotificationController:
+    "a caixa e o push de cada usuário (só as próprias; vale para qualquer um da empresa)",
+  OnboardingController:
+    "primeiros passos do ADMIN e dispensa das boas-vindas (cada um só mexe na própria marca); cada passo confere o plano no service",
   AddressController:
     "endereços de pessoas e da empresa: escopo da empresa (ver technical-debt.md)",
   ContactController:
@@ -130,6 +134,7 @@ const CONTROLLERS: Controller[] = [
   CompanyController,
   ContactController,
   NotificationController,
+  OnboardingController,
   PaymentController,
   PaymentMethodController,
   PeopleController,
@@ -223,6 +228,17 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
     expect(marked.sort()).toEqual([
       "AuthController.changePassword",
       "AuthController.me",
+      "NotificationController.clearAll",
+      "NotificationController.findAll",
+      "NotificationController.markAllAsRead",
+      "NotificationController.markAsRead",
+      "NotificationController.preferences",
+      "NotificationController.subscribe",
+      "NotificationController.unreadCount",
+      "NotificationController.unsubscribe",
+      "NotificationController.updatePreferences",
+      "OnboardingController.dismiss",
+      "OnboardingController.welcome",
       "ProfessionalAppController.findAgenda",
       "ProfessionalAppController.findClient",
       "ProfessionalAppController.findClients",

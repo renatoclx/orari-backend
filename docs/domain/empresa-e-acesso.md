@@ -92,6 +92,8 @@
 | type      | Tipo de usuário                                                      |
 | companyId | Código da empresa                                                    |
 | peopleId  | Código da pessoa vinculada ao usuário: profissional ou funcionário (opcional, ver Anamnese) |
+| welcomedAt | Quando as boas-vindas do primeiro acesso foram enviadas (gravado de forma atômica; nulo = ainda não) |
+| onboardingDismissedAt | Quando o usuário dispensou a lista de primeiros passos (ADMIN) ou o cartão de boas-vindas do app (PROFESSIONAL) |
 
 ### Relacionamentos
 

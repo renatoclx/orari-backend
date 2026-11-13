@@ -1,87 +1,329 @@
-import { NotFoundException } from "@nestjs/common";
-import { Test, TestingModule } from "@nestjs/testing";
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { COMPANY_ID } from "../../../test/fixtures/authenticated-users";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
+import type { PrismaService } from "../../prisma/prisma.service";
+import type { PushSenderService } from "../portal/push-sender.service";
+import { FindNotificationsQueryDto } from "./dto/find-notifications-query.dto";
 import { NotificationService } from "./notification.service";
 
-const anyDate: unknown = expect.any(Date);
+const user = {
+  id: "user-1",
+  companyId: "company-1",
+  type: "PROFESSIONAL",
+} as AuthenticatedUser;
+const ENDPOINT = "https://fcm.googleapis.com/fcm/send/abc";
+const subscription = {
+  endpoint: ENDPOINT,
+  keys: { p256dh: "p", auth: "a" },
+};
+
+const query = (extra: Partial<FindNotificationsQueryDto> = {}) =>
+  Object.assign(new FindNotificationsQueryDto(), extra);
 
 describe("NotificationService", () => {
-  let notificationService: NotificationService;
   const prismaMock = {
-    $transaction: vi.fn((operations: Promise<unknown>[]) =>
-      Promise.all(operations),
-    ),
-    notification: {
+    $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
+    userNotification: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
       count: vi.fn(),
-      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    userNotificationPreference: { findMany: vi.fn(), upsert: vi.fn() },
+    userPushSubscription: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
     },
   };
-  const query = { page: 1, limit: 10 };
+  const pushMock = {
+    enabled: true,
+    publicKey: "chave-publica",
+    send: vi.fn(),
+  };
+  const service = new NotificationService(
+    prismaMock as unknown as PrismaService,
+    pushMock as unknown as PushSenderService,
+  );
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.notification.findMany.mockResolvedValue([]);
-    prismaMock.notification.count.mockResolvedValue(0);
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        NotificationService,
-        { provide: PrismaService, useValue: prismaMock },
-      ],
-    }).compile();
-
-    notificationService = module.get<NotificationService>(NotificationService);
+    pushMock.enabled = true;
+    pushMock.send.mockResolvedValue("sent");
+    prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
+    prismaMock.userNotification.findMany.mockResolvedValue([]);
+    prismaMock.userNotification.count.mockResolvedValue(0);
+    prismaMock.userNotificationPreference.findMany.mockResolvedValue([]);
   });
 
   describe("findAll", () => {
-    it("deve listar apenas as não resolvidas por padrão", async () => {
-      await notificationService.findAll(query, COMPANY_ID);
+    it("lista só as do usuário, das mais novas às mais antigas, com o total de não lidas", async () => {
+      prismaMock.userNotification.count
+        .mockResolvedValueOnce(12)
+        .mockResolvedValueOnce(5);
 
-      expect(prismaMock.notification.count).toHaveBeenCalledWith({
-        where: { companyId: COMPANY_ID, resolvedAt: null, readAt: undefined },
+      const result = await service.findAll(user, query({ page: 2 }));
+
+      const args = prismaMock.userNotification.findMany.mock
+        .calls[0][0] as Record<string, unknown>;
+      expect(args.where).toEqual({ userId: "user-1", clearedAt: null });
+      expect(args.skip).toBe(10);
+      expect(args.take).toBe(10);
+      expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+      expect(result).toMatchObject({
+        total: 12,
+        unread: 5,
+        page: 2,
+        limit: 10,
       });
     });
 
-    it("deve permitir filtrar só as não lidas e incluir resolvidas", async () => {
-      await notificationService.findAll(
-        { ...query, onlyUnread: true, includeResolved: true },
-        COMPANY_ID,
-      );
-
-      expect(prismaMock.notification.count).toHaveBeenCalledWith({
-        where: {
-          companyId: COMPANY_ID,
-          resolvedAt: undefined,
-          readAt: null,
-        },
+    it("com onlyUnread, filtra as não lidas, mas o contador segue sendo o total de não lidas", async () => {
+      await service.findAll(user, query({ onlyUnread: true }));
+      const args = prismaMock.userNotification.findMany.mock
+        .calls[0][0] as Record<string, unknown>;
+      expect(args.where).toEqual({
+        userId: "user-1",
+        clearedAt: null,
+        readAt: null,
+      });
+      expect(prismaMock.userNotification.count).toHaveBeenLastCalledWith({
+        where: { userId: "user-1", clearedAt: null, readAt: null },
       });
     });
   });
 
-  describe("markAsRead", () => {
-    it("deve marcar a notificação da empresa como lida", async () => {
-      prismaMock.notification.findFirst.mockResolvedValue({
-        id: "notification-1",
-      });
+  it("unreadCount conta só as não lidas dele e diz quando chegou a mais nova", async () => {
+    const latest = new Date("2026-11-13T12:00:00.000Z");
+    prismaMock.userNotification.count.mockResolvedValue(3);
+    prismaMock.userNotification.findFirst.mockResolvedValue({
+      createdAt: latest,
+    });
 
-      await notificationService.markAsRead("notification-1", COMPANY_ID);
+    expect(await service.unreadCount(user)).toEqual({
+      unread: 3,
+      latestAt: latest,
+    });
+    expect(prismaMock.userNotification.count).toHaveBeenCalledWith({
+      where: { userId: "user-1", clearedAt: null, readAt: null },
+    });
+    // A mais nova entre as que não foram limpas (lidas ou não).
+    expect(prismaMock.userNotification.findFirst).toHaveBeenCalledWith({
+      where: { userId: "user-1", clearedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+  });
 
-      expect(prismaMock.notification.update).toHaveBeenCalledWith({
-        where: { id: "notification-1" },
-        data: { readAt: anyDate, updatedAt: anyDate },
+  it("sem nenhuma notificação, latestAt é nulo", async () => {
+    prismaMock.userNotification.findFirst.mockResolvedValue(null);
+    expect(await service.unreadCount(user)).toEqual({
+      unread: 0,
+      latestAt: null,
+    });
+  });
+
+  describe("marcar como lida", () => {
+    it("marca só se for dele", async () => {
+      prismaMock.userNotification.updateMany.mockResolvedValue({ count: 1 });
+      await service.markAsRead(user, "n1");
+      expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
+        where: { id: "n1", userId: "user-1", clearedAt: null },
+        data: { readAt: expect.any(Date) as Date },
       });
     });
 
-    it("deve lançar NotFoundException para notificação de outra empresa", async () => {
-      prismaMock.notification.findFirst.mockResolvedValue(null);
+    it("a de outro usuário (ou inexistente) responde 404", async () => {
+      prismaMock.userNotification.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.markAsRead(user, "n9")).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
 
+    it("marcar todas mexe só nas não lidas dele", async () => {
+      await service.markAllAsRead(user);
+      expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", clearedAt: null, readAt: null },
+        data: { readAt: expect.any(Date) as Date },
+      });
+    });
+  });
+
+  describe("limpar a caixa", () => {
+    it("marca só as dele que ainda não foram limpas, sem apagar as linhas", async () => {
+      await service.clearAll(user);
+      expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", clearedAt: null },
+        data: { clearedAt: expect.any(Date) as Date },
+      });
+    });
+  });
+
+  describe("preferências", () => {
+    it("sem linha, o push vale o padrão (ligado) e a chave pública vem junto; o profissional vê as três categorias", async () => {
+      const result = await service.preferences({
+        ...user,
+        type: "PROFESSIONAL",
+      });
+      expect(result).toEqual({
+        publicKey: "chave-publica",
+        preferences: [
+          { category: "APPOINTMENT", push: true },
+          { category: "REMINDER", push: true },
+          { category: "DAILY_SUMMARY", push: true },
+        ],
+      });
+      // As pendências do dia são de quem administra.
+      expect(result.preferences.map((item) => item.category)).not.toContain(
+        "PENDING_SUMMARY",
+      );
+    });
+
+    it("quem administra vê Agendamentos e Pendências do dia (lembrete e resumo da manhã são do profissional)", async () => {
+      const result = await service.preferences({ ...user, type: "ADMIN" });
+      expect(result.preferences.map((item) => item.category)).toEqual([
+        "APPOINTMENT",
+        "PENDING_SUMMARY",
+      ]);
+    });
+
+    it("quem administra não grava a preferência de uma categoria que não é dele", async () => {
       await expect(
-        notificationService.markAsRead("notification-1", COMPANY_ID),
-      ).rejects.toBeInstanceOf(NotFoundException);
+        service.updatePreferences(
+          { ...user, type: "ADMIN" },
+          { preferences: [{ category: "REMINDER", push: false }] },
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(
+        prismaMock.userNotificationPreference.upsert,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("mostra o que o usuário gravou", async () => {
+      prismaMock.userNotificationPreference.findMany.mockResolvedValue([
+        { category: "APPOINTMENT", push: false },
+      ]);
+      const result = await service.preferences({ ...user, type: "ADMIN" });
+      expect(result.preferences).toEqual([
+        { category: "APPOINTMENT", push: false },
+        // Sem linha gravada, vale o padrão (ligado).
+        { category: "PENDING_SUMMARY", push: true },
+      ]);
+    });
+
+    it("grava cada categoria enviada", async () => {
+      await service.updatePreferences(user, {
+        preferences: [{ category: "APPOINTMENT", push: false }],
+      });
+      expect(prismaMock.userNotificationPreference.upsert).toHaveBeenCalledWith(
+        {
+          where: {
+            userId_category: { userId: "user-1", category: "APPOINTMENT" },
+          },
+          create: { userId: "user-1", category: "APPOINTMENT", push: false },
+          update: { push: false },
+        },
+      );
+    });
+
+    it("categoria repetida responde 400, sem gravar", async () => {
+      await expect(
+        service.updatePreferences(user, {
+          preferences: [
+            { category: "APPOINTMENT", push: false },
+            { category: "APPOINTMENT", push: true },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(
+        prismaMock.userNotificationPreference.upsert,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("push do aparelho", () => {
+    it("ativa neste aparelho e passa o endereço para quem ativar por último", async () => {
+      await service.subscribe(user, subscription, "Mozilla/5.0");
+      expect(prismaMock.userPushSubscription.upsert).toHaveBeenCalledWith({
+        where: { endpoint: ENDPOINT },
+        create: {
+          endpoint: ENDPOINT,
+          userId: "user-1",
+          p256dh: "p",
+          auth: "a",
+          userAgent: "Mozilla/5.0",
+        },
+        update: {
+          userId: "user-1",
+          p256dh: "p",
+          auth: "a",
+          userAgent: "Mozilla/5.0",
+        },
+      });
+    });
+
+    it('aparelho novo: confirma com um aviso ("Avisos ativados")', async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
+      pushMock.send.mockResolvedValue("sent");
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).toHaveBeenCalledWith(
+        { endpoint: ENDPOINT, p256dh: "p", auth: "a" },
+        expect.objectContaining({ title: "Avisos ativados" }),
+      );
+    });
+
+    it("o app reenvia a inscrição a cada abertura: só a primeira vez confirma", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue({
+        userId: "user-1",
+      });
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).not.toHaveBeenCalled();
+    });
+
+    it("aparelho que era de outro usuário: confirma para quem ativou agora", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue({
+        userId: "outro",
+      });
+      pushMock.send.mockResolvedValue("sent");
+      await service.subscribe(user, subscription);
+      expect(pushMock.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("falha na confirmação não derruba a ativação", async () => {
+      prismaMock.userPushSubscription.findUnique.mockResolvedValue(null);
+      pushMock.send.mockRejectedValue(new Error("rede"));
+      await expect(
+        service.subscribe(user, subscription),
+      ).resolves.toBeUndefined();
+      expect(prismaMock.userPushSubscription.upsert).toHaveBeenCalled();
+    });
+
+    it("recusa endereço que não é de um serviço de push conhecido (nunca faz POST para qualquer endereço)", async () => {
+      await expect(
+        service.subscribe(user, {
+          ...subscription,
+          endpoint: "https://intranet.exemplo.com/x",
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.userPushSubscription.upsert).not.toHaveBeenCalled();
+    });
+
+    it("com o push desligado no servidor, responde 503", async () => {
+      pushMock.enabled = false;
+      await expect(
+        service.subscribe(user, subscription),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it("desativa só a inscrição do próprio usuário", async () => {
+      await service.unsubscribe(user, ENDPOINT);
+      expect(prismaMock.userPushSubscription.deleteMany).toHaveBeenCalledWith({
+        where: { endpoint: ENDPOINT, userId: "user-1" },
+      });
     });
   });
 });

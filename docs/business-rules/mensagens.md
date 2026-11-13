@@ -40,5 +40,40 @@
 
 ## Notificações
 
-- São avisos por empresa, criados e resolvidos pela própria API; não são criadas nem excluídas pelo cliente.
-- Uma notificação pode ser marcada como lida. Ao ser resolvida, sai da lista padrão, mas continua no histórico.
+> **Estado:** 2026-11-13. Troca da antiga notificação por empresa (nunca teve uso) pela **notificação por usuário** (o sino).
+
+- **A caixa de cada usuário** (ADMIN e PROFESSIONAL): as notificações são criadas pela própria API e cada um só lê e altera as próprias (a de outro usuário responde 404 ao marcar). Não há exclusão: ficam lidas. **Limpar** (`DELETE /notifications`) tira tudo da lista e do contador, mas a linha fica (`clearedAt`): a chave de deduplicação continua valendo, e um evento repetido não volta a avisar.
+- **Rotas** (`/notifications`, qualquer usuário da empresa, sem depender de plano): `GET` (10 por página, mais novas primeiro; `onlyUnread`; traz `unread`, o total de não lidas), `GET /unread-count` (o número do sino, mais `latestAt`: quando chegou a notificação mais nova que não foi limpa, para o painel avisar na tela), `PATCH /read-all`, `DELETE /` (**limpar** a caixa), `PATCH /:id/read`, `GET` e `PUT /preferences` e `POST` e `DELETE /push/subscriptions`.
+- **Push:** a caixa recebe tudo; só o push tem interruptor, por categoria (padrão ligado). Um aparelho é único por endereço: quem ativa depois no mesmo aparelho fica com ele. Só endereços dos serviços de push conhecidos (400); push desligado no servidor: 503. O texto do push é genérico, **sem o nome do cliente** (a tela bloqueada é pública); a caixa leva os nomes.
+- **Sem repetir:** cada evento tem uma `dedupeKey` única por usuário; o mesmo evento não grava duas vezes nem repete o push.
+- **Quem recebe:** só usuários ativos da empresa do evento.
+- **Fonte atual: o cliente no app.** Quando o cliente **marca** ou **cancela** um avulso pelo app (o agendamento nasce com a origem `PORTAL`), os **ADMIN** da empresa e o usuário **ligado ao profissional** do horário recebem "Novo agendamento pelo app" ou "Agendamento cancelado pelo cliente". Não há aviso do que a clínica faz (ela mesma fez).
+- **Categorias:** `APPOINTMENT`, `REMINDER` (lembrete) e `DAILY_SUMMARY` (resumo da manhã). As próximas (pendências do dia do ADMIN, boas-vindas, avisos dos jobs) entram como categorias novas pelo mesmo despachante. `GET` e `PUT /notifications/preferences` devolvem e aceitam só as do tipo do usuário: o **ADMIN** vê `APPOINTMENT`; o **PROFESSIONAL**, as três (a outra categoria responde 400).
+
+### Boas-vindas e primeiros passos (2026-11-13)
+
+- **Primeiro acesso:** quem entra pela primeira vez (e-mail no painel ou telefone no app) recebe **uma** notificação de boas-vindas (categoria `WELCOME`, sem interruptor e fora das preferências), e o push se tiver aparelho. A marca `welcomedAt` do usuário é gravada **de forma atômica antes de enviar**, então duas entradas ao mesmo tempo (dois aparelhos) mandam uma só; a chave `welcome` também é única por usuário. **Quem já existia na migração não recebe** (a migração marcou todos); só quem entra depois. O SUPER_ADMIN não tem boas-vindas. A fonte é o evento `user.logged-in`, anunciado só quando o login dá certo.
+- **Texto:** a caixa explica o que vem (ADMIN: o convite para abrir os primeiros passos e o resumo das manhãs; PROFESSIONAL: a agenda, os clientes e as comissões, e Menu → Avisos no celular). O push é só o convite ("Toque para conhecer o Orari."). Destino: `/dashboard?passos=1` (ADMIN; o painel abre o dialog dos primeiros passos) ou `/app/menu/notificacoes` (PROFESSIONAL).
+- **Push ativado:** ao ativar o push num aparelho **novo para o usuário** (`POST /notifications/push/subscriptions`), o aparelho recebe "Avisos ativados". O app reenvia a inscrição a cada abertura; só a primeira vez confirma. Falha de envio não derruba a ativação.
+- **Primeiros passos da clínica** (`GET /onboarding`, só **ADMIN**): cada passo sai dos dados da clínica e só entra se o plano libera a funcionalidade: horário de funcionamento (`settings`: algum horário), logo (`settings`), um serviço (`services`), um profissional ativo (`professionals`), um cliente ativo (`clients`), o primeiro agendamento (`appointments`) e, **opcional**, o portal do cliente ligado (`client-portal`). `completed` e `total` contam só os obrigatórios; `dismissed` diz se o usuário dispensou.
+- **Dispensar** (`PATCH /onboarding/dismiss`, ADMIN ou PROFESSIONAL, 204): grava `onboardingDismissedAt` só do próprio usuário. `GET /onboarding/welcome` (só **PROFESSIONAL**) diz se o cartão de boas-vindas do app já foi dispensado.
+
+### Avisos ao profissional (2026-11-13)
+
+- **O que a clínica faz nos horários dele:** marcar, remarcar ou cancelar um **avulso** avisa o usuário **PROFESSIONAL** ligado ao profissional do horário ("Novo agendamento", "Agendamento remarcado", "Agendamento cancelado"). A **sessão de turma cancelada** avisa uma vez só ("Turma cancelada"), e não uma por aluno. Não avisa quem faz a ação (o ADMIN) nem o que é criado em lote (recorrência, pacote, turma). Chaves: `appointment:<id>:created`, `:rescheduled:<início>` (cada remarcação tem a sua) e `:cancelled`; `class-session:<id>:cancelled`.
+- **Lembrete do próximo atendimento:** 30 minutos antes, para o usuário PROFESSIONAL do profissional, em `SCHEDULED` ou `CONFIRMED` (não avisa o já iniciado, o cancelado nem a falta). A conferência roda a cada 5 minutos, com a tolerância de 15 min dos lembretes do cliente. **Uma sessão de turma gera um lembrete só**, qualquer que seja o número de alunos. Chave `reminder:appointment:<id>` ou `reminder:class-session:<id>`.
+- **Resumo da manhã:** às **7h30** no relógio da clínica (e até as 11h: um reinício da API ainda entrega o do dia), com o número de atendimentos (a mesma conta do Início: turma conta uma vez, cancelado fora) e o primeiro horário. **Dia sem atendimento não manda nada.** Chave `summary:AAAA-MM-DD`.
+- **Quem configura (Mensagens → Automáticas):** são duas situações novas, `PROFESSIONAL_REMINDER` e `PROFESSIONAL_SUMMARY` (agora **oito** situações no `GET` e no `PUT /auto-messages`): a clínica **liga ou desliga** e **edita o texto** (padrão: ligadas). O tempo (30 min) e a hora (7h30) são **fixos**, sem opção. Variáveis: as do agendamento no lembrete (`{nome}` e `{profissional}` são o nome do profissional; **não há** `{cliente}`) e, no resumo, `{nome}`, `{estabelecimento}`, `{data}`, `{hora}` e `{quantidade}` ("5 atendimentos"). O texto não leva o nome do cliente: serve à caixa e ao push.
+- **Quem envia:** só **clínicas ativas com a funcionalidade Mensagens no plano**; **não dependem do portal do cliente ligado**. Cada profissional ainda tem o interruptor do push dele por categoria (Agendamentos, Lembretes e Resumo da manhã).
+
+### Resumo de pendências do administrador (2026-11-13)
+
+- **Situação `ADMIN_SUMMARY`** em Mensagens (agora **nove** situações no `GET` e no `PUT /auto-messages`): a clínica liga ou desliga, edita o texto (padrão ligado), escolhe a **hora do envio** (`summaryHour`: 7, 8, 9 ou 10; padrão **8**) e os **itens** que entram (`summaryItems`; padrão: todos). Ligado sem nenhum item: 400. As opções só existem nesta situação (as outras gravam hora nula e itens vazios).
+- **Itens** (calendário e fuso da clínica; cada um só conta se o plano libera a funcionalidade que o alimenta, `payables`, `payments`, `tabs` ou `clients`):
+  - `PAYABLE_TODAY`: contas a pagar **pendentes com vencimento hoje**;
+  - `PAYABLE_OVERDUE`: contas a pagar pendentes com vencimento **antes de hoje**;
+  - `RECEIVABLE_OVERDUE`: pagamentos de clientes `PENDING`, não excluídos, com vencimento antes de hoje (a regra da Análise de recebíveis);
+  - `OPEN_TABS`: **comandas do dia**, os clientes distintos com atendimento hoje em `SCHEDULED`, `CONFIRMED`, `IN_PROGRESS` ou `COMPLETED` (a regra da tela Comandas);
+  - `BIRTHDAYS`: clientes **ativos** que fazem aniversário hoje.
+- **Envio:** o job confere a cada 5 minutos e manda **uma vez por dia** a cada usuário **ADMIN** ativo, a partir da hora escolhida e **até o meio-dia** (um reinício da API ainda entrega). **Se nenhum item tem número, não manda nada.** Chave `pending:AAAA-MM-DD`. Categoria `PENDING_SUMMARY`, só do ADMIN nas preferências de push.
+- **Texto:** variáveis `{nome}`, `{estabelecimento}`, `{data}` e `{resumo}` (a frase pronta: "3 contas a pagar hoje, 5 recebimentos atrasados e 2 comandas hoje"; só os itens com número). O **push é genérico** ("Há itens para ver hoje no painel.", sem números nem dinheiro); a caixa leva o resumo. Destino: o Dashboard.

@@ -18,6 +18,8 @@ import { ProfessionalCommissionService } from "../src/modules/professional-app/p
 import { ProfessionalHomeService } from "../src/modules/professional-app/professional-home.service";
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
+import { OnboardingService } from "../src/modules/onboarding/onboarding.service";
+import { NotificationService } from "../src/modules/notification/notification.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
 import { PaymentService } from "../src/modules/payment/payment.service";
@@ -159,7 +161,13 @@ describe("Rotas HTTP", () => {
           .map((route) => route.label)
           .sort(),
       ).toEqual([
+        "DELETE /notifications (NotificationController.clearAll)",
+        "DELETE /notifications/push/subscriptions (NotificationController.unsubscribe)",
         "GET /auth/me (AuthController.me)",
+        "GET /notifications (NotificationController.findAll)",
+        "GET /notifications/preferences (NotificationController.preferences)",
+        "GET /notifications/unread-count (NotificationController.unreadCount)",
+        "GET /onboarding/welcome (OnboardingController.welcome)",
         "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
         "GET /professional-app/clients (ProfessionalAppController.findClients)",
         "GET /professional-app/clients/:id (ProfessionalAppController.findClient)",
@@ -169,7 +177,140 @@ describe("Rotas HTTP", () => {
         "GET /professional-app/commissions/summary (ProfessionalCommissionController.findSummary)",
         "GET /professional-app/home (ProfessionalAppController.findHome)",
         "PATCH /auth/me/password (AuthController.changePassword)",
+        "PATCH /notifications/:id/read (NotificationController.markAsRead)",
+        "PATCH /notifications/read-all (NotificationController.markAllAsRead)",
+        "PATCH /onboarding/dismiss (OnboardingController.dismiss)",
+        "POST /notifications/push/subscriptions (NotificationController.subscribe)",
+        "PUT /notifications/preferences (NotificationController.updatePreferences)",
       ]);
+    });
+
+    it("primeiros passos: a lista é do ADMIN, o cartão do app é do profissional, e os dois dispensam o que é deles", async () => {
+      const onboarding = http.mockOf(OnboardingService);
+      onboarding.find.mockResolvedValue({
+        steps: [],
+        completed: 0,
+        total: 6,
+        dismissed: false,
+      });
+      onboarding.dismissed.mockResolvedValue(false);
+      onboarding.dismiss.mockResolvedValue(undefined);
+      const req = (
+        method: "get" | "patch",
+        path: string,
+        user: (typeof USERS)[string],
+      ) =>
+        request(http.server())
+          [method](path)
+          .set("Authorization", `Bearer ${http.tokenFor(user)}`);
+
+      await req("get", "/onboarding", USERS.admin).expect(200);
+      await req("get", "/onboarding", USERS.professional).expect(403);
+      await req("get", "/onboarding/welcome", USERS.professional).expect(200);
+      await req("get", "/onboarding/welcome", USERS.admin).expect(403);
+      await req("patch", "/onboarding/dismiss", USERS.admin).expect(204);
+      await req("patch", "/onboarding/dismiss", USERS.professional).expect(204);
+      await req("patch", "/onboarding/dismiss", USERS.superAdmin).expect(403);
+      expect(onboarding.dismiss).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+      );
+    });
+
+    it("o sino: o profissional e o administrador leem só as próprias notificações", async () => {
+      const notifications = http.mockOf(NotificationService);
+      notifications.findAll.mockResolvedValue({
+        items: [],
+        total: 0,
+        unread: 0,
+      });
+      notifications.unreadCount.mockResolvedValue({
+        unread: 2,
+        latestAt: null,
+      });
+      notifications.markAsRead.mockResolvedValue(undefined);
+      notifications.markAllAsRead.mockResolvedValue(undefined);
+      notifications.clearAll.mockResolvedValue(undefined);
+      for (const user of [USERS.professional, USERS.admin]) {
+        const auth = `Bearer ${http.tokenFor(user)}`;
+        const get = (path: string) =>
+          request(http.server()).get(path).set("Authorization", auth);
+        await get("/notifications?onlyUnread=true&page=2").expect(200);
+        expect(notifications.findAll).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+          expect.objectContaining({ onlyUnread: true, page: 2, limit: 10 }),
+        );
+        const count = await get("/notifications/unread-count").expect(200);
+        expect(count.body).toEqual({ unread: 2, latestAt: null });
+        await request(http.server())
+          .patch(`/notifications/${ANY_UUID}/read`)
+          .set("Authorization", auth)
+          .expect(204);
+        expect(notifications.markAsRead).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+          ANY_UUID,
+        );
+        await request(http.server())
+          .patch("/notifications/read-all")
+          .set("Authorization", auth)
+          .expect(204);
+        // Id inválido e filtro inválido são recusados.
+        await request(http.server())
+          .patch("/notifications/nao-e-uuid/read")
+          .set("Authorization", auth)
+          .expect(400);
+        await get("/notifications?limit=1000").expect(400);
+        await request(http.server())
+          .delete("/notifications")
+          .set("Authorization", auth)
+          .expect(204);
+        expect(notifications.clearAll).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+        );
+      }
+      await request(http.server()).get("/notifications").expect(401);
+    });
+
+    it("preferências e push do aparelho: validam o corpo e não aceitam campos soltos", async () => {
+      const notifications = http.mockOf(NotificationService);
+      notifications.preferences.mockResolvedValue({ preferences: [] });
+      notifications.updatePreferences.mockResolvedValue({ preferences: [] });
+      notifications.subscribe.mockResolvedValue(undefined);
+      notifications.unsubscribe.mockResolvedValue(undefined);
+      const auth = `Bearer ${http.tokenFor(USERS.professional)}`;
+      const send = (method: "put" | "post" | "delete", path: string) =>
+        request(http.server())[method](path).set("Authorization", auth);
+
+      await request(http.server())
+        .get("/notifications/preferences")
+        .set("Authorization", auth)
+        .expect(200);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "APPOINTMENT", push: false }] })
+        .expect(200);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "OUTRA", push: false }] })
+        .expect(400);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "APPOINTMENT", push: "sim" }] })
+        .expect(400);
+
+      const subscription = {
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
+        keys: { p256dh: "p", auth: "a" },
+      };
+      await send("post", "/notifications/push/subscriptions")
+        .send(subscription)
+        .expect(204);
+      await send("post", "/notifications/push/subscriptions")
+        .send({ ...subscription, endpoint: "http://inseguro.exemplo.com" })
+        .expect(400);
+      await send("delete", "/notifications/push/subscriptions")
+        .send({ endpoint: subscription.endpoint })
+        .expect(204);
+      expect(notifications.unsubscribe).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        subscription.endpoint,
+      );
     });
 
     it("ele lê o próprio perfil e troca a própria senha", async () => {
@@ -348,21 +489,21 @@ describe("Rotas HTTP", () => {
         .expect(400);
     });
 
-    it("o login por telefone é público e valida o corpo (400 sem a senha)", async () => {
+    it("o login do app é público e valida o corpo (400 sem a senha)", async () => {
       const auth = http.mockOf(AuthService);
       auth.professionalLogin.mockClear();
 
       await request(http.server())
         .post("/auth/professional/login")
-        .send({ phone: "(11) 98888-0001", password: "senha" })
+        .send({ login: "(11) 98888-0001", password: "senha" })
         .expect(200);
       expect(auth.professionalLogin).toHaveBeenCalledWith({
-        phone: "(11) 98888-0001",
+        login: "(11) 98888-0001",
         password: "senha",
       });
       await request(http.server())
         .post("/auth/professional/login")
-        .send({ phone: "(11) 98888-0001" })
+        .send({ login: "(11) 98888-0001" })
         .expect(400);
     });
 

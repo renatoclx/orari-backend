@@ -17,6 +17,8 @@ import {
   AUTO_MESSAGE_KINDS,
   MISS_YOU_DAYS,
   REMINDER_OFFSETS,
+  SUMMARY_HOURS,
+  SUMMARY_ITEMS,
 } from "../auto-message.catalog";
 
 const trim = ({ value }: { value: unknown }) =>
@@ -48,6 +50,19 @@ export class AutoMessageItemDto {
   @IsOptional()
   @IsIn(MISS_YOU_DAYS)
   missYouDays?: number;
+
+  // Só o resumo de pendências do administrador usa (a hora: 7 a 10).
+  @IsOptional()
+  @IsIn(SUMMARY_HOURS)
+  summaryHour?: number;
+
+  // Idem: os itens que entram no resumo.
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(SUMMARY_ITEMS.length)
+  @IsIn(SUMMARY_ITEMS, { each: true })
+  summaryItems?: string[];
 }
 
 /** As situações que mudam (as que não vêm ficam como estão). */
