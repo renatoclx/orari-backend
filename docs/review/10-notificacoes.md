@@ -25,6 +25,7 @@ profissional), com o push por categoria.
 ## Rotas
 
 `GET /notifications`, `GET /notifications/unread-count`, `PATCH /notifications/read-all`,
+`DELETE /notifications` (limpar),
 `PATCH /notifications/:id/read`, `GET` e `PUT /notifications/preferences`,
 `POST` e `DELETE /notifications/push/subscriptions`.
 

@@ -632,6 +632,7 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - **`NotificationDispatcher`:** o ponto único de envio. Grava na caixa (sempre) e, se o usuário quer e tem aparelho, manda o push (`PushSenderService`, o mesmo do cliente, agora exportado pelo `PortalModule`). O texto do push pode ser genérico, sem o nome do cliente. Falha de push não derruba a notificação.
 - **Primeira fonte (`AppointmentNotifierListener`):** o cliente marca ou cancela pelo app (`appointment.created-by-client` e `appointment.cancelled-by-client`, eventos novos; as mensagens automáticas não os escutam) e avisam os ADMIN (destino `/`) e o usuário ligado ao profissional (destino `/app/agenda?dia=`).
 - **Rotas** (`/notifications`, de qualquer usuário da empresa, marcadas `@ProfessionalApp()`): lista (10 por página, `onlyUnread`, com o total de não lidas), `unread-count`, `read-all`, `:id/read`, `preferences` (GET e PUT) e `push/subscriptions` (POST e DELETE). Cada um só lê e altera as próprias.
+- **Limpar a caixa:** `DELETE /notifications` marca `clearedAt` (migração `user_notification_cleared`); a linha fica e a chave de deduplicação continua valendo. `GET /notifications/unread-count` devolve também `latestAt` (a mais nova que não foi limpa), para o painel mostrar o aviso na tela.
 - **Testes:** specs do service, do despachante (deduplicação, preferências, push que falha, aparelho que sumiu) e do ouvinte, a lista de rotas do profissional e o e2e.
 
 ## 2.56 Fotos privadas por link assinado

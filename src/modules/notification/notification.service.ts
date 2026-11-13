@@ -46,7 +46,11 @@ export class NotificationService {
     user: AuthenticatedUser,
     { page, limit, onlyUnread }: FindNotificationsQueryDto,
   ) {
-    const where = { userId: user.id, ...(onlyUnread && { readAt: null }) };
+    const where = {
+      userId: user.id,
+      clearedAt: null,
+      ...(onlyUnread && { readAt: null }),
+    };
     const [items, total, unread] = await this.prisma.$transaction([
       this.prisma.userNotification.findMany({
         where,
@@ -57,7 +61,7 @@ export class NotificationService {
       }),
       this.prisma.userNotification.count({ where }),
       this.prisma.userNotification.count({
-        where: { userId: user.id, readAt: null },
+        where: { userId: user.id, clearedAt: null, readAt: null },
       }),
     ]);
     const result: PaginatedResult<(typeof items)[number]> & { unread: number } =
@@ -65,18 +69,30 @@ export class NotificationService {
     return result;
   }
 
-  /** Quantas não lidas: o número do sino. */
-  async unreadCount(user: AuthenticatedUser): Promise<{ unread: number }> {
-    const unread = await this.prisma.userNotification.count({
-      where: { userId: user.id, readAt: null },
-    });
-    return { unread };
+  /**
+   * O número do sino e quando chegou a notificação mais nova (sem as limpas):
+   * o painel compara com a que já viu para mostrar o aviso na tela.
+   */
+  async unreadCount(
+    user: AuthenticatedUser,
+  ): Promise<{ unread: number; latestAt: Date | null }> {
+    const [unread, latest] = await this.prisma.$transaction([
+      this.prisma.userNotification.count({
+        where: { userId: user.id, clearedAt: null, readAt: null },
+      }),
+      this.prisma.userNotification.findFirst({
+        where: { userId: user.id, clearedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+    ]);
+    return { unread, latestAt: latest?.createdAt ?? null };
   }
 
   /** Marca uma como lida (a de outro usuário responde 404, como a inexistente). */
   async markAsRead(user: AuthenticatedUser, id: string): Promise<void> {
     const { count } = await this.prisma.userNotification.updateMany({
-      where: { id, userId: user.id },
+      where: { id, userId: user.id, clearedAt: null },
       data: { readAt: new Date() },
     });
     if (count === 0) {
@@ -87,8 +103,19 @@ export class NotificationService {
   /** Marca todas as não lidas dele. */
   async markAllAsRead(user: AuthenticatedUser): Promise<void> {
     await this.prisma.userNotification.updateMany({
-      where: { userId: user.id, readAt: null },
+      where: { userId: user.id, clearedAt: null, readAt: null },
       data: { readAt: new Date() },
+    });
+  }
+
+  /**
+   * Limpa a caixa dele: tudo some da lista e do contador. A linha fica (só ganha
+   * `clearedAt`), para a chave de deduplicação continuar valendo.
+   */
+  async clearAll(user: AuthenticatedUser): Promise<void> {
+    await this.prisma.userNotification.updateMany({
+      where: { userId: user.id, clearedAt: null },
+      data: { clearedAt: new Date() },
     });
   }
 

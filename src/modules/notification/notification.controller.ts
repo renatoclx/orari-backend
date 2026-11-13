@@ -61,6 +61,17 @@ export class NotificationController {
     return this.notificationService.markAllAsRead(currentUser);
   }
 
+  @Delete()
+  @HttpCode(204)
+  @ApiOperation({
+    summary: "Limpa a caixa de notificações",
+    description:
+      "Tudo some da lista e do contador. Os registros ficam (a deduplicação continua valendo): um evento repetido não volta a avisar.",
+  })
+  clearAll(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.notificationService.clearAll(currentUser);
+  }
+
   @Get("preferences")
   @ApiOperation({
     summary: "O push de cada categoria e a chave pública do push",

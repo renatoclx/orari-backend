@@ -93,5 +93,6 @@
 | url       | Caminho aberto ao tocar (do painel ou do app, conforme quem recebe) |
 | dedupeKey | Chave do evento, única por usuário                                  |
 | readAt    | Data da leitura (opcional)                                          |
+| clearedAt | Data em que o usuário limpou a caixa (opcional): some da lista e do contador, a linha fica |
 
 `UserNotificationPreference` (usuário × categoria × `push`) e `UserPushSubscription` (aparelho do usuário: endereço e chaves) completam o conjunto.

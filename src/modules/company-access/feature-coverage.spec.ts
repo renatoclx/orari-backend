@@ -224,6 +224,7 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
     expect(marked.sort()).toEqual([
       "AuthController.changePassword",
       "AuthController.me",
+      "NotificationController.clearAll",
       "NotificationController.findAll",
       "NotificationController.markAllAsRead",
       "NotificationController.markAsRead",

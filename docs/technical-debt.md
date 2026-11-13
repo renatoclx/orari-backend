@@ -431,7 +431,7 @@ no app para quem não recebe comissão.
 voltar para a aba), não em tempo real; (2) o push só existe no app do profissional
 (PWA com service worker): o painel da clínica tem o sino e a caixa, mas não recebe
 push no navegador; (3) o despachante envia o push em série, dentro do evento; (4)
-as notificações lidas ficam para sempre; (5) não há horário de silêncio nem limite
+as notificações limpas continuam gravadas (`clearedAt`), e as lidas ficam para sempre; (5) não há horário de silêncio nem limite
 de frequência; (6) ao sair do app, o aparelho é desligado na API pelo próprio app:
 se essa chamada falhar, o aparelho segue recebendo até outro usuário ativar o push
 nele.

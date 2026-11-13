@@ -25,6 +25,7 @@ describe("NotificationService", () => {
     $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
     userNotification: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       updateMany: vi.fn(),
     },
@@ -55,7 +56,7 @@ describe("NotificationService", () => {
 
       const args = prismaMock.userNotification.findMany.mock
         .calls[0][0] as Record<string, unknown>;
-      expect(args.where).toEqual({ userId: "user-1" });
+      expect(args.where).toEqual({ userId: "user-1", clearedAt: null });
       expect(args.skip).toBe(10);
       expect(args.take).toBe(10);
       expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
@@ -71,18 +72,44 @@ describe("NotificationService", () => {
       await service.findAll(user, query({ onlyUnread: true }));
       const args = prismaMock.userNotification.findMany.mock
         .calls[0][0] as Record<string, unknown>;
-      expect(args.where).toEqual({ userId: "user-1", readAt: null });
+      expect(args.where).toEqual({
+        userId: "user-1",
+        clearedAt: null,
+        readAt: null,
+      });
       expect(prismaMock.userNotification.count).toHaveBeenLastCalledWith({
-        where: { userId: "user-1", readAt: null },
+        where: { userId: "user-1", clearedAt: null, readAt: null },
       });
     });
   });
 
-  it("unreadCount conta só as não lidas dele", async () => {
+  it("unreadCount conta só as não lidas dele e diz quando chegou a mais nova", async () => {
+    const latest = new Date("2026-11-13T12:00:00.000Z");
     prismaMock.userNotification.count.mockResolvedValue(3);
-    expect(await service.unreadCount(user)).toEqual({ unread: 3 });
+    prismaMock.userNotification.findFirst.mockResolvedValue({
+      createdAt: latest,
+    });
+
+    expect(await service.unreadCount(user)).toEqual({
+      unread: 3,
+      latestAt: latest,
+    });
     expect(prismaMock.userNotification.count).toHaveBeenCalledWith({
-      where: { userId: "user-1", readAt: null },
+      where: { userId: "user-1", clearedAt: null, readAt: null },
+    });
+    // A mais nova entre as que não foram limpas (lidas ou não).
+    expect(prismaMock.userNotification.findFirst).toHaveBeenCalledWith({
+      where: { userId: "user-1", clearedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+  });
+
+  it("sem nenhuma notificação, latestAt é nulo", async () => {
+    prismaMock.userNotification.findFirst.mockResolvedValue(null);
+    expect(await service.unreadCount(user)).toEqual({
+      unread: 0,
+      latestAt: null,
     });
   });
 
@@ -91,7 +118,7 @@ describe("NotificationService", () => {
       prismaMock.userNotification.updateMany.mockResolvedValue({ count: 1 });
       await service.markAsRead(user, "n1");
       expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
-        where: { id: "n1", userId: "user-1" },
+        where: { id: "n1", userId: "user-1", clearedAt: null },
         data: { readAt: expect.any(Date) as Date },
       });
     });
@@ -106,8 +133,18 @@ describe("NotificationService", () => {
     it("marcar todas mexe só nas não lidas dele", async () => {
       await service.markAllAsRead(user);
       expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
-        where: { userId: "user-1", readAt: null },
+        where: { userId: "user-1", clearedAt: null, readAt: null },
         data: { readAt: expect.any(Date) as Date },
+      });
+    });
+  });
+
+  describe("limpar a caixa", () => {
+    it("marca só as dele que ainda não foram limpas, sem apagar as linhas", async () => {
+      await service.clearAll(user);
+      expect(prismaMock.userNotification.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", clearedAt: null },
+        data: { clearedAt: expect.any(Date) as Date },
       });
     });
   });

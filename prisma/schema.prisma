@@ -722,6 +722,9 @@ model UserNotification {
   url       String?
   dedupeKey String               @db.VarChar(200)
   readAt    DateTime?
+  // Limpa da caixa: some da lista e do contador, mas a linha fica, para a chave
+  // de deduplicação continuar valendo (um evento repetido não volta a avisar).
+  clearedAt DateTime?
   createdAt DateTime             @default(now())
 
   company Company @relation(fields: [companyId], references: [id])

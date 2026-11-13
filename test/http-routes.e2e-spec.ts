@@ -160,6 +160,7 @@ describe("Rotas HTTP", () => {
           .map((route) => route.label)
           .sort(),
       ).toEqual([
+        "DELETE /notifications (NotificationController.clearAll)",
         "DELETE /notifications/push/subscriptions (NotificationController.unsubscribe)",
         "GET /auth/me (AuthController.me)",
         "GET /notifications (NotificationController.findAll)",
@@ -188,9 +189,13 @@ describe("Rotas HTTP", () => {
         total: 0,
         unread: 0,
       });
-      notifications.unreadCount.mockResolvedValue({ unread: 2 });
+      notifications.unreadCount.mockResolvedValue({
+        unread: 2,
+        latestAt: null,
+      });
       notifications.markAsRead.mockResolvedValue(undefined);
       notifications.markAllAsRead.mockResolvedValue(undefined);
+      notifications.clearAll.mockResolvedValue(undefined);
       for (const user of [USERS.professional, USERS.admin]) {
         const auth = `Bearer ${http.tokenFor(user)}`;
         const get = (path: string) =>
@@ -201,7 +206,7 @@ describe("Rotas HTTP", () => {
           expect.objectContaining({ onlyUnread: true, page: 2, limit: 10 }),
         );
         const count = await get("/notifications/unread-count").expect(200);
-        expect(count.body).toEqual({ unread: 2 });
+        expect(count.body).toEqual({ unread: 2, latestAt: null });
         await request(http.server())
           .patch(`/notifications/${ANY_UUID}/read`)
           .set("Authorization", auth)
@@ -220,6 +225,13 @@ describe("Rotas HTTP", () => {
           .set("Authorization", auth)
           .expect(400);
         await get("/notifications?limit=1000").expect(400);
+        await request(http.server())
+          .delete("/notifications")
+          .set("Authorization", auth)
+          .expect(204);
+        expect(notifications.clearAll).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+        );
       }
       await request(http.server()).get("/notifications").expect(401);
     });
