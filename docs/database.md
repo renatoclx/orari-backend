@@ -72,7 +72,7 @@ Todas as entidades persistentes devem possuir:
 - **ClassGroup**: não possui exclusão; é inativada (`isActive`). Não utiliza `deletedAt`.
 - **ClassGroupDay**: faz parte da turma e não muda depois do cadastro; segue a turma (`onDelete: Cascade`). Não utiliza `deletedAt` nem `updatedAt`.
 - **ClassSession**: não possui exclusão; é cancelada (`cancelledAt`). Não utiliza `deletedAt`.
-- **Notification**: não possui exclusão; é resolvida (`resolvedAt`). Não utiliza `deletedAt`.
+- **UserNotification**: notificação de um usuário do sistema (o sino); não possui exclusão (lida em `readAt`). A chave de deduplicação é única por usuário. Não utiliza `deletedAt`. **UserNotificationPreference** (o push por categoria) e **UserPushSubscription** (aparelhos) acompanham o usuário.
 - **AuditLog**: registro de auditoria; só recebe inserções e não é alterado nem excluído pela API. Não utiliza `deletedAt` nem `updatedAt`. Não tem relação com o cliente (`clientId`): o registro vale mesmo que o cliente seja removido.
 - **AnamnesisTemplate**: não possui exclusão; é inativado (`isActive`). Não utiliza `deletedAt`.
 - **AnamnesisTemplateVersion** e **AnamnesisQuestion**: imutáveis, sem exclusão nem alteração pela API (editar o modelo cria uma versão nova); as fichas ficam presas à versão em que nasceram. Não utilizam `deletedAt`.

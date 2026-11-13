@@ -2126,7 +2126,7 @@ describe("AppointmentService", () => {
     });
   });
 
-  describe("anúncios para as mensagens automáticas", () => {
+  describe("anúncios (mensagens automáticas e avisos à equipe)", () => {
     const created = { appointmentId: "appointment-1", companyId: COMPANY_ID };
 
     it("a clínica marca: anuncia depois de gravar", async () => {
@@ -2137,9 +2137,13 @@ describe("AppointmentService", () => {
       );
     });
 
-    it("o cliente marca pelo app: não anuncia", async () => {
+    it("o cliente marca pelo app: anuncia à parte (avisa a equipe, não vira mensagem para ele)", async () => {
       await appointmentService.create(dto, COMPANY_ID, "PORTAL");
-      expect(eventsMock.emit).not.toHaveBeenCalled();
+      expect(eventsMock.emit).toHaveBeenCalledTimes(1);
+      expect(eventsMock.emit).toHaveBeenCalledWith(
+        "appointment.created-by-client",
+        created,
+      );
     });
 
     it("a clínica cancela: anuncia o cancelamento", async () => {
@@ -2178,11 +2182,26 @@ describe("AppointmentService", () => {
       expect(eventsMock.emit).not.toHaveBeenCalled();
     });
 
-    it("o cliente cancela pelo app: não anuncia", async () => {
+    it("o cliente cancela pelo app: anuncia à parte", async () => {
       prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
       await appointmentService.update(
         "appointment-1",
         { status: "CANCELLED" },
+        COMPANY_ID,
+        "client",
+      );
+      expect(eventsMock.emit).toHaveBeenCalledTimes(1);
+      expect(eventsMock.emit).toHaveBeenCalledWith(
+        "appointment.cancelled-by-client",
+        created,
+      );
+    });
+
+    it("o cliente muda só a observação pelo app: não anuncia", async () => {
+      prismaMock.appointment.findFirst.mockResolvedValueOnce(appointment);
+      await appointmentService.update(
+        "appointment-1",
+        { note: "trazer exame" },
         COMPANY_ID,
         "client",
       );

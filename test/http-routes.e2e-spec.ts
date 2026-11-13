@@ -18,6 +18,7 @@ import { ProfessionalCommissionService } from "../src/modules/professional-app/p
 import { ProfessionalHomeService } from "../src/modules/professional-app/professional-home.service";
 import { ProfessionalClientsService } from "../src/modules/professional-app/professional-clients.service";
 import { AuthService } from "../src/modules/auth/auth.service";
+import { NotificationService } from "../src/modules/notification/notification.service";
 import { CompanyService } from "../src/modules/company/company.service";
 import { PaymentCheckoutService } from "../src/modules/payment/payment-checkout.service";
 import { PaymentService } from "../src/modules/payment/payment.service";
@@ -159,7 +160,11 @@ describe("Rotas HTTP", () => {
           .map((route) => route.label)
           .sort(),
       ).toEqual([
+        "DELETE /notifications/push/subscriptions (NotificationController.unsubscribe)",
         "GET /auth/me (AuthController.me)",
+        "GET /notifications (NotificationController.findAll)",
+        "GET /notifications/preferences (NotificationController.preferences)",
+        "GET /notifications/unread-count (NotificationController.unreadCount)",
         "GET /professional-app/agenda (ProfessionalAppController.findAgenda)",
         "GET /professional-app/clients (ProfessionalAppController.findClients)",
         "GET /professional-app/clients/:id (ProfessionalAppController.findClient)",
@@ -169,7 +174,97 @@ describe("Rotas HTTP", () => {
         "GET /professional-app/commissions/summary (ProfessionalCommissionController.findSummary)",
         "GET /professional-app/home (ProfessionalAppController.findHome)",
         "PATCH /auth/me/password (AuthController.changePassword)",
+        "PATCH /notifications/:id/read (NotificationController.markAsRead)",
+        "PATCH /notifications/read-all (NotificationController.markAllAsRead)",
+        "POST /notifications/push/subscriptions (NotificationController.subscribe)",
+        "PUT /notifications/preferences (NotificationController.updatePreferences)",
       ]);
+    });
+
+    it("o sino: o profissional e o administrador leem só as próprias notificações", async () => {
+      const notifications = http.mockOf(NotificationService);
+      notifications.findAll.mockResolvedValue({
+        items: [],
+        total: 0,
+        unread: 0,
+      });
+      notifications.unreadCount.mockResolvedValue({ unread: 2 });
+      notifications.markAsRead.mockResolvedValue(undefined);
+      notifications.markAllAsRead.mockResolvedValue(undefined);
+      for (const user of [USERS.professional, USERS.admin]) {
+        const auth = `Bearer ${http.tokenFor(user)}`;
+        const get = (path: string) =>
+          request(http.server()).get(path).set("Authorization", auth);
+        await get("/notifications?onlyUnread=true&page=2").expect(200);
+        expect(notifications.findAll).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+          expect.objectContaining({ onlyUnread: true, page: 2, limit: 10 }),
+        );
+        const count = await get("/notifications/unread-count").expect(200);
+        expect(count.body).toEqual({ unread: 2 });
+        await request(http.server())
+          .patch(`/notifications/${ANY_UUID}/read`)
+          .set("Authorization", auth)
+          .expect(204);
+        expect(notifications.markAsRead).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: user.id }),
+          ANY_UUID,
+        );
+        await request(http.server())
+          .patch("/notifications/read-all")
+          .set("Authorization", auth)
+          .expect(204);
+        // Id inválido e filtro inválido são recusados.
+        await request(http.server())
+          .patch("/notifications/nao-e-uuid/read")
+          .set("Authorization", auth)
+          .expect(400);
+        await get("/notifications?limit=1000").expect(400);
+      }
+      await request(http.server()).get("/notifications").expect(401);
+    });
+
+    it("preferências e push do aparelho: validam o corpo e não aceitam campos soltos", async () => {
+      const notifications = http.mockOf(NotificationService);
+      notifications.preferences.mockResolvedValue({ preferences: [] });
+      notifications.updatePreferences.mockResolvedValue({ preferences: [] });
+      notifications.subscribe.mockResolvedValue(undefined);
+      notifications.unsubscribe.mockResolvedValue(undefined);
+      const auth = `Bearer ${http.tokenFor(USERS.professional)}`;
+      const send = (method: "put" | "post" | "delete", path: string) =>
+        request(http.server())[method](path).set("Authorization", auth);
+
+      await request(http.server())
+        .get("/notifications/preferences")
+        .set("Authorization", auth)
+        .expect(200);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "APPOINTMENT", push: false }] })
+        .expect(200);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "OUTRA", push: false }] })
+        .expect(400);
+      await send("put", "/notifications/preferences")
+        .send({ preferences: [{ category: "APPOINTMENT", push: "sim" }] })
+        .expect(400);
+
+      const subscription = {
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
+        keys: { p256dh: "p", auth: "a" },
+      };
+      await send("post", "/notifications/push/subscriptions")
+        .send(subscription)
+        .expect(204);
+      await send("post", "/notifications/push/subscriptions")
+        .send({ ...subscription, endpoint: "http://inseguro.exemplo.com" })
+        .expect(400);
+      await send("delete", "/notifications/push/subscriptions")
+        .send({ endpoint: subscription.endpoint })
+        .expect(204);
+      expect(notifications.unsubscribe).toHaveBeenCalledWith(
+        expect.objectContaining({ id: USERS.professional.id }),
+        subscription.endpoint,
+      );
     });
 
     it("ele lê o próprio perfil e troca a própria senha", async () => {

@@ -75,23 +75,23 @@
 
 ---
 
-## Notification
+## UserNotification
 
-- Representa um aviso para a empresa agir.
-- Ainda não há tipos de notificação em uso. A entidade é mantida para implementações futuras.
+- A notificação de um usuário do sistema (ADMIN ou PROFESSIONAL): o sino do painel e do app do profissional. Substitui a antiga `Notification` por empresa, que nunca teve tipo em uso.
+- Fica na caixa do usuário mesmo sem push. A mesma `dedupeKey` para o mesmo usuário grava uma só vez (um job rodando de novo, ou a API reiniciada, não duplica).
 
 ### Atributos
 
-| Nome       | Descrição                                      |
-| ---------- | ---------------------------------------------- |
-| id         | Identificador único                            |
-| companyId  | Código da empresa                              |
-| message    | Texto do aviso                                 |
-| readAt     | Data da leitura (opcional)                     |
-| resolvedAt | Data em que o aviso deixou de valer (opcional) |
+| Nome      | Descrição                                                           |
+| --------- | ------------------------------------------------------------------- |
+| id        | Identificador único                                                 |
+| companyId | Código da empresa                                                   |
+| userId    | Usuário que recebe                                                  |
+| category  | `APPOINTMENT` (cresce com as fontes de aviso)                       |
+| title     | Título (até 100 caracteres)                                         |
+| body      | Texto (até 500 caracteres)                                          |
+| url       | Caminho aberto ao tocar (do painel ou do app, conforme quem recebe) |
+| dedupeKey | Chave do evento, única por usuário                                  |
+| readAt    | Data da leitura (opcional)                                          |
 
-### Relacionamentos
-
-- Uma notificação pertence a uma empresa.
-
----
+`UserNotificationPreference` (usuário × categoria × `push`) e `UserPushSubscription` (aparelho do usuário: endereço e chaves) completam o conjunto.

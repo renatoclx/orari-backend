@@ -1,49 +1,36 @@
 # 10 – Notificações
 
-Avisos para a empresa agir. Hoje existe um único tipo: a recorrência está
-chegando ao fim dos agendamentos gerados.
+A caixa de notificações de cada usuário do sistema (o sino do painel e do app do
+profissional), com o push por categoria.
 
-**PR:** 8 (`feat/notificacoes-e-demo`) · **Regras:** [business-rules/mensagens.md § Notificações, Extensão do horizonte](../business-rules/mensagens.md)
+**Regras:** [business-rules/mensagens.md § Notificações](../business-rules/mensagens.md)
 
 ## Regras em resumo
 
-- Criadas e resolvidas **pela própria API**; o cliente não cria nem exclui.
-- O aviso aparece quando faltam menos de **30 dias** de agenda gerada para uma
-  recorrência ativa que ainda tem período pela frente.
-- **A lista se sincroniza a cada consulta:** cria o que falta e resolve o que já
-  foi atendido. Não há rotina agendada no projeto.
-- Pode ser marcada como lida. Ao ser resolvida, sai da lista padrão, mas continua
-  no histórico (`?includeResolved=true`).
-- Notificações não são excluídas.
+- Cada usuário só lê e altera as **próprias**; criadas pela própria API.
+- A caixa recebe tudo; só o **push** tem interruptor por categoria. O push é
+  genérico (sem o nome do cliente).
+- **`dedupeKey` única por usuário:** o mesmo evento não duplica.
+- Fonte atual: o cliente marca ou cancela pelo app (avisa os ADMIN e o
+  profissional do horário).
 
 ## Onde está
 
 | Arquivo | Responsabilidade |
 | ------- | ---------------- |
-| `modules/notification/notification.service.ts` | Listagem, leitura e `syncRecurringHorizon()` |
-| `modules/recurring-appointment/recurring-appointment.service.ts` | `findNeedingExtension()` e `extend()` |
+| `modules/notification/notification.service.ts` | Caixa, preferências e aparelhos |
+| `modules/notification/notification-dispatcher.service.ts` | Grava e envia o push (o ponto único de envio) |
+| `modules/notification/appointment-notifier.listener.ts` | A primeira fonte: o que o cliente faz pelo app |
 
 ## Rotas
 
-| Método | Rota |
-| ------ | ---- |
-| GET | `/notifications` (`?onlyUnread`, `?includeResolved`) |
-| GET | `/notifications/:id` |
-| PATCH | `/notifications/:id/read` |
-
-## Testes
-
-`notification.service.spec.ts` (8).
+`GET /notifications`, `GET /notifications/unread-count`, `PATCH /notifications/read-all`,
+`PATCH /notifications/:id/read`, `GET` e `PUT /notifications/preferences`,
+`POST` e `DELETE /notifications/push/subscriptions`.
 
 ## O que olhar com atenção
 
-- **O aviso depende de alguém consultar `/notifications`.** Sem consulta, não há
-  criação. Foi a alternativa escolhida para não depender de um agendador — se o
-  front consultar ao abrir a agenda, o efeito é o mesmo.
-- **Sincronizar dentro de um GET** faz uma leitura ter efeito colateral de
-  escrita. É o ponto mais discutível do módulo.
-- **Direção das dependências:** `NotificationModule` importa
-  `RecurringAppointmentModule` (e não o contrário), para evitar ciclo. Por isso
-  a recorrência não resolve a notificação ao ser estendida — ela é resolvida na
-  próxima consulta.
-- Os 30 dias e o horizonte de 90 estão em constantes no service da recorrência.
+- **O despachante envia o push em série,** dentro do evento (o ouvinte roda fora
+  da requisição, mas sem fila). Com muitos destinatários, uma fila seria melhor
+  (ver `technical-debt.md`).
+- **Sem horário de silêncio** nem limite de frequência por enquanto.

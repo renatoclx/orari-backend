@@ -40,5 +40,12 @@
 
 ## Notificações
 
-- São avisos por empresa, criados e resolvidos pela própria API; não são criadas nem excluídas pelo cliente.
-- Uma notificação pode ser marcada como lida. Ao ser resolvida, sai da lista padrão, mas continua no histórico.
+> **Estado:** 2026-11-13. Troca da antiga notificação por empresa (nunca teve uso) pela **notificação por usuário** (o sino).
+
+- **A caixa de cada usuário** (ADMIN e PROFESSIONAL): as notificações são criadas pela própria API e cada um só lê e altera as próprias (a de outro usuário responde 404 ao marcar). Não há exclusão: ficam lidas.
+- **Rotas** (`/notifications`, qualquer usuário da empresa, sem depender de plano): `GET` (10 por página, mais novas primeiro; `onlyUnread`; traz `unread`, o total de não lidas), `GET /unread-count` (o número do sino), `PATCH /read-all`, `PATCH /:id/read`, `GET` e `PUT /preferences` e `POST` e `DELETE /push/subscriptions`.
+- **Push:** a caixa recebe tudo; só o push tem interruptor, por categoria (padrão ligado). Um aparelho é único por endereço: quem ativa depois no mesmo aparelho fica com ele. Só endereços dos serviços de push conhecidos (400); push desligado no servidor: 503. O texto do push é genérico, **sem o nome do cliente** (a tela bloqueada é pública); a caixa leva os nomes.
+- **Sem repetir:** cada evento tem uma `dedupeKey` única por usuário; o mesmo evento não grava duas vezes nem repete o push.
+- **Quem recebe:** só usuários ativos da empresa do evento.
+- **Fonte atual: o cliente no app.** Quando o cliente **marca** ou **cancela** um avulso pelo app (o agendamento nasce com a origem `PORTAL`), os **ADMIN** da empresa e o usuário **ligado ao profissional** do horário recebem "Novo agendamento pelo app" ou "Agendamento cancelado pelo cliente". Não há aviso do que a clínica faz (ela mesma fez).
+- **Categorias:** hoje só `APPOINTMENT`. As próximas (resumo de pendências do dia, boas-vindas, avisos dos jobs) entram como categorias novas pelo mesmo despachante.

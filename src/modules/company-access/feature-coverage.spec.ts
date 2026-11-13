@@ -83,7 +83,8 @@ const EXEMPT: Record<string, string> = {
     "avisos do app e caixa de Avisos do cliente (PortalAuthGuard, token do portal)",
   CityController: "dado de referência (cidades)",
   StateController: "dado de referência (estados)",
-  NotificationController: "ainda sem uso (ver technical-debt.md)",
+  NotificationController:
+    "a caixa e o push de cada usuário (só as próprias; vale para qualquer um da empresa)",
   AddressController:
     "endereços de pessoas e da empresa: escopo da empresa (ver technical-debt.md)",
   ContactController:
@@ -223,6 +224,14 @@ describe("cobertura do perfil só de app (PROFESSIONAL)", () => {
     expect(marked.sort()).toEqual([
       "AuthController.changePassword",
       "AuthController.me",
+      "NotificationController.findAll",
+      "NotificationController.markAllAsRead",
+      "NotificationController.markAsRead",
+      "NotificationController.preferences",
+      "NotificationController.subscribe",
+      "NotificationController.unreadCount",
+      "NotificationController.unsubscribe",
+      "NotificationController.updatePreferences",
       "ProfessionalAppController.findAgenda",
       "ProfessionalAppController.findClient",
       "ProfessionalAppController.findClients",

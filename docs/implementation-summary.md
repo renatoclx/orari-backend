@@ -36,7 +36,7 @@ Registro consolidado do trabalho feito entre 16/09/2026 e 18/09/2026: da prepara
 | Plan                 | **Sem exclusão** (`isActive`, reativável)    | Nome único na empresa; itens e períodos com exclusão física, substituídos em bloco               |
 | Payment              | Soft delete                                  | Um por agendamento; `paidAt` e método obrigatórios quando `PAID`; valor herda o preço do serviço |
 | BusinessHour         | Soft delete                                  | Janelas de atendimento por dia da semana                                                         |
-| Notification         | **Sem exclusão** (resolvida)                 | Sem tipos em uso (entidade mantida para o futuro)                                                |
+| UserNotification     | **Sem exclusão** (lida: `readAt`)            | Notificações por usuário (o sino); chave de deduplicação única por usuário                       |
 
 ### Rotas
 
@@ -625,6 +625,14 @@ Refatoração sem mudança de comportamento: as rotas, as respostas e as regras 
 - `ProfessionalClientsService` (lista e ficha) e `ProfessionalLinkService` (o profissional do usuário logado, usado pelos três serviços do módulo); `presentService` e `presentOrigin` dão o mesmo formato de serviço e origem à agenda e ao histórico.
 - Consulta direta ao Prisma com `select` enxuto: a carteira vem da relação `appointmentsAsClient` (`some`), o último e o próximo de `findMany` com `distinct` por cliente. A foto é assinada pelo interceptor global.
 - Testes: spec do service, as duas rotas na lista exata do teste de cobertura e no e2e (400 com `professionalId` ou id inválido, 403 para os outros perfis).
+
+## 2.64 Notificações dos usuários (o sino)
+
+- **Troca do model:** a tabela `notifications` (por empresa, sem nenhum tipo em uso) saiu. Entraram `UserNotification` (a caixa de cada usuário, com `dedupeKey` único por usuário), `UserNotificationPreference` (o push por categoria) e `UserPushSubscription` (os aparelhos). Migração `user_notifications`.
+- **`NotificationDispatcher`:** o ponto único de envio. Grava na caixa (sempre) e, se o usuário quer e tem aparelho, manda o push (`PushSenderService`, o mesmo do cliente, agora exportado pelo `PortalModule`). O texto do push pode ser genérico, sem o nome do cliente. Falha de push não derruba a notificação.
+- **Primeira fonte (`AppointmentNotifierListener`):** o cliente marca ou cancela pelo app (`appointment.created-by-client` e `appointment.cancelled-by-client`, eventos novos; as mensagens automáticas não os escutam) e avisam os ADMIN (destino `/`) e o usuário ligado ao profissional (destino `/app/agenda?dia=`).
+- **Rotas** (`/notifications`, de qualquer usuário da empresa, marcadas `@ProfessionalApp()`): lista (10 por página, `onlyUnread`, com o total de não lidas), `unread-count`, `read-all`, `:id/read`, `preferences` (GET e PUT) e `push/subscriptions` (POST e DELETE). Cada um só lê e altera as próprias.
+- **Testes:** specs do service, do despachante (deduplicação, preferências, push que falha, aparelho que sumiu) e do ouvinte, a lista de rotas do profissional e o e2e.
 
 ## 2.56 Fotos privadas por link assinado
 
