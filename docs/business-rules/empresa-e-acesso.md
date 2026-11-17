@@ -76,6 +76,14 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - Empresa sem assinatura não tem restrição.
 - Só o SUPER_ADMIN lê e grava (`GET /subscriptions`, `GET`/`PUT /companies/:id/subscription`), com auditoria `SUBSCRIPTION_CHANGED` na empresa da plataforma. O `GET /auth/me` traz `subscription` (situação, somente leitura e último dia da situação; nulo sem assinatura e para o SUPER_ADMIN).
 
+## Painel da plataforma
+
+- `GET /platform/dashboard` (só SUPER_ADMIN) junta, das empresas **ativas** (menos a da plataforma): a receita, as situações, o crescimento, o que precisa de atenção e o uso. As contas ficam numa função pura (`platform-dashboard.ts`).
+- **MRR**: soma do equivalente mensal (valor do ciclo ÷ meses) das assinaturas ativas e em atraso, com o desconto enquanto vale (até `discountUntil`); também sem o desconto, para mostrar o custo das ofertas. ARR = MRR × 12. **Em atraso**: soma dos ciclos na tolerância.
+- **Conversão do teste**: assinaturas com o teste já encerrado e, delas, as que têm `paidUntil`.
+- **Atenção**: testes que terminam em até 7 dias, empresas em atraso (com o último dia antes do bloqueio), ativas que vencem em até 14 dias e empresas "paradas" (sem agendamento criado há 14 dias, menos as em somente leitura ou canceladas).
+- **Crescimento**: empresas cadastradas e agendamentos **criados** por mês nos últimos 12 meses, no fuso de Brasília. **Uso**: por empresa, agendamentos criados nos últimos 30 dias, clientes e profissionais ativos e a data do último agendamento criado.
+
 ## Usuários e acesso
 
 - Todo usuário pertence a uma empresa, que não pode ser alterada.
