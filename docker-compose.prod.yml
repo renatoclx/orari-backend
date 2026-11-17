@@ -73,11 +73,16 @@ services:
       # Sem domínio (primeiro teste por IP) o frontend fica em ":81", porta que
       # não é publicada: só o domínio dele (app...) o expõe.
       APP_DOMAIN: ${APP_DOMAIN:-:81}
+      # Landing: sem domínio, fica em portas não publicadas (":82" e ":83").
+      SITE_DOMAIN: ${SITE_DOMAIN:-:82}
+      SITE_WWW_DOMAIN: ${SITE_WWW_DOMAIN:-:83}
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Arquivos da landing, só leitura. Sem LANDING_DIR, monta uma pasta vazia.
+      - ${LANDING_DIR:-./landing}:/srv/landing:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
