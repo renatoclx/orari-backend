@@ -28,3 +28,18 @@
 
 	reverse_proxy frontend:3000
 }
+
+# Site institucional (landing): só arquivos estáticos, montados em /srv/landing.
+# Os arquivos ocultos (ex.: .user.ini e .htaccess do aaPanel) não são servidos.
+{$SITE_DOMAIN::82} {
+	encode gzip
+	root * /srv/landing
+	file_server {
+		hide .*
+	}
+}
+
+# O www só redireciona para o domínio principal, mantendo o caminho.
+{$SITE_WWW_DOMAIN::83} {
+	redir https://{$SITE_DOMAIN}{uri} permanent
+}
