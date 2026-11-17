@@ -13,6 +13,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { AllowReadOnly } from "../../common/decorators/allow-read-only.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ProfessionalApp } from "../../common/decorators/professional-app.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
@@ -31,6 +32,9 @@ import { NotificationService } from "./notification.service";
 @ApiTags("Notificações")
 @ApiBearerAuth()
 @ProfessionalApp()
+// São do próprio usuário (lidas, preferências, avisos no celular): funcionam
+// mesmo com a assinatura da empresa em somente leitura.
+@AllowReadOnly()
 @Controller("notifications")
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}

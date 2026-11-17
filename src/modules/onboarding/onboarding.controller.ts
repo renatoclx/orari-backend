@@ -1,6 +1,7 @@
 import { Controller, Get, HttpCode, Patch } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { UserType } from "../../../generated/prisma/enums";
+import { AllowReadOnly } from "../../common/decorators/allow-read-only.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ProfessionalApp } from "../../common/decorators/professional-app.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -38,6 +39,8 @@ export class OnboardingController {
 
   @Patch("dismiss")
   @HttpCode(204)
+  // A marca é do usuário, não dado da empresa.
+  @AllowReadOnly()
   @ProfessionalApp()
   @Roles(UserType.ADMIN, UserType.PROFESSIONAL)
   @ApiOperation({

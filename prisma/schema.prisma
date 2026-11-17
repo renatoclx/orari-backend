@@ -198,6 +198,7 @@ model Company {
   classSessions         ClassSession[]
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
+  subscription          CompanySubscription?
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
   clientMessages        ClientMessage[]
@@ -797,6 +798,7 @@ enum AuditAction {
   AGENDA_BLOCK_REMOVED
   PAYMENT_PAID_UPDATED
   PAYMENT_PAID_REMOVED
+  SUBSCRIPTION_CHANGED
 }
 
 /**
@@ -1086,6 +1088,51 @@ model CompanyLimit {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("company_limits")
+}
+
+// Planos do Orari (os modelos de acesso do SUPER_ADMIN seguem os mesmos três).
+enum SubscriptionPlan {
+  ESSENTIAL
+  PLUS
+  CLINICAL
+}
+
+enum BillingCycle {
+  MONTHLY
+  SEMIANNUAL
+  ANNUAL
+}
+
+/**
+ * Assinatura da empresa (ver docs/business-rules/empresa-e-acesso.md,
+ * "Assinatura"). A situação (em teste, ativa, em atraso, somente leitura,
+ * cancelada) é calculada pelas datas, sem rotina que a vire. Empresa sem
+ * assinatura não tem restrição (as de teste do MVP e a da plataforma).
+ */
+model CompanySubscription {
+  companyId          String           @id
+  plan               SubscriptionPlan
+  cycle              BillingCycle
+  // Profissionais além dos incluídos no plano (cobrados à parte).
+  extraProfessionals Int              @default(0)
+  anamnesisAddon     Boolean          @default(false)
+  // Valor do ciclo, guardado: um reajuste da tabela não muda quem já contratou.
+  price              Decimal          @db.Decimal(10, 2)
+  // Oferta de lançamento: percentual de desconto até a data (inclusive).
+  discountPercent    Int?
+  discountUntil      DateTime?        @db.Date
+  // Último dia do teste grátis (inclusive).
+  trialEndsAt        DateTime?        @db.Date
+  // Pago até (inclusive): o vencimento. Depois dele, 5 dias de tolerância.
+  paidUntil          DateTime?        @db.Date
+  // A partir desta data a assinatura está cancelada (somente leitura).
+  canceledAt         DateTime?        @db.Date
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime?        @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("company_subscriptions")
 }
 
 /**

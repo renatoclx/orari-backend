@@ -17,6 +17,7 @@ import { PortalAppointmentService } from "./portal-appointment.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import type { PortalClient } from "./portal-auth.service";
 import { PortalCompanyService } from "./portal-company.service";
+import { SubscriptionService } from "../subscription/subscription.service";
 
 // Agendamentos do cliente entrado no portal (token do portal, não o da clínica).
 @ApiTags("Portal do cliente")
@@ -28,6 +29,7 @@ export class PortalAppointmentController {
   constructor(
     private readonly portalCompanyService: PortalCompanyService,
     private readonly portalAppointmentService: PortalAppointmentService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   @Get()
@@ -56,6 +58,12 @@ export class PortalAppointmentController {
     @CurrentClient() client: PortalClient,
   ) {
     const company = await this.portalCompanyService.findBySlug(slug);
+    // Clínica em somente leitura: o cliente não agenda pelo app (o cancelamento
+    // continua, para liberar o horário).
+    await this.subscriptionService.assertWritable(
+      company.id,
+      "O agendamento online desta clínica está indisponível no momento.",
+    );
     return this.portalAppointmentService.book(company, client, dto);
   }
 

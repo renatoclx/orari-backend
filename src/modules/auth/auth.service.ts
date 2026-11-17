@@ -17,6 +17,10 @@ import {
   CompanyAccessService,
   type FeatureAccessEntry,
 } from "../company-access/company-access.service";
+import {
+  SubscriptionService,
+  type SubscriptionSummary,
+} from "../subscription/subscription.service";
 import { UserService } from "../user/user.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -65,6 +69,9 @@ export interface MeResponse {
   };
   // O que a empresa do usuário enxerga; o front esconde menus e botões por aqui.
   access: { features: FeatureAccessEntry[] };
+  // Situação da assinatura (a faixa de aviso e o somente leitura da tela); null
+  // quando a empresa não tem assinatura e para o SUPER_ADMIN.
+  subscription: SubscriptionSummary | null;
 }
 
 @Injectable()
@@ -73,6 +80,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly companyService: CompanyService,
     private readonly companyAccessService: CompanyAccessService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
@@ -200,6 +208,10 @@ export class AuthService {
           company.id,
         ),
       },
+      subscription:
+        user.type === UserType.SUPER_ADMIN
+          ? null
+          : await this.subscriptionService.summaryOf(company.id),
     };
   }
 

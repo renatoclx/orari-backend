@@ -69,6 +69,13 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe a lista vazia: ele só administra as empresas e não usa a aplicação; a API continua sem limitá-lo.
 - `PUT /companies/:companyId/access` (só SUPER_ADMIN) **substitui** a matriz e os limites de uma vez, na mesma transação do registro de auditoria `COMPANY_ACCESS_CHANGED`. A funcionalidade que faltar no corpo fica sem acesso. O registro de auditoria pertence à empresa do SUPER_ADMIN, não à empresa alterada: o cliente não vê a gestão do plano dele.
 
+## Assinatura
+
+- Cada empresa pode ter uma assinatura (plano, ciclo, extras, adicional de anamnese, valor do ciclo guardado, desconto até uma data). A situação sai das datas, no fuso da empresa: em teste até `trialEndsAt`; ativa até `paidUntil`; em atraso por 5 dias depois do vencimento; depois, somente leitura; cancelada a partir de `canceledAt`.
+- Em somente leitura a API recusa toda gravação da empresa (403, `SUBSCRIPTION_READ_ONLY`), menos senha, notificações e primeiros passos, e o portal não aceita novos agendamentos (o cancelamento continua). Os dados ficam.
+- Empresa sem assinatura não tem restrição.
+- Só o SUPER_ADMIN lê e grava (`GET /subscriptions`, `GET`/`PUT /companies/:id/subscription`), com auditoria `SUBSCRIPTION_CHANGED` na empresa da plataforma. O `GET /auth/me` traz `subscription` (situação, somente leitura e último dia da situação; nulo sem assinatura e para o SUPER_ADMIN).
+
 ## Usuários e acesso
 
 - Todo usuário pertence a uma empresa, que não pode ser alterada.

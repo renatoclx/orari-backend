@@ -13,6 +13,7 @@ import {
   ApiTooManyRequestsResponse,
 } from "@nestjs/swagger";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
+import { AllowReadOnly } from "../../common/decorators/allow-read-only.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ProfessionalApp } from "../../common/decorators/professional-app.decorator";
 import { Public } from "../../common/decorators/public.decorator";
@@ -74,6 +75,8 @@ export class AuthController {
   // tentativas do login (ver auth-throttle.ts).
   @ApiBearerAuth()
   @ProfessionalApp()
+  // A senha é do usuário, não dado da empresa: troca mesmo em somente leitura.
+  @AllowReadOnly()
   @Patch("me/password")
   @HttpCode(204)
   @UseGuards(ThrottlerGuard)
