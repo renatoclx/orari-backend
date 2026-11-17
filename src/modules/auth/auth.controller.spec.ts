@@ -3,6 +3,7 @@ import { ThrottlerGuard } from "@nestjs/throttler";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { SignupService } from "./signup.service";
 
 describe("AuthController", () => {
   let authController: AuthController;
@@ -19,7 +20,10 @@ describe("AuthController", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: authServiceMock }],
+      providers: [
+        { provide: AuthService, useValue: authServiceMock },
+        { provide: SignupService, useValue: { signup: vi.fn() } },
+      ],
     })
       // O limite de tentativas não é o assunto destes testes, que só conferem a
       // delegação ao AuthService.

@@ -76,6 +76,12 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - Empresa sem assinatura não tem restrição.
 - Só o SUPER_ADMIN lê e grava (`GET /subscriptions`, `GET`/`PUT /companies/:id/subscription`), com auditoria `SUBSCRIPTION_CHANGED` na empresa da plataforma. O `GET /auth/me` traz `subscription` (situação, somente leitura e último dia da situação; nulo sem assinatura e para o SUPER_ADMIN).
 
+## Cadastro sozinho
+
+- `POST /auth/signup` (público, até 5 cadastros por hora por IP): a empresa se cadastra pela landing com o nome do negócio, CPF ou CNPJ, o nome de quem administra, e-mail, celular, senha, o plano escolhido (Essencial, Plus ou Clinical) e o aceite dos termos (obrigatório).
+- Numa transação: a empresa (o nome vira a razão social; o subdomínio sai do nome, com "-2", "-3" se ocupado; fuso de Brasília), os **acessos e limites do plano** (`plan-templates.ts`, espelho dos modelos do painel do SUPER_ADMIN), as categorias de despesa iniciais, o contato principal (celular e e-mail), a **assinatura em teste** (o plano, mensal, no valor da tabela, `trialEndsAt` = hoje + 6: 7 dias contando hoje) e o usuário **ADMIN** (com a auditoria de nascer ADMIN, como no cadastro pelo SUPER_ADMIN). Depois, entra como no login e devolve os tokens.
+- E-mail ou documento já usados: 409 com `field` (`email` ou `document`). Sem confirmação de e-mail por enquanto (não há serviço de envio).
+
 ## Cobranças
 
 - Cobrança manual: o SUPER_ADMIN registra cada pagamento da assinatura (valor, data do pagamento, forma — Pix, cartão, boleto, transferência, dinheiro ou outra —, período coberto e observação). Gateway fica para depois.
