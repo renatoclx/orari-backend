@@ -66,7 +66,7 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - **Rotas sem barreira de propósito** (cada uma está declarada no teste `feature-coverage.spec.ts`, que falha se uma rota nova ficar sem barreira e sem isenção): `/auth/*`, `/cities` e `/states` (dados de referência), `/notifications` (sem uso), `GET /business-hours` e `GET /companies` e `GET /companies/:id` (a agenda e o layout os leem), as rotas exclusivas do SUPER_ADMIN e, por ora, `/contacts` e `/addresses` (ver `technical-debt.md`).
 - Cancelar um agendamento avulso é `PATCH /appointments/:id` (muda o status) e por isso exige `edit`, não `remove`.
 - `GET /companies/:companyId/access` (só SUPER_ADMIN; empresa inexistente: 404) traz uma entrada por funcionalidade (`feature`, `view`, `edit`, `create`, `remove`), os `limits` (`professionals`, `admins`) e o uso atual (`usage`).
-- `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe tudo, pois a plataforma não é limitada por plano.
+- `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe a lista vazia: ele só administra as empresas e não usa a aplicação; a API continua sem limitá-lo.
 - `PUT /companies/:companyId/access` (só SUPER_ADMIN) **substitui** a matriz e os limites de uma vez, na mesma transação do registro de auditoria `COMPANY_ACCESS_CHANGED`. A funcionalidade que faltar no corpo fica sem acesso. O registro de auditoria pertence à empresa do SUPER_ADMIN, não à empresa alterada: o cliente não vê a gestão do plano dele.
 
 ## Usuários e acesso
