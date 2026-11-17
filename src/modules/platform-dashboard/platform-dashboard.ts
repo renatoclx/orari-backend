@@ -8,18 +8,13 @@ import {
   type SubscriptionDates,
   type SubscriptionStatus,
 } from "../subscription/subscription-status";
+import { CYCLE_MONTHS } from "../subscription/subscription-payment";
 
 /**
  * Números do painel do SUPER_ADMIN (ver docs/business-rules/empresa-e-acesso.md,
  * "Painel da plataforma"). Função pura: o serviço junta os dados do banco e
  * o "hoje"; aqui ficam as contas.
  */
-
-export const CYCLE_MONTHS: Record<BillingCycle, number> = {
-  MONTHLY: 1,
-  SEMIANNUAL: 6,
-  ANNUAL: 12,
-};
 
 /** Janela do "precisa de atenção": testes acabando e renovações chegando. */
 export const TRIAL_ENDING_DAYS = 7;
@@ -57,6 +52,8 @@ export interface DashboardInput {
   usage: Map<string, CompanyUsage>;
   /** Agendamentos criados por mês ("AAAA-MM"), só os meses com algum. */
   appointmentsByMonth: Map<string, number>;
+  /** Recebido por mês ("AAAA-MM", pela data do pagamento), só os meses com algum. */
+  receivedByMonth: Map<string, number>;
   /** Os 12 meses do gráfico, do mais antigo ao atual ("AAAA-MM"). */
   months: string[];
   now: Date;
@@ -88,6 +85,8 @@ export interface PlatformDashboard {
   byCycle: { cycle: BillingCycle; companies: number }[];
   companiesByMonth: { month: string; count: number }[];
   appointmentsByMonth: { month: string; count: number }[];
+  /** Receita realizada: os pagamentos registrados em Cobranças. */
+  receivedByMonth: { month: string; amount: number }[];
   attention: {
     trialsEnding: AttentionItem[];
     overdue: AttentionItem[];
@@ -301,6 +300,10 @@ export function buildPlatformDashboard(
     appointmentsByMonth: input.months.map((month) => ({
       month,
       count: input.appointmentsByMonth.get(month) ?? 0,
+    })),
+    receivedByMonth: input.months.map((month) => ({
+      month,
+      amount: round2(input.receivedByMonth.get(month) ?? 0),
     })),
     attention,
     // Quem mais usa primeiro.

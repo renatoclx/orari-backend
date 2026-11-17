@@ -45,6 +45,7 @@ const input = (
   companies,
   usage: new Map(),
   appointmentsByMonth: new Map(),
+  receivedByMonth: new Map(),
   months: lastTwelveMonths(TODAY),
   now: NOW,
   ...extra,
@@ -108,6 +109,7 @@ describe("buildPlatformDashboard", () => {
         ],
       ]),
       appointmentsByMonth: new Map([["2026-12", 42]]),
+      receivedByMonth: new Map([["2026-11", 134.75]]),
     }),
   );
 
@@ -176,6 +178,15 @@ describe("buildPlatformDashboard", () => {
     expect(result.appointmentsByMonth[0]).toEqual({
       month: "2026-01",
       count: 0,
+    });
+    // Receita realizada: os pagamentos, nos 12 meses, com zero onde não houve.
+    expect(result.receivedByMonth.at(-2)).toEqual({
+      month: "2026-11",
+      amount: 134.75,
+    });
+    expect(result.receivedByMonth.at(-1)).toEqual({
+      month: "2026-12",
+      amount: 0,
     });
     expect(result.usage[0]).toMatchObject({
       companyId: "ativa",

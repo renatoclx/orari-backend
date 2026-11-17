@@ -59,6 +59,7 @@ model User {
   // Vendas de produto que este usuário lançou e as que cancelou.
   productSalesCreated       ProductSale[]                @relation("ProductSaleCreatedBy")
   productSalesCancelled     ProductSale[]                @relation("ProductSaleCancelledBy")
+  subscriptionPayments      SubscriptionPayment[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -199,6 +200,7 @@ model Company {
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
   subscription          CompanySubscription?
+  subscriptionPayments  SubscriptionPayment[]
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
   clientMessages        ClientMessage[]
@@ -799,6 +801,8 @@ enum AuditAction {
   PAYMENT_PAID_UPDATED
   PAYMENT_PAID_REMOVED
   SUBSCRIPTION_CHANGED
+  SUBSCRIPTION_PAYMENT_CREATED
+  SUBSCRIPTION_PAYMENT_REMOVED
 }
 
 /**
@@ -1133,6 +1137,44 @@ model CompanySubscription {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("company_subscriptions")
+}
+
+enum SubscriptionPaymentMethod {
+  PIX
+  CARD
+  BOLETO
+  TRANSFER
+  CASH
+  OTHER
+}
+
+/**
+ * Pagamento da assinatura, lançado pelo SUPER_ADMIN (cobrança manual; ver
+ * docs/business-rules/empresa-e-acesso.md, "Cobranças"). Registrar avança o
+ * "pago até" da assinatura para o fim do período; só o último pode ser
+ * excluído, e a exclusão devolve o "pago até" anterior.
+ */
+model SubscriptionPayment {
+  id                String                    @id @default(uuid())
+  companyId         String
+  amount            Decimal                   @db.Decimal(10, 2)
+  paidAt            DateTime                  @db.Date
+  method            SubscriptionPaymentMethod
+  // Período que o pagamento cobre (inclusive).
+  periodStart       DateTime                  @db.Date
+  periodEnd         DateTime                  @db.Date
+  // "Pago até" da assinatura antes deste pagamento: a exclusão o devolve.
+  previousPaidUntil DateTime?                 @db.Date
+  note              String?
+  createdById       String
+  createdAt         DateTime                  @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([paidAt])
+  @@map("subscription_payments")
 }
 
 /**

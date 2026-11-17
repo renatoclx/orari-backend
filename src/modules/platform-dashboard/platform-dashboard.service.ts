@@ -34,46 +34,64 @@ export class PlatformDashboardService {
     // de um dia; o agrupamento por mês descarta o que sobrar).
     const since12 = addDays(new Date(`${months[0]}-01T00:00:00Z`), -1);
 
-    const [companies, recent, last, people, monthly] = await Promise.all([
-      // Inativas ficam de fora: estão bloqueadas e não pagam.
-      this.prisma.company.findMany({
-        where: { id: { not: platformId }, isActive: true },
-        select: {
-          id: true,
-          corporateReason: true,
-          fantasyName: true,
-          createdAt: true,
-          timezone: true,
-          subscription: true,
-        },
-      }),
-      this.prisma.appointment.groupBy({
-        by: ["companyId"],
-        where: { createdAt: { gte: since30 }, companyId: { not: platformId } },
-        _count: { _all: true },
-      }),
-      this.prisma.appointment.groupBy({
-        by: ["companyId"],
-        where: { companyId: { not: platformId } },
-        _max: { createdAt: true },
-      }),
-      this.prisma.people.groupBy({
-        by: ["companyId", "type"],
-        where: {
-          deletedAt: null,
-          type: { in: [PeopleType.CLIENT, PeopleType.PROFESSIONAL] },
-          companyId: { not: platformId },
-        },
-        _count: { _all: true },
-      }),
-      // Agendamentos criados por mês, no fuso da plataforma ("createdAt" é UTC).
-      this.prisma.$queryRaw<{ month: string; count: number }[]>`
+    const [companies, recent, last, people, monthly, payments] =
+      await Promise.all([
+        // Inativas ficam de fora: estão bloqueadas e não pagam.
+        this.prisma.company.findMany({
+          where: { id: { not: platformId }, isActive: true },
+          select: {
+            id: true,
+            corporateReason: true,
+            fantasyName: true,
+            createdAt: true,
+            timezone: true,
+            subscription: true,
+          },
+        }),
+        this.prisma.appointment.groupBy({
+          by: ["companyId"],
+          where: {
+            createdAt: { gte: since30 },
+            companyId: { not: platformId },
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.appointment.groupBy({
+          by: ["companyId"],
+          where: { companyId: { not: platformId } },
+          _max: { createdAt: true },
+        }),
+        this.prisma.people.groupBy({
+          by: ["companyId", "type"],
+          where: {
+            deletedAt: null,
+            type: { in: [PeopleType.CLIENT, PeopleType.PROFESSIONAL] },
+            companyId: { not: platformId },
+          },
+          _count: { _all: true },
+        }),
+        // Agendamentos criados por mês, no fuso da plataforma ("createdAt" é UTC).
+        this.prisma.$queryRaw<{ month: string; count: number }[]>`
         SELECT to_char("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${PLATFORM_TIME_ZONE}, 'YYYY-MM') AS month,
                count(*)::int AS count
         FROM appointments
         WHERE "createdAt" >= ${since12} AND "companyId" <> ${platformId}
         GROUP BY 1`,
-    ]);
+        // Pagamentos das assinaturas (paidAt já é a data de calendário).
+        this.prisma.subscriptionPayment.findMany({
+          where: { paidAt: { gte: new Date(`${months[0]}-01T00:00:00Z`) } },
+          select: { paidAt: true, amount: true },
+        }),
+      ]);
+
+    const received = new Map<string, number>();
+    for (const payment of payments) {
+      const month = payment.paidAt.toISOString().slice(0, 7);
+      received.set(
+        month,
+        (received.get(month) ?? 0) + payment.amount.toNumber(),
+      );
+    }
 
     const usage = new Map<string, CompanyUsage>();
     const usageOf = (companyId: string) => {
@@ -115,6 +133,7 @@ export class PlatformDashboardService {
       appointmentsByMonth: new Map(
         monthly.map((row) => [row.month, row.count]),
       ),
+      receivedByMonth: received,
       months,
       now,
     });

@@ -76,13 +76,21 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - Empresa sem assinatura não tem restrição.
 - Só o SUPER_ADMIN lê e grava (`GET /subscriptions`, `GET`/`PUT /companies/:id/subscription`), com auditoria `SUBSCRIPTION_CHANGED` na empresa da plataforma. O `GET /auth/me` traz `subscription` (situação, somente leitura e último dia da situação; nulo sem assinatura e para o SUPER_ADMIN).
 
+## Cobranças
+
+- Cobrança manual: o SUPER_ADMIN registra cada pagamento da assinatura (valor, data do pagamento, forma — Pix, cartão, boleto, transferência, dinheiro ou outra —, período coberto e observação). Gateway fica para depois.
+- Registrar avança o `paidUntil` da assinatura para o fim do período, **nunca o recua**; o pagamento guarda o `paidUntil` de antes dele. Sem assinatura: 404; fim antes do início: 400.
+- **Só o pagamento mais recente da empresa pode ser excluído** (lançado por engano): a exclusão devolve o `paidUntil` de antes dele. Outro: 409.
+- Sugestão do próximo pagamento: o período começa no dia seguinte ao `paidUntil` enquanto ele vale ou está na tolerância; durante o teste, no dia seguinte ao fim dele; senão, hoje. Dura um ciclo (mesmo dia N meses depois, menos um dia). O valor é o do ciclo com o desconto, se o período começa até `discountUntil`.
+- Rotas (só SUPER_ADMIN): `GET /subscription-payments?month=AAAA-MM` (todas as empresas, pela data do pagamento, com total), `GET`/`POST /companies/:id/subscription/payments` (histórico e sugestão; registro) e `DELETE /companies/:id/subscription/payments/:paymentId`. Auditoria `SUBSCRIPTION_PAYMENT_CREATED` e `SUBSCRIPTION_PAYMENT_REMOVED` na empresa da plataforma.
+
 ## Painel da plataforma
 
 - `GET /platform/dashboard` (só SUPER_ADMIN) junta, das empresas **ativas** (menos a da plataforma): a receita, as situações, o crescimento, o que precisa de atenção e o uso. As contas ficam numa função pura (`platform-dashboard.ts`).
 - **MRR**: soma do equivalente mensal (valor do ciclo ÷ meses) das assinaturas ativas e em atraso, com o desconto enquanto vale (até `discountUntil`); também sem o desconto, para mostrar o custo das ofertas. ARR = MRR × 12. **Em atraso**: soma dos ciclos na tolerância.
 - **Conversão do teste**: assinaturas com o teste já encerrado e, delas, as que têm `paidUntil`.
 - **Atenção**: testes que terminam em até 7 dias, empresas em atraso (com o último dia antes do bloqueio), ativas que vencem em até 14 dias e empresas "paradas" (sem agendamento criado há 14 dias, menos as em somente leitura ou canceladas).
-- **Crescimento**: empresas cadastradas e agendamentos **criados** por mês nos últimos 12 meses, no fuso de Brasília. **Uso**: por empresa, agendamentos criados nos últimos 30 dias, clientes e profissionais ativos e a data do último agendamento criado.
+- **Crescimento**: empresas cadastradas e agendamentos **criados** por mês nos últimos 12 meses, no fuso de Brasília; **receita realizada**: soma dos pagamentos por mês (data do pagamento). **Uso**: por empresa, agendamentos criados nos últimos 30 dias, clientes e profissionais ativos e a data do último agendamento criado.
 
 ## Usuários e acesso
 
