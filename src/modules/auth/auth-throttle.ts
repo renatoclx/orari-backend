@@ -9,3 +9,6 @@ export const LOGIN_LIMIT = { limit: 5, ttl: 60_000 };
 
 // Refresh: mais folga, porque o front renova sozinho (ex.: várias abas abertas).
 export const REFRESH_LIMIT = { limit: 20, ttl: 60_000 };
+
+// Cadastro sozinho: 5 empresas por hora por IP (barra cadastros em massa).
+export const SIGNUP_LIMIT = { limit: 5, ttl: 3_600_000 };

@@ -46,6 +46,7 @@ import { PayableModule } from "./modules/payable/payable.module";
 import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { ProfessionalAppModule } from "./modules/professional-app/professional-app.module";
+import { PlatformDashboardModule } from "./modules/platform-dashboard/platform-dashboard.module";
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { ProfessionalAppModule } from "./modules/professional-app/professional-a
     PayableModule,
     AgendaBlockModule,
     ProfessionalAppModule,
+    PlatformDashboardModule,
     OnboardingModule,
     PeopleModule,
     ContactModule,

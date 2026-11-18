@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { SubscriptionModule } from "../subscription/subscription.module";
 import { StorageModule } from "../../common/storage/storage.module";
 import { AppointmentModule } from "../appointment/appointment.module";
 import { CompanyAccessModule } from "../company-access/company-access.module";
@@ -34,6 +35,7 @@ import { PortalSettingsService } from "./portal-settings.service";
   imports: [
     PeopleModule,
     CompanyAccessModule,
+    SubscriptionModule,
     AppointmentModule,
     StorageModule,
   ],

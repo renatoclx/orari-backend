@@ -59,6 +59,7 @@ model User {
   // Vendas de produto que este usuário lançou e as que cancelou.
   productSalesCreated       ProductSale[]                @relation("ProductSaleCreatedBy")
   productSalesCancelled     ProductSale[]                @relation("ProductSaleCancelledBy")
+  subscriptionPayments      SubscriptionPayment[]
 
   // Parciais: um registro excluído logicamente não bloqueia o reuso do valor.
   @@unique([email], where: raw("\"deletedAt\" IS NULL"))
@@ -198,6 +199,8 @@ model Company {
   classSessions         ClassSession[]
   featureAccess         CompanyFeatureAccess[]
   limit                 CompanyLimit?
+  subscription          CompanySubscription?
+  subscriptionPayments  SubscriptionPayment[]
   portalVerifications   PortalVerification[]
   portalSettings        PortalSettings?
   clientMessages        ClientMessage[]
@@ -797,6 +800,9 @@ enum AuditAction {
   AGENDA_BLOCK_REMOVED
   PAYMENT_PAID_UPDATED
   PAYMENT_PAID_REMOVED
+  SUBSCRIPTION_CHANGED
+  SUBSCRIPTION_PAYMENT_CREATED
+  SUBSCRIPTION_PAYMENT_REMOVED
 }
 
 /**
@@ -1086,6 +1092,89 @@ model CompanyLimit {
   company Company @relation(fields: [companyId], references: [id])
 
   @@map("company_limits")
+}
+
+// Planos do Orari (os modelos de acesso do SUPER_ADMIN seguem os mesmos três).
+enum SubscriptionPlan {
+  ESSENTIAL
+  PLUS
+  CLINICAL
+}
+
+enum BillingCycle {
+  MONTHLY
+  SEMIANNUAL
+  ANNUAL
+}
+
+/**
+ * Assinatura da empresa (ver docs/business-rules/empresa-e-acesso.md,
+ * "Assinatura"). A situação (em teste, ativa, em atraso, somente leitura,
+ * cancelada) é calculada pelas datas, sem rotina que a vire. Empresa sem
+ * assinatura não tem restrição (as de teste do MVP e a da plataforma).
+ */
+model CompanySubscription {
+  companyId          String           @id
+  plan               SubscriptionPlan
+  cycle              BillingCycle
+  // Profissionais além dos incluídos no plano (cobrados à parte).
+  extraProfessionals Int              @default(0)
+  anamnesisAddon     Boolean          @default(false)
+  // Valor do ciclo, guardado: um reajuste da tabela não muda quem já contratou.
+  price              Decimal          @db.Decimal(10, 2)
+  // Oferta de lançamento: percentual de desconto até a data (inclusive).
+  discountPercent    Int?
+  discountUntil      DateTime?        @db.Date
+  // Último dia do teste grátis (inclusive).
+  trialEndsAt        DateTime?        @db.Date
+  // Pago até (inclusive): o vencimento. Depois dele, 5 dias de tolerância.
+  paidUntil          DateTime?        @db.Date
+  // A partir desta data a assinatura está cancelada (somente leitura).
+  canceledAt         DateTime?        @db.Date
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime?        @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@map("company_subscriptions")
+}
+
+enum SubscriptionPaymentMethod {
+  PIX
+  CARD
+  BOLETO
+  TRANSFER
+  CASH
+  OTHER
+}
+
+/**
+ * Pagamento da assinatura, lançado pelo SUPER_ADMIN (cobrança manual; ver
+ * docs/business-rules/empresa-e-acesso.md, "Cobranças"). Registrar avança o
+ * "pago até" da assinatura para o fim do período; só o último pode ser
+ * excluído, e a exclusão devolve o "pago até" anterior.
+ */
+model SubscriptionPayment {
+  id                String                    @id @default(uuid())
+  companyId         String
+  amount            Decimal                   @db.Decimal(10, 2)
+  paidAt            DateTime                  @db.Date
+  method            SubscriptionPaymentMethod
+  // Período que o pagamento cobre (inclusive).
+  periodStart       DateTime                  @db.Date
+  periodEnd         DateTime                  @db.Date
+  // "Pago até" da assinatura antes deste pagamento: a exclusão o devolve.
+  previousPaidUntil DateTime?                 @db.Date
+  note              String?
+  createdById       String
+  createdAt         DateTime                  @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([paidAt])
+  @@map("subscription_payments")
 }
 
 /**

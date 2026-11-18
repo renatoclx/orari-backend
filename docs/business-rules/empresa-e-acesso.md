@@ -66,8 +66,37 @@ Há três tipos, e só eles (o antigo `USER` deixou de existir; a migração `re
 - **Rotas sem barreira de propósito** (cada uma está declarada no teste `feature-coverage.spec.ts`, que falha se uma rota nova ficar sem barreira e sem isenção): `/auth/*`, `/cities` e `/states` (dados de referência), `/notifications` (sem uso), `GET /business-hours` e `GET /companies` e `GET /companies/:id` (a agenda e o layout os leem), as rotas exclusivas do SUPER_ADMIN e, por ora, `/contacts` e `/addresses` (ver `technical-debt.md`).
 - Cancelar um agendamento avulso é `PATCH /appointments/:id` (muda o status) e por isso exige `edit`, não `remove`.
 - `GET /companies/:companyId/access` (só SUPER_ADMIN; empresa inexistente: 404) traz uma entrada por funcionalidade (`feature`, `view`, `edit`, `create`, `remove`), os `limits` (`professionals`, `admins`) e o uso atual (`usage`).
-- `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe tudo, pois a plataforma não é limitada por plano.
+- `GET /auth/me` traz `access.features` com os acessos da empresa do usuário; o SUPER_ADMIN recebe a lista vazia: ele só administra as empresas e não usa a aplicação; a API continua sem limitá-lo.
 - `PUT /companies/:companyId/access` (só SUPER_ADMIN) **substitui** a matriz e os limites de uma vez, na mesma transação do registro de auditoria `COMPANY_ACCESS_CHANGED`. A funcionalidade que faltar no corpo fica sem acesso. O registro de auditoria pertence à empresa do SUPER_ADMIN, não à empresa alterada: o cliente não vê a gestão do plano dele.
+
+## Assinatura
+
+- Cada empresa pode ter uma assinatura (plano, ciclo, extras, adicional de anamnese, valor do ciclo guardado, desconto até uma data). A situação sai das datas, no fuso da empresa: em teste até `trialEndsAt`; ativa até `paidUntil`; em atraso por 5 dias depois do vencimento; depois, somente leitura; cancelada a partir de `canceledAt`.
+- Em somente leitura a API recusa toda gravação da empresa (403, `SUBSCRIPTION_READ_ONLY`), menos senha, notificações e primeiros passos, e o portal não aceita novos agendamentos (o cancelamento continua). Os dados ficam.
+- Empresa sem assinatura não tem restrição.
+- Só o SUPER_ADMIN lê e grava (`GET /subscriptions`, `GET`/`PUT /companies/:id/subscription`), com auditoria `SUBSCRIPTION_CHANGED` na empresa da plataforma. O `GET /auth/me` traz `subscription` (situação, somente leitura e último dia da situação; nulo sem assinatura e para o SUPER_ADMIN).
+
+## Cadastro sozinho
+
+- `POST /auth/signup` (público, até 5 cadastros por hora por IP): a empresa se cadastra pela landing com o nome do negócio, CPF ou CNPJ, o nome de quem administra, e-mail, celular, senha, o plano escolhido (Essencial, Plus ou Clinical) e o aceite dos termos (obrigatório).
+- Numa transação: a empresa (o nome vira a razão social; o subdomínio sai do nome, com "-2", "-3" se ocupado; fuso de Brasília), os **acessos e limites do plano** (`plan-templates.ts`, espelho dos modelos do painel do SUPER_ADMIN), as categorias de despesa iniciais, o contato principal (celular e e-mail), a **assinatura em teste** (o plano, mensal, no valor da tabela, `trialEndsAt` = hoje + 6: 7 dias contando hoje) e o usuário **ADMIN** (com a auditoria de nascer ADMIN, como no cadastro pelo SUPER_ADMIN). Depois, entra como no login e devolve os tokens.
+- E-mail ou documento já usados: 409 com `field` (`email` ou `document`). Sem confirmação de e-mail por enquanto (não há serviço de envio).
+
+## Cobranças
+
+- Cobrança manual: o SUPER_ADMIN registra cada pagamento da assinatura (valor, data do pagamento, forma — Pix, cartão, boleto, transferência, dinheiro ou outra —, período coberto e observação). Gateway fica para depois.
+- Registrar avança o `paidUntil` da assinatura para o fim do período, **nunca o recua**; o pagamento guarda o `paidUntil` de antes dele. Sem assinatura: 404; fim antes do início: 400.
+- **Só o pagamento mais recente da empresa pode ser excluído** (lançado por engano): a exclusão devolve o `paidUntil` de antes dele. Outro: 409.
+- Sugestão do próximo pagamento: o período começa no dia seguinte ao `paidUntil` enquanto ele vale ou está na tolerância; durante o teste, no dia seguinte ao fim dele; senão, hoje. Dura um ciclo (mesmo dia N meses depois, menos um dia). O valor é o do ciclo com o desconto, se o período começa até `discountUntil`.
+- Rotas (só SUPER_ADMIN): `GET /subscription-payments?month=AAAA-MM` (todas as empresas, pela data do pagamento, com total), `GET`/`POST /companies/:id/subscription/payments` (histórico e sugestão; registro) e `DELETE /companies/:id/subscription/payments/:paymentId`. Auditoria `SUBSCRIPTION_PAYMENT_CREATED` e `SUBSCRIPTION_PAYMENT_REMOVED` na empresa da plataforma.
+
+## Painel da plataforma
+
+- `GET /platform/dashboard` (só SUPER_ADMIN) junta, das empresas **ativas** (menos a da plataforma): a receita, as situações, o crescimento, o que precisa de atenção e o uso. As contas ficam numa função pura (`platform-dashboard.ts`).
+- **MRR**: soma do equivalente mensal (valor do ciclo ÷ meses) das assinaturas ativas e em atraso, com o desconto enquanto vale (até `discountUntil`); também sem o desconto, para mostrar o custo das ofertas. ARR = MRR × 12. **Em atraso**: soma dos ciclos na tolerância.
+- **Conversão do teste**: assinaturas com o teste já encerrado e, delas, as que têm `paidUntil`.
+- **Atenção**: testes que terminam em até 7 dias, empresas em atraso (com o último dia antes do bloqueio), ativas que vencem em até 14 dias e empresas "paradas" (sem agendamento criado há 14 dias, menos as em somente leitura ou canceladas).
+- **Crescimento**: empresas cadastradas e agendamentos **criados** por mês nos últimos 12 meses, no fuso de Brasília; **receita realizada**: soma dos pagamentos por mês (data do pagamento). **Uso**: por empresa, agendamentos criados nos últimos 30 dias, clientes e profissionais ativos e a data do último agendamento criado.
 
 ## Usuários e acesso
 

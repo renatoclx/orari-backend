@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CompanyService } from "../company/company.service";
 import { CompanyAccessService } from "../company-access/company-access.service";
+import { SubscriptionService } from "../subscription/subscription.service";
 import { UserService } from "../user/user.service";
 import { AuthService } from "./auth.service";
 
@@ -38,6 +39,9 @@ describe("AuthService", () => {
   const companyAccessServiceMock = {
     findForUser: vi.fn(),
   };
+  const subscriptionServiceMock = {
+    summaryOf: vi.fn(),
+  };
   const jwtServiceMock = {
     signAsync: vi.fn(),
   };
@@ -57,6 +61,7 @@ describe("AuthService", () => {
     vi.clearAllMocks();
     configServiceMock.get.mockReturnValue("7d");
     companyAccessServiceMock.findForUser.mockResolvedValue([]);
+    subscriptionServiceMock.summaryOf.mockResolvedValue(null);
     prismaMock.refreshToken.create.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,6 +73,7 @@ describe("AuthService", () => {
           provide: CompanyAccessService,
           useValue: companyAccessServiceMock,
         },
+        { provide: SubscriptionService, useValue: subscriptionServiceMock },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PrismaService, useValue: prismaMock },
@@ -115,8 +121,38 @@ describe("AuthService", () => {
           logoUrl: null,
         },
         access: { features: [] },
+        subscription: null,
       });
       expect(userServiceMock.findProfile).toHaveBeenCalledWith("user-1");
+    });
+
+    it("traz a situação da assinatura da empresa", async () => {
+      const summary = {
+        status: "TRIAL",
+        readOnly: false,
+        endsAt: "2026-12-22",
+      };
+      userServiceMock.findProfile.mockResolvedValue(profile);
+      subscriptionServiceMock.summaryOf.mockResolvedValue(summary);
+
+      const result = await authService.me("user-1");
+
+      expect(result.subscription).toEqual(summary);
+      expect(subscriptionServiceMock.summaryOf).toHaveBeenCalledWith(
+        "company-1",
+      );
+    });
+
+    it("o SUPER_ADMIN não tem assinatura", async () => {
+      userServiceMock.findProfile.mockResolvedValue({
+        ...profile,
+        type: "SUPER_ADMIN",
+      });
+
+      const result = await authService.me("user-1");
+
+      expect(result.subscription).toBeNull();
+      expect(subscriptionServiceMock.summaryOf).not.toHaveBeenCalled();
     });
 
     it("deve incluir os acessos da empresa do usuário", async () => {

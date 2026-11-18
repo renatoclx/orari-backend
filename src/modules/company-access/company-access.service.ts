@@ -8,7 +8,6 @@ import {
   FEATURE_CATALOG,
   emptyAccess,
   type AccessAction,
-  fullAccess,
   type FeatureAccessFlags,
 } from "./access-catalog";
 import { assertValidAccess } from "./access-rules";
@@ -63,18 +62,15 @@ export class CompanyAccessService {
 
   /**
    * Acessos do usuário logado (GET /auth/me): os da empresa dele. O SUPER_ADMIN
-   * é o dono da plataforma e não é limitado por plano: vê tudo.
+   * só administra as empresas: não usa a aplicação, então a tela não mostra
+   * nenhuma funcionalidade. A API continua sem limitá-lo (FeatureAccessGuard),
+   * para a gestão (ex.: cadastrar o administrador de uma empresa) e o suporte.
    */
   async findForUser(
     type: UserType,
     companyId: string,
   ): Promise<FeatureAccessEntry[]> {
-    if (type === UserType.SUPER_ADMIN) {
-      return FEATURE_CATALOG.map((feature) => ({
-        feature: feature.key,
-        ...fullAccess(feature),
-      }));
-    }
+    if (type === UserType.SUPER_ADMIN) return [];
     return this.loadFeatures(companyId);
   }
 

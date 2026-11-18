@@ -169,24 +169,11 @@ describe("CompanyAccessService", () => {
       );
     });
 
-    it("SUPER_ADMIN vê tudo, sem consultar o banco, respeitando as colunas de cada funcionalidade", async () => {
+    it("SUPER_ADMIN não recebe nenhuma funcionalidade (só administra as empresas), sem consultar o banco", async () => {
       const features = await service.findForUser("SUPER_ADMIN", "platform");
 
       expect(prismaMock.companyFeatureAccess.findMany).not.toHaveBeenCalled();
-      expect(features.find((f) => f.feature === "clients")).toEqual({
-        feature: "clients",
-        view: true,
-        edit: true,
-        create: true,
-        remove: true,
-      });
-      expect(features.find((f) => f.feature === "anamnesis-audit")).toEqual({
-        feature: "anamnesis-audit",
-        view: true,
-        edit: false,
-        create: false,
-        remove: false,
-      });
+      expect(features).toEqual([]);
     });
   });
 
