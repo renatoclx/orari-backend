@@ -34,7 +34,7 @@ const row = (extra: Record<string, unknown> = {}) => ({
 
 describe("SubscriptionService", () => {
   let service: SubscriptionService;
-  const tx = { companySubscription: { upsert: vi.fn() } };
+  const tx = { companySubscription: { upsert: vi.fn(), update: vi.fn() } };
   const prismaMock = {
     company: { findUnique: vi.fn(), findMany: vi.fn() },
     companySubscription: { findUnique: vi.fn() },
@@ -134,6 +134,45 @@ describe("SubscriptionService", () => {
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(tx.companySubscription.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cancel e reactivate", () => {
+    beforeEach(() => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        timezone: "America/Sao_Paulo",
+        subscription: row({ paidUntil: d("2027-01-10") }),
+      });
+    });
+
+    it("cancela no dia seguinte ao fim do que foi pago, com auditoria", async () => {
+      await service.cancel(COMPANY_ID, superAdminUser, undefined, NOW);
+      expect(tx.companySubscription.update).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID },
+        data: { canceledAt: d("2027-01-11") },
+      });
+      expect(auditMock.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "SUBSCRIPTION_CHANGED" }),
+        tx,
+      );
+    });
+
+    it("desfazer tira a data do cancelamento", async () => {
+      await service.reactivate(COMPANY_ID, superAdminUser);
+      expect(tx.companySubscription.update).toHaveBeenCalledWith({
+        where: { companyId: COMPANY_ID },
+        data: { canceledAt: null },
+      });
+    });
+
+    it("sem assinatura: 404", async () => {
+      prismaMock.company.findUnique.mockResolvedValue({
+        timezone: "America/Sao_Paulo",
+        subscription: null,
+      });
+      await expect(
+        service.cancel(COMPANY_ID, superAdminUser),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
