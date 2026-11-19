@@ -55,3 +55,23 @@ export function subscriptionState(
   // Teste acabou sem pagamento, ou passou a tolerância do vencimento.
   return { status: "READ_ONLY", readOnly: true, endsAt: null };
 }
+
+/**
+ * Data em que um cancelamento passa a valer: a empresa usa até o fim do que já
+ * pagou (ou do teste, se ainda corre) e só consulta a partir do dia seguinte.
+ * Sem nada em andamento (já bloqueada), vale hoje.
+ */
+export function cancellationDate(
+  {
+    trialEndsAt,
+    paidUntil,
+  }: Pick<SubscriptionDates, "trialEndsAt" | "paidUntil">,
+  today: Date,
+): Date {
+  const running = [paidUntil, trialEndsAt].filter(
+    (date): date is Date => date !== null && date >= today,
+  );
+  if (running.length === 0) return today;
+  const last = running.reduce((a, b) => (a > b ? a : b));
+  return addDays(last, 1);
+}

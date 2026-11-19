@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { subscriptionState } from "./subscription-status";
+import { cancellationDate, subscriptionState } from "./subscription-status";
 
 const d = (value: string) => new Date(`${value}T00:00:00Z`);
 const none = { trialEndsAt: null, paidUntil: null, canceledAt: null };
@@ -64,5 +64,36 @@ describe("subscriptionState", () => {
       status: "CANCELED",
       readOnly: true,
     });
+  });
+});
+
+describe("cancellationDate", () => {
+  const today = d("2026-12-10");
+
+  it("usa até o fim do que pagou: cancela no dia seguinte", () => {
+    expect(
+      cancellationDate(
+        { trialEndsAt: null, paidUntil: d("2026-12-23") },
+        today,
+      ),
+    ).toEqual(d("2026-12-24"));
+  });
+
+  it("em teste, sem pagamento: cancela no dia seguinte ao fim do teste", () => {
+    expect(
+      cancellationDate(
+        { trialEndsAt: d("2026-12-15"), paidUntil: null },
+        today,
+      ),
+    ).toEqual(d("2026-12-16"));
+  });
+
+  it("nada em andamento (já bloqueada ou vencida): vale hoje", () => {
+    expect(
+      cancellationDate(
+        { trialEndsAt: d("2026-11-01"), paidUntil: d("2026-12-01") },
+        today,
+      ),
+    ).toEqual(today);
   });
 });

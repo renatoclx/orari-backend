@@ -1,10 +1,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Ip,
   Param,
   ParseUUIDPipe,
+  Post,
   Put,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
@@ -57,5 +60,30 @@ export class SubscriptionController {
     @Ip() ip: string,
   ) {
     return this.subscriptionService.replace(companyId, dto, currentUser, ip);
+  }
+
+  @Post("companies/:companyId/subscription/cancel")
+  @HttpCode(200)
+  @ApiOperation({
+    summary: "Cancela a assinatura",
+    description:
+      "A data sai sozinha: a empresa usa até o fim do que já pagou (ou do teste em andamento) e só consulta a partir do dia seguinte. Sem assinatura: 404.",
+  })
+  cancel(
+    @Param("companyId", ParseUUIDPipe) companyId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
+  ) {
+    return this.subscriptionService.cancel(companyId, currentUser, ip);
+  }
+
+  @Delete("companies/:companyId/subscription/cancel")
+  @ApiOperation({ summary: "Desfaz o cancelamento da assinatura" })
+  reactivate(
+    @Param("companyId", ParseUUIDPipe) companyId: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Ip() ip: string,
+  ) {
+    return this.subscriptionService.reactivate(companyId, currentUser, ip);
   }
 }

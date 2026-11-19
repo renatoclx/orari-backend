@@ -56,8 +56,8 @@ export const PLAN_LIMITS: Record<
   { maxProfessionals: number; maxAdmins: number }
 > = {
   ESSENTIAL: { maxProfessionals: 2, maxAdmins: 1 },
-  PLUS: { maxProfessionals: 4, maxAdmins: 1 },
-  CLINICAL: { maxProfessionals: 3, maxAdmins: 2 },
+  PLUS: { maxProfessionals: 5, maxAdmins: 2 },
+  CLINICAL: { maxProfessionals: 7, maxAdmins: 3 },
 };
 
 /** Mensal de cada plano (tabela da landing; o valor gravado na assinatura é o que vale). */

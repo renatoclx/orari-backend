@@ -15,6 +15,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { UpdateSubscriptionDto } from "./dto/update-subscription.dto";
 import {
+  cancellationDate,
   subscriptionState,
   type SubscriptionDates,
   type SubscriptionState,
@@ -164,6 +165,68 @@ export class SubscriptionService {
     });
 
     return this.findOne(companyId);
+  }
+
+  /**
+   * Cancela a assinatura: a data sai sozinha (cancellationDate), no dia
+   * seguinte ao fim do que já foi pago ou do teste em andamento.
+   */
+  async cancel(
+    companyId: string,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+    now = new Date(),
+  ): Promise<SubscriptionResponse | null> {
+    const company = await this.findCompany(companyId);
+    if (!company.subscription) {
+      throw new NotFoundException("A empresa não tem assinatura");
+    }
+    const canceledAt = cancellationDate(
+      company.subscription,
+      localDateOf(now, company.timezone),
+    );
+    await this.saveCancellation(companyId, canceledAt, currentUser, ip);
+    return this.findOne(companyId, now);
+  }
+
+  /** Desfaz o cancelamento: a situação volta a sair do teste e do que foi pago. */
+  async reactivate(
+    companyId: string,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+  ): Promise<SubscriptionResponse | null> {
+    const company = await this.findCompany(companyId);
+    if (!company.subscription) {
+      throw new NotFoundException("A empresa não tem assinatura");
+    }
+    await this.saveCancellation(companyId, null, currentUser, ip);
+    return this.findOne(companyId);
+  }
+
+  // Grava a data do cancelamento (ou a tira) com a auditoria, numa transação.
+  private async saveCancellation(
+    companyId: string,
+    canceledAt: Date | null,
+    currentUser: AuthenticatedUser,
+    ip?: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.companySubscription.update({
+        where: { companyId },
+        data: { canceledAt },
+      });
+      await this.auditService.record(
+        {
+          companyId: currentUser.companyId,
+          userId: currentUser.id,
+          action: AuditAction.SUBSCRIPTION_CHANGED,
+          entityType: "COMPANY",
+          entityId: companyId,
+          ip,
+        },
+        tx,
+      );
+    });
   }
 
   /** Situação atual da empresa; nula quando ela não tem assinatura (sem restrição). */
