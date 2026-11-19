@@ -76,7 +76,7 @@ describe("SignupService", () => {
       corporateReason: "Studio Aurora",
       subdomain: "studio-aurora",
       timezone: "America/Sao_Paulo",
-      limit: { create: { maxProfessionals: 4, maxAdmins: 1 } },
+      limit: { create: { maxProfessionals: 5, maxAdmins: 2 } },
       subscription: {
         create: {
           plan: "PLUS",
