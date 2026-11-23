@@ -131,6 +131,32 @@ conferir a documentação gerada.
 
 ---
 
+## Exclusão de empresa depois dos 60 dias
+
+**Onde:** módulo `company` e painel do SUPER_ADMIN.
+
+**O que é:** os termos e a política de privacidade prometem excluir os dados 60 dias
+depois do cancelamento ou do fim do teste sem assinatura (`business-rules/empresa-e-acesso.md`).
+Hoje não existe exclusão de empresa: nem rota, nem botão no painel. A única forma é
+um script SQL que apaga a empresa e tudo que depende dela, mais as fotos e a logo da
+pasta de uploads.
+
+**Impacto:** nenhum até o primeiro prazo vencer (por volta de fevereiro de 2027, para
+os testes que terminam em dezembro de 2026). Depois disso, manter os dados descumpre
+o que está nos termos (LGPD).
+
+**Como resolver:** uma exclusão definitiva da empresa pelo SUPER_ADMIN, só para
+empresas canceladas ou em somente leitura há mais de 60 dias, com confirmação
+digitando o nome, auditoria, remoção dos arquivos e, antes, uma exportação dos dados.
+No painel, mostrar há quantos dias cada empresa está em somente leitura e destacar
+as que passaram de 60. Depois, avaliar fazer sozinha (job diário).
+
+**Prazo:** antes de fevereiro de 2027.
+
+**Registrado em:** 2026-11-23.
+
+---
+
 ## Legibilidade
 
 - **Comentários de tutorial** em `appointment-status.job.ts` (ex.: "lte: less
