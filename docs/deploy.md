@@ -7,6 +7,11 @@ foram **testados de ponta a ponta** em um ambiente limpo: subida, migrações,
 seed, login, HTTPS/headers, persistência de dados e fotos depois de reiniciar, e
 backup com restauração.
 
+> **Consulta:** cada peça da infraestrutura (servidor, Docker, Caddy, DNS, e-mail,
+> backup, variáveis, landing) está explicada em detalhe, com o porquê de cada
+> escolha, em [`configuracoes/`](configuracoes/README.md). Este roteiro é a ordem
+> de instalação.
+
 **Decisões já tomadas**
 
 - Domínio: `orariapp.com.br` (Registro.br).
@@ -588,87 +593,25 @@ A pasta dos backups é `~/backups`. Como você entra como `root`, o `~` é `/roo
 o caminho real é `/root/backups` (no home do usuário, não na raiz `/` do sistema,
 e fora da pasta do projeto).
 
-**1. Crie (ou atualize) o script de backup.** Ele recusa um banco vazio ou
-suspeito, confere que o arquivo das fotos está íntegro, grava o banco antes das
-fotos (se as fotos falharem, o dump já está salvo), não deixa arquivos temporários
-para trás, guarda só os últimos 14 dias e protege os arquivos (`chmod 600`). Se você
-já criou uma versão anterior (só do banco), rode o bloco de novo: ele a substitui.
+**Cópias:** 1 na VPS (a mais recente) e 14 dias no **Google Drive**, criptografadas
+pelo `rclone`. O script, a configuração do `rclone` e do Google, o cron e a
+restauração estão explicados em detalhe em
+[`configuracoes/backup.md`](configuracoes/backup.md). Resumo da montagem:
 
-```bash
-cat > /usr/local/bin/orari-backup <<'EOF'
-#!/bin/bash
-# Backup diário do Orari: banco (dump) e fotos/logos (pasta de uploads).
-# Recusa banco vazio ou suspeito e confere a integridade do arquivo das fotos.
-set -euo pipefail
+1. Instale o `rclone` e crie os remotes `gdrive` (Google Drive, com client ID
+   próprio) e `gcrypt` (criptografia sobre `gdrive:orari-backups`). Guarde as duas
+   senhas do `gcrypt` no gerenciador de senhas.
+2. Grave o script em `/usr/local/bin/orari-backup` (texto completo em
+   `configuracoes/backup.md`) e dê `chmod +x`.
+3. Rode uma vez à mão: `orari-backup` deve terminar com `backup ok: …` e
+   `nuvem ok`. Confira com `ls -lh ~/backups` e `rclone ls gcrypt:`.
+4. Agende todo dia às 3h (hora do servidor) com `crontab -e`:
 
-DIR="$HOME/backups"
-mkdir -p "$DIR"
-STAMP="$(date +%F-%H%M)"
-DB_FILE="$DIR/orari-$STAMP.sql.gz"
-UPLOADS_FILE="$DIR/uploads-$STAMP.tgz"
-# Qualquer saída (inclusive por erro) apaga os arquivos temporários.
-trap 'rm -f "$DB_FILE.tmp" "$UPLOADS_FILE.tmp"' EXIT
+   ```
+   0 3 * * * /usr/local/bin/orari-backup >> /var/log/orari-backup.log 2>&1
+   ```
 
-cd "$HOME/orari-backend"
-COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
-
-# 1) Banco. pipefail: se o pg_dump falhar, o script para (mesmo com o gzip funcionando).
-$COMPOSE exec -T db pg_dump -U orari orari | gzip > "$DB_FILE.tmp"
-
-# Um dump de verdade tem centenas de KB; menos que isso indica falha.
-if [ "$(stat -c %s "$DB_FILE.tmp")" -lt 1000 ]; then
-  echo "backup do banco suspeito (muito pequeno), descartado" >&2
-  exit 1
-fi
-# O banco é guardado antes das fotos: se as fotos falharem, o dump já está salvo.
-mv "$DB_FILE.tmp" "$DB_FILE"
-chmod 600 "$DB_FILE"
-
-# 2) Fotos e logos. Um arquivo pequeno é normal (pode não haver fotos ainda):
-# aqui só se confere que o arquivo compactado está íntegro.
-$COMPOSE exec -T api tar czf - -C /data/uploads . > "$UPLOADS_FILE.tmp"
-gzip -t "$UPLOADS_FILE.tmp"
-mv "$UPLOADS_FILE.tmp" "$UPLOADS_FILE"
-chmod 600 "$UPLOADS_FILE"
-
-# Guarda os últimos 14 dias.
-find "$DIR" \( -name 'orari-*.sql.gz' -o -name 'uploads-*.tgz' \) -mtime +14 -delete
-echo "backup ok: $DB_FILE e $UPLOADS_FILE"
-EOF
-chmod +x /usr/local/bin/orari-backup
-```
-
-**2. Rode uma vez à mão e confira:**
-
-```bash
-orari-backup
-ls -lh ~/backups
-```
-
-Deve aparecer `backup ok: ...` e dois arquivos: o `orari-AAAA-MM-DD-HHMM.sql.gz`
-(o banco, de algumas centenas de KB, que cresce com os dados) e o
-`uploads-AAAA-MM-DD-HHMM.tgz` (as fotos). Se ainda não houver nenhuma foto, o
-segundo fica minúsculo (uns 100 bytes): é normal.
-
-**3. Agende todo dia às 3h** (hora do servidor) com `crontab -e`, acrescentando a
-linha abaixo no fim do arquivo:
-
-```
-0 3 * * * /usr/local/bin/orari-backup >> /var/log/orari-backup.log 2>&1
-```
-
-No dia seguinte, confira que rodou: `tail /var/log/orari-backup.log` e
-`ls -lh ~/backups`.
-
-**4. Copie para fora do servidor.** A partir do **seu computador** (não do
-servidor), traga os arquivos novos:
-
-```bash
-rsync -av root@IP_DO_SERVIDOR:backups/ ~/orari-backups/
-```
-
-Faça isso pelo menos uma vez por semana no piloto (ou agende no seu computador).
-O ideal depois é enviar automaticamente para um armazenamento em nuvem.
+   No dia seguinte, confira: `tail /var/log/orari-backup.log`.
 
 **5. Teste a restauração do banco** pelo menos uma vez, num banco à parte, para
 ter certeza de que o backup serve (testado):
