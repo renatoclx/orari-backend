@@ -119,6 +119,8 @@ describe("Rotas HTTP", () => {
         "POST /auth/logout (AuthController.logout)",
         "POST /auth/professional/login (AuthController.professionalLogin)",
         "POST /auth/refresh (AuthController.refresh)",
+        // Cadastro sozinho pela landing (teste de 7 dias), com limite por IP.
+        "POST /auth/signup (AuthController.signup)",
       ]);
     });
 
@@ -127,6 +129,7 @@ describe("Rotas HTTP", () => {
       // Corpo vazio: chega à validação (400), não ao 401.
       await request(http.server()).post("/auth/login").expect(400);
       await request(http.server()).post("/auth/professional/login").expect(400);
+      await request(http.server()).post("/auth/signup").expect(400);
     });
   });
 
