@@ -84,6 +84,13 @@ Exemplo:
 - Nunca retornar hashes nas respostas da API.
 - O atributo de comparação de senha não deve ser persistido, ele deve ser utilizado apenas na validação.
 
+## Redefinir a senha ("Esqueci minha senha")
+
+- `POST /auth/password/forgot` (público, 5 pedidos a cada 15 minutos por IP) recebe o e-mail e responde **sempre 204**, exista a conta ou não (não revela quem tem conta). Com um usuário ativo, cria um link que **vale 1 hora e uma vez só** e o envia por e-mail; no máximo um link por minuto para o mesmo e-mail.
+- O link leva a `https://<APP_DOMAIN>/redefinir-senha?token=…` (localmente, `http://localhost:3000`). Como o refresh token, só o **SHA-256** do token é gravado (`password_reset_tokens`).
+- `POST /auth/password/reset` (público, 10 tentativas a cada 15 minutos por IP) recebe o token, a senha nova e a confirmação. Link desconhecido, já usado, vencido ou de usuário excluído: 400. Numa transação: troca a senha, **encerra todas as sessões**, marca como usados todos os links do usuário e registra `PASSWORD_RESET_COMPLETED`. Devolve `professional` (o profissional entra pelo app).
+- **Envio de e-mail** (`MailModule`, global): pelo Resend com `RESEND_API_KEY` e `MAIL_FROM`. Sem a chave, no ambiente local o e-mail vai para o log da API; em produção o envio é recusado (o link nunca vai para o log) e o erro fica registrado, sem mudar a resposta de quem pediu.
+
 ## Segurança
 
 - Nunca confiar em dados enviados pelo cliente.

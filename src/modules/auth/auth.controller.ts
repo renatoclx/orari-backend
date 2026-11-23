@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Ip,
   Patch,
   Post,
   UseGuards,
@@ -19,13 +20,22 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ProfessionalApp } from "../../common/decorators/professional-app.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import type { AuthenticatedUser } from "../../common/interfaces/authenticated-user.interface";
-import { AUTH_THROTTLER, REFRESH_LIMIT, SIGNUP_LIMIT } from "./auth-throttle";
+import {
+  AUTH_THROTTLER,
+  FORGOT_PASSWORD_LIMIT,
+  REFRESH_LIMIT,
+  RESET_PASSWORD_LIMIT,
+  SIGNUP_LIMIT,
+} from "./auth-throttle";
 import { AuthService } from "./auth.service";
 import { ChangePasswordDto } from "./dto/change-password.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ProfessionalLoginDto } from "./dto/professional-login.dto";
 import { RefreshTokenDto } from "./dto/refresh-token.dto";
 import { SignupDto } from "./dto/signup.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { PasswordResetDto } from "./dto/password-reset.dto";
+import { PasswordResetService } from "./password-reset.service";
 import { SignupService } from "./signup.service";
 
 @ApiTags("Auth")
@@ -34,6 +44,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly signupService: SignupService,
+    private readonly passwordResetService: PasswordResetService,
   ) {}
 
   @Public()
@@ -116,5 +127,38 @@ export class AuthController {
   @HttpCode(204)
   logout(@Body() dto: RefreshTokenDto) {
     return this.authService.logout(dto);
+  }
+
+  // "Esqueci minha senha": manda o link por e-mail. Responde sempre 204, exista
+  // o e-mail ou não, para não revelar quem tem conta.
+  @Public()
+  @Post("password/forgot")
+  @HttpCode(204)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ [AUTH_THROTTLER]: FORGOT_PASSWORD_LIMIT })
+  @ApiOperation({
+    summary: "Pede o link de redefinição de senha por e-mail",
+    description:
+      "Sempre 204. Com o e-mail cadastrado (usuário ativo), envia um link que vale 1 hora e uma vez só; no máximo um por minuto por e-mail.",
+  })
+  @ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.passwordResetService.request(dto.email);
+  }
+
+  // Senha nova com o token do link. Encerra todas as sessões da pessoa.
+  @Public()
+  @Post("password/reset")
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ [AUTH_THROTTLER]: RESET_PASSWORD_LIMIT })
+  @ApiOperation({
+    summary: "Define a senha nova com o link do e-mail",
+    description:
+      "Link usado, vencido ou desconhecido: 400. Devolve `professional` (a pessoa entra pelo app, não pelo sistema web).",
+  })
+  @ApiTooManyRequestsResponse({ description: "Tentativas demais; aguarde." })
+  resetPassword(@Body() dto: PasswordResetDto, @Ip() ip: string) {
+    return this.passwordResetService.reset(dto.token, dto.newPassword, ip);
   }
 }

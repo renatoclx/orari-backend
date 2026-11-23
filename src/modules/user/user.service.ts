@@ -365,6 +365,23 @@ export class UserService {
   }
 
   /**
+   * Grava a senha nova e encerra as sessões, dentro da transação de quem chama
+   * (o "Esqueci minha senha", que também marca o link como usado).
+   */
+  async replacePassword(
+    userId: string,
+    newPassword: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const password = await this.hashPassword(newPassword);
+    await tx.user.update({
+      where: { id: userId },
+      data: { password, updatedAt: new Date() },
+    });
+    await this.revokeSessions(userId, tx);
+  }
+
+  /**
    * Troca da própria senha, depois de conferir a atual. Como na redefinição pelo
    * ADMIN, encerra as sessões abertas (os refresh tokens deixam de renovar).
    */
