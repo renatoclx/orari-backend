@@ -117,6 +117,9 @@ describe("Rotas HTTP", () => {
         "GET / (AppController.getHello)",
         "POST /auth/login (AuthController.login)",
         "POST /auth/logout (AuthController.logout)",
+        // "Esqueci minha senha": pedir o link e definir a senha nova com ele.
+        "POST /auth/password/forgot (AuthController.forgotPassword)",
+        "POST /auth/password/reset (AuthController.resetPassword)",
         "POST /auth/professional/login (AuthController.professionalLogin)",
         "POST /auth/refresh (AuthController.refresh)",
         // Cadastro sozinho pela landing (teste de 7 dias), com limite por IP.

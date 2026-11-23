@@ -47,6 +47,7 @@ import { AgendaBlockModule } from "./modules/agenda-block/agenda-block.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { ProfessionalAppModule } from "./modules/professional-app/professional-app.module";
 import { PlatformDashboardModule } from "./modules/platform-dashboard/platform-dashboard.module";
+import { MailModule } from "./modules/mail/mail.module";
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { PlatformDashboardModule } from "./modules/platform-dashboard/platform-d
     AgendaBlockModule,
     ProfessionalAppModule,
     PlatformDashboardModule,
+    MailModule,
     OnboardingModule,
     PeopleModule,
     ContactModule,

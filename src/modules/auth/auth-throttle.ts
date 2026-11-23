@@ -12,3 +12,10 @@ export const REFRESH_LIMIT = { limit: 20, ttl: 60_000 };
 
 // Cadastro sozinho: 5 empresas por hora por IP (barra cadastros em massa).
 export const SIGNUP_LIMIT = { limit: 5, ttl: 3_600_000 };
+
+// "Esqueci minha senha": 5 pedidos a cada 15 minutos por IP (o mesmo e-mail
+// ainda tem a espera de 1 minuto entre um link e outro).
+export const FORGOT_PASSWORD_LIMIT = { limit: 5, ttl: 900_000 };
+
+// Senha nova pelo link: 10 tentativas a cada 15 minutos por IP.
+export const RESET_PASSWORD_LIMIT = { limit: 10, ttl: 900_000 };

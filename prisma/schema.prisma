@@ -39,6 +39,7 @@ model User {
   company                   Company                      @relation(fields: [companyId], references: [id])
   people                    People?                      @relation(fields: [peopleId], references: [id])
   refreshTokens             RefreshToken[]
+  passwordResetTokens       PasswordResetToken[]
   notifications             UserNotification[]
   notificationPreferences   UserNotificationPreference[]
   pushSubscriptions         UserPushSubscription[]
@@ -88,6 +89,26 @@ model RefreshToken {
   @@unique([tokenHash])
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+/**
+ * Link de "Esqueci minha senha" (ver docs/auth.md, "Redefinir a senha"). Como
+ * o refresh token, só o SHA-256 é gravado: quem lê o banco não consegue usar o
+ * link. Vale 1 hora e uma vez só; usar um invalida os outros do usuário.
+ */
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([tokenHash])
+  @@index([userId, createdAt])
+  @@map("password_reset_tokens")
 }
 
 // SUPER_ADMIN administra a plataforma (todas as empresas) e é único; ADMIN, apenas a própria empresa.
@@ -803,6 +824,7 @@ enum AuditAction {
   SUBSCRIPTION_CHANGED
   SUBSCRIPTION_PAYMENT_CREATED
   SUBSCRIPTION_PAYMENT_REMOVED
+  PASSWORD_RESET_COMPLETED
 }
 
 /**

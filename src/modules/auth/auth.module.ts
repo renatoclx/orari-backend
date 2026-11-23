@@ -13,6 +13,7 @@ import { SubscriptionModule } from "../subscription/subscription.module";
 import { UserModule } from "../user/user.module";
 import { AuthService } from "./auth.service";
 import { SignupService } from "./signup.service";
+import { PasswordResetService } from "./password-reset.service";
 import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
@@ -47,6 +48,7 @@ import { AUTH_THROTTLER, LOGIN_LIMIT } from "./auth-throttle";
   providers: [
     AuthService,
     SignupService,
+    PasswordResetService,
     JwtStrategy,
     // A ordem importa: o RolesGuard depende do request.user preenchido pelo JwtAuthGuard.
     {
