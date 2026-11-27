@@ -73,7 +73,8 @@ const answersOf = (
         unbreakable:
           answer.length + (detail?.text.length ?? 0) <= KEEP_TOGETHER_MAX_CHARS,
         stack: [
-          { text: question.label, bold: true },
+          // Título da pergunta na fonte dos títulos (Jakarta, semi-negrito).
+          { text: question.label, font: "Jakarta" },
           ...(question.helpText
             ? [{ text: question.helpText, italics: true, fontSize: 8 }]
             : []),
@@ -226,8 +227,14 @@ export function buildAnamnesisPdf(
     pageMargins: [40, 56, 40, 48],
     defaultStyle: { font: "Roboto", fontSize: 10 },
     styles: {
-      title: { fontSize: 16, bold: true, alignment: "center" },
-      section: { fontSize: 12, bold: true, margin: [0, 10, 0, 6] },
+      // Títulos na fonte do sistema (Plus Jakarta Sans); o corpo segue em Roboto.
+      title: { font: "Jakarta", fontSize: 16, bold: true, alignment: "center" },
+      section: {
+        font: "Jakarta",
+        fontSize: 12,
+        bold: true,
+        margin: [0, 10, 0, 6],
+      },
     },
     info: { title: "Ficha de anamnese" },
     // A clínica identifica todas as páginas: com logo, só ela, centralizada (o
