@@ -121,7 +121,10 @@ describe("buildAnamnesisPdf", () => {
     expect(text).not.toContain("11.222.333/0001-81");
     expect(text).toContain("Joana Souza");
     expect(text).toContain("36 anos");
-    expect(text).toContain("Fisioterapia · versão 2");
+    // O título é o nome do modelo; a versão vai para o rodapé.
+    expect(text).toContain('{"text":"Fisioterapia","style":"title"');
+    expect(text).not.toContain("Ficha de anamnese");
+    expect(text).not.toContain("versão 2");
     // O CPF ausente não vira linha vazia na tabela.
     expect(text).not.toContain('"CPF"');
   });
@@ -221,7 +224,9 @@ describe("buildAnamnesisPdf", () => {
       5,
     );
 
-    expect(textOf(footerContent)).toContain("Emitido em 27/10/2026 12:00");
+    expect(textOf(footerContent)).toContain(
+      "Emitido em 27/10/2026 12:00 · Versão 2",
+    );
     expect(textOf(footerContent)).toContain("Página 2 de 5");
   });
 });

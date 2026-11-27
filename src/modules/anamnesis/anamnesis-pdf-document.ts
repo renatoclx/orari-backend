@@ -236,7 +236,7 @@ export function buildAnamnesisPdf(
         margin: [0, 10, 0, 6],
       },
     },
-    info: { title: "Ficha de anamnese" },
+    info: { title: view.template.name },
     // A clínica identifica todas as páginas: com logo, só ela, centralizada (o
     // nome já está no bloco "Clínica"); sem logo, o nome no canto.
     header: clinicLogo
@@ -255,19 +255,18 @@ export function buildAnamnesisPdf(
         },
     footer: (currentPage, pageCount) => ({
       columns: [
-        { text: `Emitido em ${formatDateTime(issuedAt, timeZone)}` },
+        // A versão do modelo fica no rodapé, junto da emissão: é controle, não título.
+        {
+          text: `Emitido em ${formatDateTime(issuedAt, timeZone)} · Versão ${view.version.version}`,
+        },
         { text: `Página ${currentPage} de ${pageCount}`, alignment: "right" },
       ],
       fontSize: 8,
       margin: [40, 0, 40, 0],
     }),
     content: [
-      { text: "Ficha de anamnese", style: "title" },
-      {
-        text: `${view.template.name} · versão ${view.version.version}`,
-        alignment: "center",
-        margin: [0, 0, 0, 8],
-      },
+      // O título é o nome da ficha (o modelo), como a clínica o chama.
+      { text: view.template.name, style: "title", margin: [0, 0, 0, 8] },
       // A clínica aparece só no cabeçalho (logo ou nome): no corpo, os dados
       // do cliente.
       { text: "Dados do cliente", style: "section" },
