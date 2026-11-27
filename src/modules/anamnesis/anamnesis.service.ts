@@ -59,6 +59,7 @@ const viewArgs = {
       select: {
         id: true,
         version: true,
+        responsibilityTerm: true,
         questions: { orderBy: { position: "asc" }, select: questionSelect },
       },
     },
@@ -229,7 +230,9 @@ export class AnamnesisService {
       return await this.buildView(anamnesisId, companyId);
     } catch (error) {
       throw isUniqueConstraintViolation(error)
-        ? new ConflictException("O cliente já tem uma ficha deste modelo")
+        ? new ConflictException(
+            "O cliente já tem uma ficha desta versão do modelo",
+          )
         : error;
     }
   }

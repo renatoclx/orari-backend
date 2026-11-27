@@ -86,7 +86,27 @@ interface QuestionForPdf {
   detailLabel: string | null;
 }
 
-/** Resposta como aparece no papel; sem resposta, um traço. */
+/**
+ * Pergunta auxiliar do sim ou não ("Qual?") e o que foi escrito nela, para o
+ * papel mostrar abaixo da resposta principal; nulo sem detalhe.
+ */
+export function yesNoDetail(
+  question: QuestionForPdf,
+  value: AnswerValue | undefined,
+): { label: string; text: string } | null {
+  if (question.type !== AnamnesisQuestionType.YES_NO || value === undefined) {
+    return null;
+  }
+  const { answer, detail } = value as YesNoAnswer;
+  return answer && detail
+    ? { label: question.detailLabel ?? "Detalhe", text: detail }
+    : null;
+}
+
+/**
+ * Resposta como aparece no papel; sem resposta, um traço. No sim ou não, só
+ * "Sim" ou "Não": o detalhe vem à parte (`yesNoDetail`).
+ */
 export function formatAnswer(
   question: QuestionForPdf,
   value: AnswerValue | undefined,
@@ -97,13 +117,7 @@ export function formatAnswer(
 
   switch (question.type) {
     case AnamnesisQuestionType.YES_NO: {
-      const { answer, detail } = value as YesNoAnswer;
-      if (!answer) {
-        return "Não";
-      }
-      return detail
-        ? `Sim — ${question.detailLabel ?? "Detalhe"}: ${detail}`
-        : "Sim";
+      return (value as YesNoAnswer).answer ? "Sim" : "Não";
     }
     case AnamnesisQuestionType.MULTIPLE_CHOICE:
       return (value as string[]).join(", ");

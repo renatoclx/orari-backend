@@ -294,7 +294,7 @@ describe("AnamnesisService", () => {
       expect(prismaMock.anamnesis.create).not.toHaveBeenCalled();
     });
 
-    it("segunda ficha do mesmo cliente e modelo é 409", async () => {
+    it("segunda ficha do mesmo cliente na mesma versão do modelo é 409", async () => {
       prismaMock.anamnesis.create.mockRejectedValue(
         new Prisma.PrismaClientKnownRequestError("duplicado", {
           code: "P2002",
@@ -302,8 +302,8 @@ describe("AnamnesisService", () => {
         }),
       );
 
-      await expect(service.create(dto, adminUser)).rejects.toBeInstanceOf(
-        ConflictException,
+      await expect(service.create(dto, adminUser)).rejects.toThrow(
+        "O cliente já tem uma ficha desta versão do modelo",
       );
     });
 
