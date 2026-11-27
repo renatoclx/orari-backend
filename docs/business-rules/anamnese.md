@@ -15,7 +15,8 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 - Um modelo pertence à empresa do usuário que o cadastrou; a empresa não é informada no payload.
 - O nome do modelo é obrigatório, com até 100 caracteres, e único entre os modelos da mesma empresa, sem diferenciar maiúsculas nem acentos. A descrição é opcional, com até 1000 caracteres.
 - Não há exclusão: o modelo é inativado (`isActive`) e pode ser reativado. Um modelo inativo não inicia novas fichas; as fichas já existentes continuam acessíveis e recebendo acompanhamentos.
-- Cada modelo tem **versões** numeradas a partir de 1. Criar o modelo cria a versão 1. Editar as perguntas cria uma nova versão (a lista informada substitui a anterior); reenviar a mesma lista também cria uma nova versão. Uma versão existente nunca muda. Renomear ou inativar o modelo não cria versão.
+- Cada modelo tem **versões** numeradas a partir de 1. Criar o modelo cria a versão 1. Editar as perguntas cria uma nova versão (a lista informada substitui a anterior); reenviar a mesma lista também cria uma nova versão. Uma versão existente nunca muda.
+- A versão pode ter um **termo de responsabilidade** (texto opcional, até 3.000 caracteres), impresso no PDF acima da assinatura. Ele fica na versão, e não no modelo, porque o que o cliente assinou não pode mudar depois: alterá-lo cria a versão seguinte, e por isso só é enviado junto com as perguntas (sozinho, 400). Renomear ou inativar o modelo não cria versão.
 - Quem cria, edita e inativa modelos é **somente o ADMIN**. Os profissionais consultam os modelos e os usam para preencher fichas.
 
 ### Perguntas
@@ -32,7 +33,8 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 
 ### Fichas e acompanhamentos
 
-- Existe **uma ficha por cliente e por modelo**. O cliente deve ser do tipo `CLIENT` e estar ativo; o modelo deve estar ativo.
+- Existe **uma ficha por cliente e por versão do modelo**. O cliente deve ser do tipo `CLIENT` e estar ativo; o modelo deve estar ativo.
+- Quando o modelo ganha uma versão nova, a ficha pode ser **atualizada**: nasce uma ficha nova na versão nova, com as respostas mais recentes da antiga (acompanhamentos incluídos) levadas às perguntas iguais (mesmo texto, sem diferenciar acentos nem maiúsculas, e mesmo tipo; nas escolhas, só as opções que continuam existindo). A antiga fica guardada, com o histórico dela.
 - Criar a ficha é gravar o **registro inicial**, com as respostas. A ficha fica presa à versão do modelo vigente nesse momento, e todos os registros seguintes respondem às mesmas perguntas. Uma edição posterior do modelo vale só para fichas novas.
 - Pergunta obrigatória sem resposta é recusada (400). Cada resposta é validada pelo tipo da pergunta: tamanho do texto, sim ou não (com detalhe só se a pergunta o permite e a resposta é "sim"), opções existentes, número, data válida e escala de 0 a 10.
 - O **acompanhamento** registra o que o profissional observou na consulta: a evolução (texto obrigatório) e, se algo mudou, as respostas atualizadas, **só das perguntas alteradas**.
@@ -72,14 +74,14 @@ isso o acesso é restrito, as respostas são criptografadas e toda ação fica r
 ### PDF para impressão
 
 - A ficha é exportada em PDF, **gerado no backend**; a impressão é feita pelo frontend.
-- O PDF tem duas partes. A **ficha** é o que o cliente assina: traz os dados da clínica (nome, CPF/CNPJ, contato e endereço principais), os do cliente (nome, idade, CPF, telefone e endereço principais), o modelo e a versão, e as respostas do **registro inicial** (não as atualizações posteriores, para que o papel assinado reflita o que o cliente declarou), com a linha de assinatura **só do cliente**. A assinatura é conferida manualmente.
+- O PDF tem duas partes. A **ficha** é o que o cliente assina: traz o título e o modelo com a versão (centralizados), os **dados do cliente** (nome, idade, CPF, telefone e endereço principais), uma linha separando as respostas, as respostas do **registro inicial** (não as atualizações posteriores, para que o papel assinado reflita o que o cliente declarou), o **termo de responsabilidade** da versão, se houver (justificado), e a linha de assinatura **só do cliente**, centralizada, com o nome dele e a data a preencher. A assinatura é conferida manualmente.
+- No sim ou não, a resposta é "Sim" ou "Não", e o detalhe vem abaixo, com a pergunta auxiliar (ex.: "Qual?") em negrito. A pergunta e a resposta não se separam entre páginas, salvo resposta muito longa (acima de ~1.200 caracteres), que quebra normalmente. O termo e a assinatura também ficam juntos.
 - O **histórico de acompanhamento** vem em página própria: cada registro com a data da consulta, o profissional (ou o usuário, sem vínculo), a evolução e as respostas atualizadas. É controle do profissional, anotado conforme a evolução do cliente, e **não leva assinatura**. A ficha continua como foi assinada: o histórico só cresce, com novos acompanhamentos.
 - Como o histórico é do profissional, o PDF pode ser emitido **sem ele** (`includeHistory=false`), para a via do cliente. O padrão é incluí-lo.
-- Todas as páginas trazem o nome da clínica, a data e hora da emissão no fuso da empresa e a paginação. A **logomarca** da clínica aparece no cabeçalho de todas as páginas, quando existe e é PNG ou JPEG (o único formato aceito no upload). Sem logo, ou com um valor que não seja um arquivo de logo válido, o PDF sai só com o nome da clínica, sem erro.
+- A clínica aparece só no cabeçalho de todas as páginas: a **logomarca**, centralizada, quando existe e é PNG ou JPEG (o único formato aceito no upload); sem logo, ou com um valor que não seja um arquivo de logo válido, o nome da clínica, sem erro. O rodapé traz a data e hora da emissão no fuso da empresa e a paginação.
 - Cada geração de PDF fica registrada na auditoria, e o arquivo só é entregue se o registro for gravado. O PDF não é guardado em cache.
 
 ### Fora desta versão
 
 - Banco de perguntas reutilizáveis entre modelos (duplicar um modelo existente é uma possibilidade, ainda não decidida).
-- Atualizar uma ficha para uma versão nova do modelo.
 - Perguntas condicionais, anexos e imagens, assinatura digital.
