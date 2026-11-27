@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -30,6 +31,7 @@ const withCurrentVersion = {
       select: {
         id: true,
         version: true,
+        responsibilityTerm: true,
         createdAt: true,
         questions: {
           orderBy: { position: "asc" },
@@ -83,7 +85,7 @@ export class AnamnesisTemplateService {
     currentUser: AuthenticatedUser,
     ip?: string,
   ): Promise<AnamnesisTemplateResponse> {
-    const { questions, ...data } = dto;
+    const { questions, responsibilityTerm, ...data } = dto;
     validateQuestions(questions);
 
     try {
@@ -98,6 +100,7 @@ export class AnamnesisTemplateService {
               create: {
                 version: 1,
                 createdById: currentUser.id,
+                responsibilityTerm,
                 questions: { create: this.toQuestionData(questions) },
               },
             },
@@ -169,10 +172,15 @@ export class AnamnesisTemplateService {
     ip?: string,
   ): Promise<AnamnesisTemplateResponse> {
     const current = await this.findInCompany(id, currentUser.companyId);
-    const { questions, ...data } = dto;
+    const { questions, responsibilityTerm, ...data } = dto;
 
     if (questions) {
       validateQuestions(questions);
+    } else if (responsibilityTerm !== undefined) {
+      // O termo é parte da versão: só muda junto com as perguntas.
+      throw new BadRequestException(
+        "O termo de responsabilidade é enviado junto com as perguntas",
+      );
     }
     if (data.name !== undefined) {
       await this.ensureNameIsFree(data.name, currentUser.companyId, id);
@@ -195,6 +203,8 @@ export class AnamnesisTemplateService {
                 create: {
                   version: current.versions[0].version + 1,
                   createdById: currentUser.id,
+                  // Sem termo na nova versão, a ficha sai sem ele.
+                  responsibilityTerm,
                   questions: { create: this.toQuestionData(questions) },
                 },
               },

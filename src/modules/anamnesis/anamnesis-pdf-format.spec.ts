@@ -3,6 +3,7 @@ import {
   ageInYears,
   formatAddress,
   formatAnswer,
+  yesNoDetail,
   formatDate,
   formatDateTime,
   formatDocument,
@@ -100,13 +101,7 @@ describe("formatAnswer", () => {
     ["MULTIPLE_CHOICE", null, ["Corrida", "Natação"], "Corrida, Natação"],
     ["YES_NO", "Qual?", { answer: false }, "Não"],
     ["YES_NO", "Qual?", { answer: true }, "Sim"],
-    [
-      "YES_NO",
-      "Qual?",
-      { answer: true, detail: "Dipirona" },
-      "Sim — Qual?: Dipirona",
-    ],
-    ["YES_NO", null, { answer: true, detail: "x" }, "Sim — Detalhe: x"],
+    ["YES_NO", "Qual?", { answer: true, detail: "Dipirona" }, "Sim"],
     ["DATE", null, "2026-10-20", "20/10/2026"],
     ["NUMBER", null, 72.5, "72,5"],
     ["NUMBER", null, 1234, "1.234"],
@@ -117,5 +112,17 @@ describe("formatAnswer", () => {
 
   it("sem resposta, um traço", () => {
     expect(formatAnswer(q("SHORT_TEXT"), undefined)).toBe("—");
+  });
+
+  it("o detalhe do sim vem à parte, com a pergunta auxiliar", () => {
+    expect(
+      yesNoDetail(q("YES_NO", "Qual?"), { answer: true, detail: "Dipirona" }),
+    ).toEqual({ label: "Qual?", text: "Dipirona" });
+    expect(
+      yesNoDetail(q("YES_NO", null), { answer: true, detail: "x" }),
+    ).toEqual({ label: "Detalhe", text: "x" });
+    expect(yesNoDetail(q("YES_NO", "Qual?"), { answer: true })).toBeNull();
+    expect(yesNoDetail(q("YES_NO", "Qual?"), { answer: false })).toBeNull();
+    expect(yesNoDetail(q("SHORT_TEXT"), "Ana")).toBeNull();
   });
 });

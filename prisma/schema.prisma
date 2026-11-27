@@ -894,6 +894,9 @@ model AnamnesisTemplateVersion {
   id          String   @id @default(uuid())
   templateId  String
   version     Int
+  // Termo de responsabilidade impresso acima da assinatura do cliente. Fica na
+  // versão porque o que o cliente assinou não pode mudar depois.
+  responsibilityTerm String?
   createdById String
   createdAt   DateTime @default(now())
 
@@ -949,8 +952,10 @@ model Anamnesis {
   version  AnamnesisTemplateVersion @relation(fields: [versionId], references: [id])
   entries  AnamnesisEntry[]
 
-  // Uma ficha por cliente e por modelo.
-  @@unique([clientId, templateId])
+  // Uma ficha por cliente e por versão do modelo: quando o modelo muda, o
+  // cliente pode ganhar a ficha da versão nova (atualizar a ficha), e a antiga
+  // fica guardada com o histórico dela.
+  @@unique([clientId, versionId])
   @@index([companyId])
   @@map("anamneses")
 }

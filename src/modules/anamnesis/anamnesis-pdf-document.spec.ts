@@ -53,7 +53,7 @@ const view = {
   createdAt: new Date("2026-10-20T12:00:00Z"),
   client: { id: "c1", name: "Joana" },
   template: { id: "t1", name: "Fisioterapia" },
-  version: { id: "v1", version: 2, questions },
+  version: { id: "v1", version: 2, responsibilityTerm: null, questions },
   current: [],
   entries: [
     entry({
@@ -99,7 +99,11 @@ describe("buildAnamnesisPdf", () => {
   it("a ficha traz as respostas do registro inicial, não as atualizações", () => {
     const text = textOf(buildAnamnesisPdf(input));
 
-    expect(text).toContain("Sim — Qual?: Dipirona");
+    // O detalhe do sim vem abaixo da resposta, com a pergunta auxiliar em negrito.
+    expect(text).toContain(
+      '{"text":"Sim","margin":[0,2,0,0]},{"text":"Qual?","bold":true,"margin":[0,4,0,0]},{"text":"Dipirona"',
+    );
+    expect(text).not.toContain("?:");
     expect(text).toContain("7 de 10");
     // Pergunta sem resposta aparece com traço.
     expect(text).toContain("—");
@@ -108,23 +112,66 @@ describe("buildAnamnesisPdf", () => {
     expect(textOf(content)).not.toContain("2 de 10");
   });
 
-  it("identifica a clínica, o cliente e o modelo, e omite dados ausentes", () => {
-    const text = textOf(buildAnamnesisPdf(input));
+  it("traz os dados do cliente e o modelo, sem os dados da clínica, e omite dados ausentes", () => {
+    const definition = buildAnamnesisPdf(input);
+    const text = textOf(definition.content as object);
 
-    expect(text).toContain("Clínica Bem Estar");
-    expect(text).toContain("11.222.333/0001-81");
+    expect(text).toContain("Dados do cliente");
+    expect(text).not.toContain('"Clínica"');
+    expect(text).not.toContain("11.222.333/0001-81");
     expect(text).toContain("Joana Souza");
     expect(text).toContain("36 anos");
-    expect(text).toContain("Fisioterapia · versão 2");
+    // O título é o nome do modelo; a versão vai para o rodapé.
+    expect(text).toContain('{"text":"Fisioterapia","style":"title"');
+    expect(text).not.toContain("Ficha de anamnese");
+    expect(text).not.toContain("versão 2");
     // O CPF ausente não vira linha vazia na tabela.
     expect(text).not.toContain('"CPF"');
   });
 
-  it("tem só a assinatura do cliente", () => {
+  it("tem só a assinatura do cliente, com o nome dele", () => {
     const text = textOf(buildAnamnesisPdf(input));
 
-    expect(text).toContain("Assinatura do cliente: Joana Souza");
-    expect(text).not.toContain("Assinatura do profissional");
+    expect(text).toContain('{"text":"Joana Souza","alignment":"center"}');
+    expect(text).not.toContain("Assinatura do");
+  });
+
+  it("o termo de responsabilidade, se houver, vem justificado logo acima da assinatura", () => {
+    const term = "Declaro que as informações acima são verdadeiras.";
+    const withTerm = buildAnamnesisPdf({
+      ...input,
+      view: { ...view, version: { ...view.version, responsibilityTerm: term } },
+    });
+    const text = textOf(withTerm);
+
+    expect(text).toContain(`{"text":"${term}","alignment":"justify"`);
+    // O termo e a assinatura estão no mesmo bloco, que não se divide.
+    expect(text.indexOf(term)).toBeLessThan(
+      text.indexOf('{"text":"Joana Souza","alignment":"center"}'),
+    );
+    expect(textOf(buildAnamnesisPdf(input))).not.toContain("justify");
+  });
+
+  it("a pergunta e a resposta não se separam entre páginas, salvo resposta muito longa", () => {
+    const blocks = (answer: string) =>
+      (
+        buildAnamnesisPdf({
+          ...input,
+          includeHistory: false,
+          view: {
+            ...view,
+            entries: [
+              {
+                ...view.entries[0],
+                answers: [{ questionId: "q3", value: answer }],
+              },
+            ],
+          },
+        }).content as { unbreakable?: boolean; stack?: { text?: string }[] }[]
+      ).find((block) => block.stack?.[0]?.text === "Esportes");
+
+    expect(blocks("Corrida")?.unbreakable).toBe(true);
+    expect(blocks("a".repeat(1201))?.unbreakable).toBe(false);
   });
 
   it("o histórico vem em página própria, com autor, evolução e respostas atualizadas", () => {
@@ -158,14 +205,14 @@ describe("buildAnamnesisPdf", () => {
     expect(text).toContain("Nenhum acompanhamento registrado.");
   });
 
-  it("o cabeçalho leva a logo quando há e só o nome quando não há", () => {
+  it("o cabeçalho leva só a logo, centralizada, quando há e só o nome quando não há", () => {
     const header = (clinicLogo?: string) =>
       textOf(buildAnamnesisPdf({ ...input, clinicLogo }).header as object);
 
-    expect(header("data:image/png;base64,AAAA")).toContain(
-      '"image":"data:image/png;base64,AAAA"',
-    );
-    expect(header("data:image/png;base64,AAAA")).toContain("Clínica Bem Estar");
+    const withLogo = header("data:image/png;base64,AAAA");
+    expect(withLogo).toContain('"image":"data:image/png;base64,AAAA"');
+    expect(withLogo).toContain('"alignment":"center"');
+    expect(withLogo).not.toContain("Clínica Bem Estar");
     expect(header()).not.toContain('"image"');
     expect(header()).toContain("Clínica Bem Estar");
   });
@@ -177,7 +224,9 @@ describe("buildAnamnesisPdf", () => {
       5,
     );
 
-    expect(textOf(footerContent)).toContain("Emitido em 27/10/2026 12:00");
+    expect(textOf(footerContent)).toContain(
+      "Emitido em 27/10/2026 12:00 · Versão 2",
+    );
     expect(textOf(footerContent)).toContain("Página 2 de 5");
   });
 });

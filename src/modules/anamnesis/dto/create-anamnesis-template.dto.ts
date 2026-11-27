@@ -15,6 +15,7 @@ export const MAX_QUESTIONS = 100;
 // Limites do nome e da descrição do modelo (ver docs/business-rules/anamnese.md, "Anamnese").
 export const TEMPLATE_NAME_MAX = 100;
 export const TEMPLATE_DESCRIPTION_MAX = 1000;
+export const RESPONSIBILITY_TERM_MAX = 3000;
 
 // A empresa não é informada: o modelo pertence à empresa do usuário autenticado.
 export class CreateAnamnesisTemplateDto {
@@ -28,6 +29,16 @@ export class CreateAnamnesisTemplateDto {
   @IsNotEmpty()
   @MaxLength(TEMPLATE_DESCRIPTION_MAX)
   description?: string;
+
+  /**
+   * Termo de responsabilidade, impresso no PDF acima da assinatura. Faz parte
+   * da versão, junto com as perguntas: na alteração, só vai com `questions`.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(RESPONSIBILITY_TERM_MAX)
+  responsibilityTerm?: string;
 
   /** Perguntas na ordem em que aparecem na ficha (de 1 a 100). */
   @IsArray()

@@ -1,4 +1,4 @@
-import { dirname, join, posix } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { Injectable } from "@nestjs/common";
 // O pdfmake exporta uma instância (module.exports); só o `import =` a mantém inteira.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -31,6 +31,16 @@ const FONTS_DIR = join(
   dirname(require.resolve("pdfmake/package.json")),
   "fonts",
   "Roboto",
+);
+
+// Fonte dos títulos, a mesma do sistema (Plus Jakarta Sans, licença OFL, em
+// assets/fonts). A pasta parte da raiz do projeto, onde a API roda (local e na
+// imagem, WORKDIR /app): o caminho relativo ao arquivo mudaria entre src e dist.
+const TITLE_FONTS_DIR = resolve(
+  process.cwd(),
+  "assets",
+  "fonts",
+  "plus-jakarta-sans",
 );
 
 // Contato e endereço principais da clínica, sem soft-deleted.
@@ -87,10 +97,19 @@ export class AnamnesisPdfService {
         italics: join(FONTS_DIR, "Roboto-Italic.ttf"),
         bolditalics: join(FONTS_DIR, "Roboto-MediumItalic.ttf"),
       },
+      // Títulos: o peso normal é o semi-negrito; `bold` é o negrito.
+      Jakarta: {
+        normal: join(TITLE_FONTS_DIR, "PlusJakartaSans-SemiBold.woff"),
+        bold: join(TITLE_FONTS_DIR, "PlusJakartaSans-Bold.woff"),
+        italics: join(TITLE_FONTS_DIR, "PlusJakartaSans-SemiBold.woff"),
+        bolditalics: join(TITLE_FONTS_DIR, "PlusJakartaSans-Bold.woff"),
+      },
     });
     // O documento só tem texto: nada de baixar recursos nem ler arquivos além das fontes.
     pdfmake.setUrlAccessPolicy(() => false);
-    pdfmake.setLocalAccessPolicy((path) => path.startsWith(FONTS_DIR));
+    pdfmake.setLocalAccessPolicy(
+      (path) => path.startsWith(FONTS_DIR) || path.startsWith(TITLE_FONTS_DIR),
+    );
   }
 
   async generate(

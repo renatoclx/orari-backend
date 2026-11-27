@@ -95,6 +95,7 @@ describe("AnamnesisTemplateService", () => {
           create: {
             version: 1,
             createdById: adminUser.id,
+            responsibilityTerm: undefined,
             questions: {
               create: [
                 {
@@ -239,6 +240,34 @@ describe("AnamnesisTemplateService", () => {
         }),
         prismaMock,
       );
+    });
+
+    it("o termo de responsabilidade vai para a nova versão, junto com as perguntas", async () => {
+      await service.update(
+        "template-1",
+        { questions: dto.questions, responsibilityTerm: "Declaro que..." },
+        adminUser,
+      );
+
+      const args = prismaMock.anamnesisTemplate.update.mock.calls[0][0] as {
+        data: { versions: { create: Record<string, unknown> } };
+      };
+      expect(args.data.versions.create).toMatchObject({
+        version: 4,
+        responsibilityTerm: "Declaro que...",
+      });
+      expect(args.data).not.toHaveProperty("responsibilityTerm");
+    });
+
+    it("recusa o termo sem as perguntas (400), sem gravar", async () => {
+      await expect(
+        service.update(
+          "template-1",
+          { responsibilityTerm: "Declaro que..." },
+          adminUser,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.anamnesisTemplate.update).not.toHaveBeenCalled();
     });
 
     it("renomear e inativar não criam versão e mantêm a busca em sincronia", async () => {

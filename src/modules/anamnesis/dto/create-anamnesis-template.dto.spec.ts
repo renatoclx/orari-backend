@@ -97,6 +97,18 @@ describe("CreateAnamnesisTemplateDto", () => {
     ).resolves.toEqual([]);
   });
 
+  it("aceita o termo de responsabilidade até 3000 caracteres, não vazio", async () => {
+    await expect(
+      errorsFor({ ...base, responsibilityTerm: "a".repeat(3000) }),
+    ).resolves.toEqual([]);
+    await expect(
+      errorsFor({ ...base, responsibilityTerm: "a".repeat(3001) }),
+    ).resolves.toEqual(["responsibilityTerm"]);
+    await expect(
+      errorsFor({ ...base, responsibilityTerm: "" }),
+    ).resolves.toEqual(["responsibilityTerm"]);
+  });
+
   it("não aceita a empresa nem isActive na criação", async () => {
     await expect(errorsFor({ ...base, companyId: "x" })).resolves.toEqual([
       "companyId",
