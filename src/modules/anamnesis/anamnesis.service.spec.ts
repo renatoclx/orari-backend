@@ -131,6 +131,9 @@ describe("AnamnesisService", () => {
     vi.clearAllMocks();
     accessMock.ensureAccess.mockResolvedValue(undefined);
     accessMock.findProfessionalId.mockResolvedValue("prof-1");
+    // Sem outras fichas do mesmo modelo: a ficha é a atual, sem versões anteriores.
+    prismaMock.anamnesis.findMany.mockResolvedValue([]);
+    prismaMock.anamnesis.count.mockResolvedValue(0);
     peopleMock.findOne.mockResolvedValue({ id: "client-1", type: "CLIENT" });
     prismaMock.anamnesisTemplate.findFirst.mockResolvedValue(template);
     companyMock.getTimeZone.mockResolvedValue("America/Sao_Paulo");
@@ -352,6 +355,19 @@ describe("AnamnesisService", () => {
       });
     });
 
+    it("informa a ficha atual que substitui esta e as versões anteriores do modelo", async () => {
+      prismaMock.anamnesis.findFirst.mockResolvedValue(storedView);
+      prismaMock.anamnesis.findMany.mockResolvedValue([
+        { id: "older", version: { version: 0 } },
+        { id: "newer", version: { version: 99 } },
+      ]);
+
+      const view = await service.findOne("anamnesis-1", adminUser);
+
+      expect(view.replacedBy).toEqual({ id: "newer", version: 99 });
+      expect(view.previous).toEqual([{ id: "older", version: 0 }]);
+    });
+
     it("ficha de outra empresa é 404 e não audita", async () => {
       prismaMock.anamnesis.findFirst.mockResolvedValue(null);
 
@@ -429,6 +445,31 @@ describe("AnamnesisService", () => {
       });
     });
 
+    it("deixa de fora a ficha substituída por uma versão nova do modelo", async () => {
+      prismaMock.people.findFirst.mockResolvedValue({ id: "client-1" });
+      const ficha = (id: string, templateId: string, version: number) => ({
+        id,
+        createdAt: new Date("2026-10-27T12:00:00Z"),
+        template: { id: templateId, name: "Modelo" },
+        version: { version },
+        _count: { entries: 1 },
+        entries: [],
+      });
+      prismaMock.anamnesis.findMany.mockResolvedValue([
+        ficha("old", "t1", 1),
+        ficha("other", "t2", 1),
+        ficha("new", "t1", 2),
+      ]);
+
+      const result = await service.findByClient(
+        { page: 1, limit: 10, clientId: "client-1" },
+        adminUser,
+      );
+
+      expect(result.items.map((item) => item.id)).toEqual(["other", "new"]);
+      expect(result.total).toBe(2);
+    });
+
     it("cliente de outra empresa é 404", async () => {
       prismaMock.people.findFirst.mockResolvedValue(null);
 
@@ -449,13 +490,18 @@ describe("AnamnesisService", () => {
           id: "client-1",
           name: "Joana",
           deletedAt: null,
-          _count: { anamnesesAsClient: 2 },
+          // Três fichas em dois modelos: a do modelo atualizado conta uma vez.
+          anamnesesAsClient: [
+            { templateId: "t1" },
+            { templateId: "t1" },
+            { templateId: "t2" },
+          ],
         },
         {
           id: "client-2",
           name: "Marcos",
           deletedAt: new Date("2026-10-01T00:00:00Z"),
-          _count: { anamnesesAsClient: 1 },
+          anamnesesAsClient: [{ templateId: "t1" }],
         },
       ]);
       prismaMock.people.count.mockResolvedValue(2);
@@ -561,8 +607,9 @@ describe("AnamnesisService", () => {
     // Ficha como o addEntry a consulta: cliente ativo, perguntas e registro inicial em 20/10.
     const fichaForEntry = {
       clientId: "client-1",
+      templateId: "template-1",
       client: { deletedAt: null },
-      version: { questions },
+      version: { version: 1, questions },
       entries: [{ consultationDate: new Date("2026-10-20T00:00:00Z") }],
     };
     const entryDto = {
@@ -576,6 +623,25 @@ describe("AnamnesisService", () => {
         .mockReset()
         .mockResolvedValueOnce(fichaForEntry)
         .mockResolvedValue(storedView);
+    });
+
+    it("ficha substituída por uma versão nova não recebe acompanhamento (409), sem gravar", async () => {
+      prismaMock.anamnesis.count.mockResolvedValue(1);
+
+      await expect(
+        service.addEntry("anamnesis-1", entryDto, adminUser),
+      ).rejects.toThrow(
+        "Esta ficha foi atualizada para uma versão mais nova; registre o acompanhamento na ficha atual",
+      );
+      expect(prismaMock.anamnesis.count).toHaveBeenCalledWith({
+        where: {
+          companyId: COMPANY_ID,
+          clientId: "client-1",
+          templateId: "template-1",
+          version: { version: { gt: 1 } },
+        },
+      });
+      expect(prismaMock.anamnesisEntry.create).not.toHaveBeenCalled();
     });
 
     it("grava o acompanhamento com evolução e respostas cifradas, autor e auditoria", async () => {

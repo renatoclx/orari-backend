@@ -25,6 +25,7 @@ import {
   parseIsoDate,
   resolveAnswers,
 } from "./anamnesis-answer-rules";
+import { currentFichas, replacementOf } from "./anamnesis-replacement";
 import { AnamnesisAccessService } from "./anamnesis-access.service";
 import { AnamnesisCryptoService } from "./anamnesis-crypto.service";
 import { CreateAnamnesisEntryDto } from "./dto/create-anamnesis-entry.dto";
@@ -107,6 +108,10 @@ export interface AnamnesisView {
   })[];
   /** Histórico em ordem de data, do registro inicial ao último acompanhamento. */
   entries: AnamnesisEntryView[];
+  /** Ficha atual do mesmo modelo, se esta foi atualizada (fica só para consulta). */
+  replacedBy: { id: string; version: number } | null;
+  /** Fichas de versões anteriores do mesmo modelo, da mais recente à mais antiga. */
+  previous: { id: string; version: number }[];
 }
 
 export interface AnamnesisSummary {
@@ -265,7 +270,8 @@ export class AnamnesisService {
           id: true,
           name: true,
           deletedAt: true,
-          _count: { select: { anamnesesAsClient: true } },
+          // Só as fichas atuais contam: uma por modelo (a substituída sai).
+          anamnesesAsClient: { select: { templateId: true } },
         },
         orderBy: { name: "asc" },
         skip: (page - 1) * limit,
@@ -289,7 +295,9 @@ export class AnamnesisService {
         clientId: client.id,
         clientName: client.name,
         isActive: client.deletedAt === null,
-        anamnesisCount: client._count.anamnesesAsClient,
+        anamnesisCount: new Set(
+          client.anamnesesAsClient.map((ficha) => ficha.templateId),
+        ).size,
       })),
       total,
       page,
@@ -315,28 +323,34 @@ export class AnamnesisService {
       throw new NotFoundException("Cliente não encontrado");
     }
 
-    const where: Prisma.AnamnesisWhereInput = { companyId, clientId };
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.anamnesis.findMany({
-        where,
-        select: {
-          id: true,
-          createdAt: true,
-          template: { select: { id: true, name: true } },
-          version: { select: { version: true } },
-          _count: { select: { entries: true } },
-          entries: {
-            orderBy: { consultationDate: "desc" },
-            take: 1,
-            select: { consultationDate: true },
-          },
+    // Só as fichas atuais (a substituída por uma versão nova sai da lista). A
+    // regra compara versões entre fichas, o que o filtro do banco não expressa:
+    // as fichas de um cliente são poucas, então o corte e a página são feitos aqui.
+    const all = await this.prisma.anamnesis.findMany({
+      where: { companyId, clientId },
+      select: {
+        id: true,
+        createdAt: true,
+        template: { select: { id: true, name: true } },
+        version: { select: { version: true } },
+        _count: { select: { entries: true } },
+        entries: {
+          orderBy: { consultationDate: "desc" },
+          take: 1,
+          select: { consultationDate: true },
         },
-        orderBy: { createdAt: "asc" },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.anamnesis.count({ where }),
-    ]);
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const current = currentFichas(
+      all.map((item) => ({
+        ...item,
+        templateId: item.template.id,
+        version: item.version.version,
+      })),
+    );
+    const total = current.length;
+    const items = current.slice((page - 1) * limit, page * limit);
 
     // O registro de auditoria vem antes da resposta: se falhar, nada é entregue.
     await this.auditService.record({
@@ -354,7 +368,7 @@ export class AnamnesisService {
         id: item.id,
         createdAt: item.createdAt,
         template: item.template,
-        templateVersion: item.version.version,
+        templateVersion: item.version,
         entriesCount: item._count.entries,
         lastConsultationDate: item.entries[0]?.consultationDate ?? null,
       })),
@@ -447,8 +461,11 @@ export class AnamnesisService {
       where: { id, companyId },
       select: {
         clientId: true,
+        templateId: true,
         client: { select: { deletedAt: true } },
-        version: { select: { questions: { select: questionSelect } } },
+        version: {
+          select: { version: true, questions: { select: questionSelect } },
+        },
         // A data do registro inicial é o piso das datas de consulta.
         entries: {
           where: { kind: AnamnesisEntryKind.INITIAL },
@@ -462,6 +479,21 @@ export class AnamnesisService {
     if (anamnesis.client.deletedAt) {
       throw new ConflictException(
         "O cliente está inativo: a ficha não recebe novos registros",
+      );
+    }
+    // Ficha substituída por uma versão nova fica só para consulta: a evolução
+    // continua na atual, para não se dividir entre as duas.
+    const newer = await this.prisma.anamnesis.count({
+      where: {
+        companyId,
+        clientId: anamnesis.clientId,
+        templateId: anamnesis.templateId,
+        version: { version: { gt: anamnesis.version.version } },
+      },
+    });
+    if (newer > 0) {
+      throw new ConflictException(
+        "Esta ficha foi atualizada para uma versão mais nova; registre o acompanhamento na ficha atual",
       );
     }
 
@@ -593,6 +625,22 @@ export class AnamnesisService {
       }),
     );
 
+    // As outras fichas do cliente no mesmo modelo dizem se esta foi substituída
+    // e quais versões vieram antes.
+    const siblings = await this.prisma.anamnesis.findMany({
+      where: {
+        companyId,
+        clientId: anamnesis.client.id,
+        templateId: anamnesis.template.id,
+        id: { not: anamnesis.id },
+      },
+      select: { id: true, version: { select: { version: true } } },
+    });
+    const { replacedBy, previous } = replacementOf(
+      anamnesis.version,
+      siblings.map((item) => ({ id: item.id, version: item.version.version })),
+    );
+
     // Os registros estão em ordem de data: a última resposta de cada pergunta vence.
     const latest = new Map<string, AnamnesisView["current"][number]>();
     for (const entry of entries) {
@@ -613,6 +661,8 @@ export class AnamnesisService {
       version: anamnesis.version,
       current: [...latest.values()],
       entries,
+      replacedBy,
+      previous,
     };
   }
 }
